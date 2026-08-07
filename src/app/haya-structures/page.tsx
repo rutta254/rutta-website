@@ -18,6 +18,7 @@ import autoTable from 'jspdf-autotable';
 export default function HayaStructures() {
   const [length, setLength] = useState<number>(6);
   const [load, setLoad] = useState<number>(10);
+  const [support, setSupport] = useState<'simply_supported' | 'cantilever'>('simply_supported');
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -25,18 +26,19 @@ export default function HayaStructures() {
     setLoading(true);
     try {
       const payload = {
-        length: Number(length),
+        element_type: 'beam',
         span: Number(length),
-        load: Number(load),
-        point_loads: [
+        support,
+        loads: [
           {
+            type: 'point',
             magnitude: Number(load),
             position: Number(length) / 2,
           },
         ],
       };
 
-      const res = await fetch('https://beam-analysis-cloud-api.onrender.com/api/v1/analyze', {
+      const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -88,9 +90,9 @@ export default function HayaStructures() {
       head: [['Parameter', 'Value', 'Unit']],
       body: [
         ['Beam Span / Length', `${result.span ?? length}`, 'm'],
+        ['Support Configuration', `${result.support?.replace('_', ' ') ?? support.replace('_', ' ')}`, '-'],
         ['Point Load Magnitude', `${load}`, 'kN'],
         ['Point Load Location', `${Number(length) / 2}`, 'm (Mid-span)'],
-        ['Support Configuration', 'Simply Supported', '-'],
       ],
       theme: 'striped',
       headStyles: { fillColor: [14, 116, 144] }, // cyan-700
@@ -161,6 +163,18 @@ export default function HayaStructures() {
               />
             </div>
 
+            <div className="mb-4">
+              <label className="block text-sm mb-2 text-slate-300">Support Condition:</label>
+              <select
+                value={support}
+                onChange={(e) => setSupport(e.target.value as 'simply_supported' | 'cantilever')}
+                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-cyan-400"
+              >
+                <option value="simply_supported">Simply Supported</option>
+                <option value="cantilever">Cantilever</option>
+              </select>
+            </div>
+
             <div className="mb-6">
               <label className="block text-sm mb-2 text-slate-300">Mid-span Point Load (kN):</label>
               <input
@@ -186,6 +200,7 @@ export default function HayaStructures() {
                 Statics Summary
               </h3>
               <p><strong>Span:</strong> {result.span ?? length} m</p>
+              <p><strong>Support:</strong> <span className="text-cyan-300 font-mono">{result.support?.replace('_', ' ') ?? support.replace('_', ' ')}</span></p>
               <p><strong>Max Shear Force:</strong> <span className="text-cyan-300 font-mono">{result.critical_values?.max_shear_force ?? 0} kN</span></p>
               <p><strong>Max Bending Moment:</strong> <span className="text-cyan-300 font-mono">{result.critical_values?.max_bending_moment ?? 0} kN·m</span></p>
               <p><strong>Support R<sub>A</sub>:</strong> <span className="text-cyan-300 font-mono">{result.reactions?.R_A ?? 0} kN</span></p>
