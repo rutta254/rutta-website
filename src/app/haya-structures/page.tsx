@@ -10,9 +10,10 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ReferenceLine,
 } from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function HayaStructures() {
   const [length, setLength] = useState<number>(6);
@@ -57,7 +58,76 @@ export default function HayaStructures() {
     }
   };
 
-  // Map backend array coordinates (x_coords, shear_force, bending_moment, deflection_mm) into Chart objects
+  const generatePDF = () => {
+    if (!result) return;
+
+    const doc = new jsPDF();
+    const dateStr = new Date().toLocaleDateString();
+
+    // Header Title
+    doc.setFontSize(18);
+    doc.setTextColor(15, 23, 42); // slate-900
+    doc.text('HAYA STRUCTURES LLC', 14, 20);
+
+    doc.setFontSize(12);
+    doc.setTextColor(100);
+    doc.text('Structural Beam Verification Report', 14, 28);
+    doc.setFontSize(10);
+    doc.text(`Date Generated: ${dateStr}`, 14, 34);
+    doc.text(`Engineered via Cloud API Pipeline`, 14, 40);
+
+    doc.line(14, 45, 196, 45); // Horizontal divider
+
+    // Input Parameters Section
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text('1. Design Input Parameters', 14, 55);
+
+    autoTable(doc, {
+      startY: 60,
+      head: [['Parameter', 'Value', 'Unit']],
+      body: [
+        ['Beam Span / Length', `${result.span ?? length}`, 'm'],
+        ['Point Load Magnitude', `${load}`, 'kN'],
+        ['Point Load Location', `${Number(length) / 2}`, 'm (Mid-span)'],
+        ['Support Configuration', 'Simply Supported', '-'],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [14, 116, 144] }, // cyan-700
+    });
+
+    // Statics Results Section
+    const lastY = (doc as any).lastAutoTable.finalY + 12;
+    doc.setFontSize(12);
+    doc.text('2. Computed Structural Statics', 14, lastY);
+
+    autoTable(doc, {
+      startY: lastY + 5,
+      head: [['Metric', 'Value', 'Unit']],
+      body: [
+        ['Support Reaction R_A', `${result.reactions?.R_A ?? 0}`, 'kN'],
+        ['Support Reaction R_B', `${result.reactions?.R_B ?? 0}`, 'kN'],
+        ['Maximum Shear Force (V_max)', `${result.critical_values?.max_shear_force ?? 0}`, 'kN'],
+        ['Maximum Bending Moment (M_max)', `${result.critical_values?.max_bending_moment ?? 0}`, 'kN·m'],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [15, 118, 110] }, // teal-700
+    });
+
+    // Verification & Sign-off
+    const signY = (doc as any).lastAutoTable.finalY + 25;
+    doc.setFontSize(11);
+    doc.text('Verification & Approval:', 14, signY);
+
+    doc.setFontSize(9);
+    doc.setTextColor(100);
+    doc.text('Calculations performed using Cloud-Native Beam Analysis API v1.0.', 14, signY + 7);
+    doc.text('Approved by Structural Lead: ___________________________', 14, signY + 20);
+
+    // Download PDF
+    doc.save(`Haya_Structures_Beam_Report_${length}m_${load}kN.pdf`);
+  };
+
   const chartData =
     result?.x_coords?.map((x: number, i: number) => ({
       x: Number(x.toFixed(2)),
@@ -73,10 +143,10 @@ export default function HayaStructures() {
       </Link>
 
       <h1 className="text-3xl font-bold text-cyan-400 mb-1">Haya Structures LLC</h1>
-      <p className="text-slate-400 mb-8">Live Cloud-Native Structural Beam Analysis & Diagrams</p>
+      <p className="text-slate-400 mb-8">Live Cloud-Native Structural Beam Analysis & PDF Report Generator</p>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Input & Key Results Sidebar */}
+        {/* Input Sidebar */}
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
             <h2 className="text-lg font-semibold text-slate-200 mb-4">Beam Parameters</h2>
@@ -111,7 +181,7 @@ export default function HayaStructures() {
           </div>
 
           {result && (
-            <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-3 text-sm text-slate-300">
+            <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-4 text-sm text-slate-300">
               <h3 className="font-bold text-cyan-400 text-base border-b border-slate-700 pb-2">
                 Statics Summary
               </h3>
@@ -120,11 +190,18 @@ export default function HayaStructures() {
               <p><strong>Max Bending Moment:</strong> <span className="text-cyan-300 font-mono">{result.critical_values?.max_bending_moment ?? 0} kN·m</span></p>
               <p><strong>Support R<sub>A</sub>:</strong> <span className="text-cyan-300 font-mono">{result.reactions?.R_A ?? 0} kN</span></p>
               <p><strong>Support R<sub>B</sub>:</strong> <span className="text-cyan-300 font-mono">{result.reactions?.R_B ?? 0} kN</span></p>
+
+              <button
+                onClick={generatePDF}
+                className="w-full mt-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded transition flex items-center justify-center gap-2"
+              >
+                📄 Download PDF Verification Report
+              </button>
             </div>
           )}
         </div>
 
-        {/* Diagrams Display Area */}
+        {/* Diagrams Display */}
         <div className="lg:col-span-8 space-y-6">
           {chartData.length > 0 ? (
             <>
@@ -164,7 +241,7 @@ export default function HayaStructures() {
             </>
           ) : (
             <div className="bg-slate-800/50 p-12 rounded-xl border border-dashed border-slate-700 text-center text-slate-500">
-              Run the analysis to render live Shear Force and Bending Moment diagrams.
+              Run the analysis to render live Shear Force/Bending Moment diagrams & enable PDF export.
             </div>
           )}
         </div>
