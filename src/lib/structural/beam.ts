@@ -1,8 +1,4 @@
-export type ElementType = 'beam' | 'column' | 'truss' | 'plate';
-
 export type SupportType = 'simply_supported' | 'cantilever';
-
-export type BeamLoadType = 'point' | 'udl';
 
 export interface BeamPointLoad {
   type: 'point';
@@ -58,41 +54,6 @@ export interface BeamAnalysisResult {
     moment_of_inertia: number;
   };
 }
-
-export interface ColumnAnalysisRequest {
-  element_type: 'column';
-  span: number;
-  axial_load: number;
-  material?: {
-    modulus?: number;
-  };
-}
-
-export interface TrussAnalysisRequest {
-  element_type: 'truss';
-  node_count: number;
-  members: Array<{ start: number; end: number; area: number }>; 
-  loads: Array<{ node: number; fx: number; fy: number; }>;
-}
-
-export interface PlateAnalysisRequest {
-  element_type: 'plate';
-  width: number;
-  length: number;
-  loads: Array<{ type: 'uniform'; intensity: number; }>;
-}
-
-export type StructuralAnalysisRequest =
-  | BeamAnalysisRequest
-  | ColumnAnalysisRequest
-  | TrussAnalysisRequest
-  | PlateAnalysisRequest;
-
-export type StructuralAnalysisResponse =
-  | BeamAnalysisResult
-  | { element_type: 'column'; message: string }
-  | { element_type: 'truss'; message: string }
-  | { element_type: 'plate'; message: string };
 
 const DEFAULT_MODULUS = 210e9;
 const DEFAULT_MOI = 8.3e-5;
@@ -237,7 +198,7 @@ function computeDeflection(
   return corrected.map((value) => Number((value * 1000).toFixed(6)));
 }
 
-function analyzeBeam(request: BeamAnalysisRequest): BeamAnalysisResult {
+export function analyzeBeam(request: BeamAnalysisRequest): BeamAnalysisResult {
   const span = assertNumber(request.span, 'Beam span');
   if (span <= 0) {
     throw new Error('Beam span must be greater than zero');
@@ -286,36 +247,5 @@ function analyzeBeam(request: BeamAnalysisRequest): BeamAnalysisResult {
     section: {
       moment_of_inertia: momentOfInertia,
     },
-  };
-}
-
-export function analyzeStructure(body: unknown): StructuralAnalysisResponse {
-  if (typeof body !== 'object' || body === null || !('element_type' in body)) {
-    throw new Error('Invalid request body: missing element_type');
-  }
-
-  const request = body as StructuralAnalysisRequest;
-
-  if (request.element_type === 'beam') {
-    return analyzeBeam(request);
-  }
-
-  if (request.element_type === 'column') {
-    return {
-      element_type: 'column',
-      message: 'Column analysis support is coming soon. Current API supports beam analysis.',
-    };
-  }
-
-  if (request.element_type === 'truss') {
-    return {
-      element_type: 'truss',
-      message: 'Truss analysis support is coming soon. Current API supports beam analysis.',
-    };
-  }
-
-  return {
-    element_type: 'plate',
-    message: 'Plate analysis support is coming soon. Current API supports beam analysis.',
   };
 }
