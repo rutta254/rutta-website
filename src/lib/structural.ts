@@ -71,7 +71,7 @@ export interface ColumnAnalysisRequest {
 export interface TrussAnalysisRequest {
   element_type: 'truss';
   node_count: number;
-  members: Array<{ start: number; end: number; area: number; };>
+  members: Array<{ start: number; end: number; area: number }>; 
   loads: Array<{ node: number; fx: number; fy: number; }>;
 }
 
