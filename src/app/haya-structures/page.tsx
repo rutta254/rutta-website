@@ -1,3 +1,4 @@
+'type client';
 'use client';
 
 import { useState } from 'react';
@@ -6,46 +7,42 @@ type ElementType = 'beam' | 'column' | 'truss_2d';
 type BeamSupport = 'simply_supported' | 'cantilever' | 'fixed_fixed';
 type ColumnBoundary = 'pinned_pinned' | 'fixed_free' | 'fixed_fixed';
 
-interface BeamCriticalValues {
-  max_shear_force?: number;
-  max_bending_moment?: number;
+interface PlotPoint {
+  x: number;
+  moment: number;
 }
 
 interface StructuralResult {
-  // Column properties
   effective_length?: number;
   critical_buckling_load_kn?: number;
   applied_load_kn?: number;
   is_safe?: boolean;
-  // Beam properties
-  critical_values?: BeamCriticalValues;
+  // Support both nested and flattened structures
+  critical_values?: {
+    max_shear_force?: number;
+    max_bending_moment?: number;
+  };
+  max_shear_force?: number;
+  max_bending_moment?: number;
   reactions?: Record<string, number>;
-  // Generic status / message
+  plot_points?: PlotPoint[];
   status?: string;
   message?: string;
 }
 
 export default function StructuralAnalysisTool() {
   const [elementType, setElementType] = useState<ElementType>('beam');
-
-  // Shared Parameters
   const [length, setLength] = useState<number>(6);
   const [load, setLoad] = useState<number>(10);
-
-  // Beam Specifics
   const [support, setSupport] = useState<BeamSupport>('simply_supported');
-
-  // Column Specifics
-  const [axialLoad, setAxialLoad] = useState<number>(150); // kN
+  const [axialLoad, setAxialLoad] = useState<number>(150);
   const [boundary, setBoundary] = useState<ColumnBoundary>('pinned_pinned');
-
-  // Truss Specifics
   const [trussNodes, setTrussNodes] = useState<number>(3);
   const [trussMembers, setTrussMembers] = useState<number>(3);
 
-  // Results & Loading State
   const [result, setResult] = useState<StructuralResult | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [downloadingPdf, setDownloadingPdf] = useState<boolean>(false);
 
   const handleAnalyze = async () => {
     setLoading(true);
@@ -58,13 +55,13 @@ export default function StructuralAnalysisTool() {
         ...payload,
         span: Number(length),
         support,
-        loads: [{ type: 'point', magnitude: Number(load), position: Number(length) / 2 }],
+        load: Number(load),
       };
     } else if (elementType === 'column') {
       payload = {
         ...payload,
         length: Number(length),
-        axial_load: Number(axialLoad),
+        load: Number(axialLoad),
         boundary,
       };
     } else if (elementType === 'truss_2d') {
@@ -72,7 +69,7 @@ export default function StructuralAnalysisTool() {
         ...payload,
         nodes_count: Number(trussNodes),
         members_count: Number(trussMembers),
-        applied_load: Number(load),
+        load: Number(load),
       };
     }
 
@@ -84,8 +81,11 @@ export default function StructuralAnalysisTool() {
       });
 
       if (!res.ok) throw new Error(`Server returned status ${res.status}`);
-      const data = await res.json();
-      setResult(data.data || data);
+      const jsonResponse = await res.json();
+      
+      // Safely extract data whether nested under 'data' or returned directly
+      const actualData = jsonResponse.data !== undefined ? jsonResponse.data : jsonResponse;
+      setResult(actualData);
     } catch (err) {
       console.error(err);
       alert('Error connecting to backend API.');
@@ -93,6 +93,47 @@ export default function StructuralAnalysisTool() {
       setLoading(false);
     }
   };
+
+  const handleDownloadPdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      let payload: Record<string, unknown> = {
+        element_type: elementType,
+        span: Number(length),
+        length: Number(length),
+        load: elementType === 'column' ? Number(axialLoad) : Number(load),
+        support,
+        boundary,
+        action: 'pdf',
+      };
+
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error('PDF download failed');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'rutta_structural_report.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      console.error(err);
+      alert('Could not download PDF report.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  // Helper values to prevent N/A bugs
+  const shearVal = result?.critical_values?.max_shear_force ?? result?.max_shear_force;
+  const momentVal = result?.critical_values?.max_bending_moment ?? result?.max_bending_moment;
 
   return (
     <div className="min-h-screen bg-slate-900 text-white p-6 font-sans">
@@ -117,7 +158,6 @@ export default function StructuralAnalysisTool() {
 
           <hr className="border-slate-700" />
 
-          {/* Dynamic Form Inputs based on Element */}
           {elementType === 'beam' && (
             <>
               <div>
@@ -142,7 +182,7 @@ export default function StructuralAnalysisTool() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-slate-300">Mid-Span Point Load (kN):</label>
+                <label className="block text-sm text-slate-300">Uniform/Point Load (kN/m or kN):</label>
                 <input
                   type="number"
                   value={load}
@@ -230,52 +270,101 @@ export default function StructuralAnalysisTool() {
         </div>
 
         {/* Dynamic Display Area */}
-        <div className="lg:col-span-8 bg-slate-800 p-6 rounded-xl border border-slate-700">
-          <h2 className="text-lg font-bold text-cyan-400 mb-4">Structural Results</h2>
+        <div className="lg:col-span-8 bg-slate-800 p-6 rounded-xl border border-slate-700 flex flex-col justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-cyan-400 mb-4">Structural Results</h2>
 
-          {!result ? (
-            <p className="text-slate-500 text-center py-12">Select element type and click Analyze to generate results.</p>
-          ) : (
-            <div className="space-y-4 text-sm">
-              {elementType === 'column' && (
-                <div className="space-y-2">
-                  <p><strong>Effective Length (Le):</strong> {result.effective_length ?? 'N/A'} m</p>
-                  <p>
-                    <strong>Euler Critical Buckling Load (P_cr):</strong>{' '}
-                    <span className="text-emerald-400 font-mono font-bold">
-                      {result.critical_buckling_load_kn ?? 'N/A'} kN
-                    </span>
-                  </p>
-                  <p><strong>Applied Load (P_apply):</strong> {result.applied_load_kn ?? axialLoad} kN</p>
-                  <p>
-                    <strong>Status:</strong>{' '}
-                    {result.is_safe ? (
-                      <span className="text-emerald-400 font-bold">PASS (No Buckling)</span>
-                    ) : (
-                      <span className="text-rose-500 font-bold">FAIL (Buckling Risk!)</span>
-                    )}
-                  </p>
-                </div>
-              )}
-
-              {elementType === 'beam' && (
-                <div className="space-y-2">
-                  <p><strong>Max Shear Force:</strong> {result.critical_values?.max_shear_force ?? 'N/A'} kN</p>
-                  <p><strong>Max Bending Moment:</strong> {result.critical_values?.max_bending_moment ?? 'N/A'} kN·m</p>
-                  {result.reactions && (
+            {!result ? (
+              <p className="text-slate-500 text-center py-12">Select element type and click Analyze to generate results.</p>
+            ) : (
+              <div className="space-y-4 text-sm">
+                {elementType === 'column' && (
+                  <div className="space-y-2">
+                    <p><strong>Effective Length (Le):</strong> {result.effective_length ?? 'N/A'} m</p>
                     <p>
-                      <strong>Reactions:</strong> R_A = {result.reactions.R_A ?? 0} kN, R_B = {result.reactions.R_B ?? 0} kN
+                      <strong>Euler Critical Buckling Load (P_cr):</strong>{' '}
+                      <span className="text-emerald-400 font-mono font-bold">
+                        {result.critical_buckling_load_kn ?? 'N/A'} kN
+                      </span>
                     </p>
-                  )}
-                </div>
-              )}
+                    <p><strong>Applied Load (P_apply):</strong> {result.applied_load_kn ?? axialLoad} kN</p>
+                    <p>
+                      <strong>Status:</strong>{' '}
+                      {result.is_safe ? (
+                        <span className="text-emerald-400 font-bold">PASS (No Buckling)</span>
+                      ) : (
+                        <span className="text-rose-500 font-bold">FAIL (Buckling Risk!)</span>
+                      )}
+                    </p>
+                  </div>
+                )}
 
-              {elementType === 'truss_2d' && (
-                <div className="space-y-2">
-                  <p><strong>Status:</strong> {result.status || 'Analysis complete'}</p>
-                  {result.message && <p>{result.message}</p>}
-                </div>
-              )}
+                {elementType === 'beam' && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4 bg-slate-900 p-4 rounded border border-slate-700">
+                      <div>
+                        <p className="text-slate-400 text-xs">Max Shear Force</p>
+                        <p className="text-xl font-bold text-cyan-400">
+                          {shearVal !== undefined ? `${shearVal} kN` : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-400 text-xs">Max Bending Moment</p>
+                        <p className="text-xl font-bold text-emerald-400">
+                          {momentVal !== undefined ? `${momentVal} kN·m` : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {result.reactions && (
+                      <p>
+                        <strong>Reactions:</strong> R_A = {result.reactions.R_A ?? 0} kN, R_B = {result.reactions.R_B ?? 0} kN
+                      </p>
+                    )}
+
+                    {result.plot_points && result.plot_points.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-xs text-slate-400 mb-2">Bending Moment Distribution Profile (X vs M):</p>
+                        <div className="bg-slate-900 p-3 rounded border border-slate-700 h-36 flex items-end gap-1 overflow-x-auto">
+                          {result.plot_points.map((pt, idx) => {
+                            const maxM = Math.max(...result.plot_points!.map(p => Math.abs(p.moment)), 1);
+                            const heightPct = Math.max(Math.round((Math.abs(pt.moment) / maxM) * 100), 5);
+                            return (
+                              <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative">
+                                <div 
+                                  className="w-full bg-cyan-500 hover:bg-cyan-400 rounded-t transition-all"
+                                  style={{ height: `${heightPct}%` }}
+                                />
+                                <span className="text-[9px] text-slate-400 mt-1">{pt.x}m</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {elementType === 'truss_2d' && (
+                  <div className="space-y-2">
+                    <p><strong>Status:</strong> {result.status || 'Analysis complete'}</p>
+                    {result.message && <p>{result.message}</p>}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {result && (
+            <div className="mt-6 pt-4 border-t border-slate-700 flex justify-between items-center">
+              <span className="text-xs text-slate-400">Calculation engine synced</span>
+              <button
+                onClick={handleDownloadPdf}
+                disabled={downloadingPdf}
+                className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-4 py-2 rounded text-xs transition disabled:opacity-50"
+              >
+                {downloadingPdf ? 'Generating PDF...' : 'Download PDF Report'}
+              </button>
             </div>
           )}
         </div>
