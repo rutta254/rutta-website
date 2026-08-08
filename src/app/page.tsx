@@ -5,9 +5,11 @@ export default function Home() {
     <main className="min-h-screen bg-black text-white font-sans selection:bg-white selection:text-black">
       {/* Top Navigation Bar */}
       <nav className="flex justify-between items-center px-8 py-6 border-b border-neutral-800 sticky top-0 bg-black/90 backdrop-blur-md z-50">
-        <h1 className="text-3xl font-extrabold tracking-tight text-white font-['Plus_Jakarta_Sans']">
-          RUTTA<span className="text-neutral-400">.COM</span>
+        {/* Larger, rounded typography for RUTTA.COM */}
+        <h1 className="text-4xl font-black tracking-tight text-white font-['Plus_Jakarta_Sans'] uppercase">
+          RUTTA<span className="text-neutral-500 font-light">.COM</span>
         </h1>
+        
         <div className="space-x-8 text-sm font-semibold tracking-wide">
           <Link href="#haya" className="text-neutral-400 hover:text-white transition">Haya Structures</Link>
           <Link href="#cloudmore" className="text-neutral-400 hover:text-white transition">Cloudmore</Link>
@@ -22,7 +24,7 @@ export default function Home() {
           Central Hub & Portfolio
         </div>
         
-        {/* Forces the main heading text to fit on a single line on medium/large screens */}
+        {/* Single-line responsive hero heading */}
         <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6 text-white whitespace-nowrap">
           Engineering, Apparel & Visual Art
         </h2>
