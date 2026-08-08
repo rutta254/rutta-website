@@ -3,3 +3,4 @@ uvicorn>=0.28.0
 pydantic>=2.7.0
 numpy
 scipy
+reportlab>=4.0.0
