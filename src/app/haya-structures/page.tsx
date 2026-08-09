@@ -16,21 +16,48 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
+interface LoadItem {
+  id: string;
+  type: 'point' | 'udl' | 'moment' | 'triangular';
+  magnitude: number;
+  magnitudeEnd?: number; // For trapezoidal/triangular loads
+  position: number;      // Start position or point load position
+  length?: number;       // Span length of distributed load
+}
+
 export default function HayaStructuresHub() {
-  // Primary Navigation Toggles: 'analysis' | 'design' | 'consultancy' | 'projects'
   const [activeTab, setActiveTab] = useState<'analysis' | 'design' | 'consultancy' | 'projects'>('analysis');
-  
-  // Structural Element Sub-Toggles for Analysis Mode
   const [structuralElement, setStructuralElement] = useState<'beam' | 'column' | 'slab' | 'wall' | 'truss' | 'foundation' | 'frame'>('beam');
 
   // Beam Calculator States
-  const [length, setLength] = useState(6);
-  const [load, setLoad] = useState(10);
-  const [support, setSupport] = useState<'simply_supported' | 'cantilever'>('simply_supported');
+  const [length, setLength] = useState<number>(6);
+  const [support, setSupport] = useState<'simply_supported' | 'cantilever' | 'fixed_fixed' | 'propped_cantilever'>('simply_supported');
+  
+  // Advanced Multi-Load State
+  const [loads, setLoads] = useState<LoadItem[]>([
+    { id: '1', type: 'point', magnitude: 15, position: 3 }
+  ]);
+
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const chartsRef = useRef<HTMLDivElement>(null);
+
+  // Load Management Handlers
+  const addLoad = () => {
+    setLoads([
+      ...loads,
+      { id: Date.now().toString(), type: 'point', magnitude: 10, position: length / 2 }
+    ]);
+  };
+
+  const removeLoad = (id: string) => {
+    setLoads(loads.filter(l => l.id !== id));
+  };
+
+  const updateLoad = (id: string, field: keyof LoadItem, value: any) => {
+    setLoads(loads.map(l => l.id === id ? { ...l, [field]: value } : l));
+  };
 
   const handleAnalyze = async () => {
     setLoading(true);
@@ -39,7 +66,13 @@ export default function HayaStructuresHub() {
         element_type: 'beam',
         span: Number(length),
         support,
-        loads: [{ type: 'point', magnitude: Number(load), position: Number(length) / 2 }],
+        loads: loads.map(l => ({
+          type: l.type,
+          magnitude: Number(l.magnitude),
+          magnitudeEnd: l.magnitudeEnd !== undefined ? Number(l.magnitudeEnd) : undefined,
+          position: Number(l.position),
+          length: l.length !== undefined ? Number(l.length) : undefined,
+        })),
       };
 
       const res = await fetch('/api/analyze', {
@@ -53,7 +86,7 @@ export default function HayaStructuresHub() {
       setResult(data.data || data);
     } catch (err) {
       console.error(err);
-      alert('Error connecting to backend API.');
+      alert('Error connecting to backend API or computing finite element response.');
     } finally {
       setLoading(false);
     }
@@ -66,59 +99,69 @@ export default function HayaStructuresHub() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
+      // Header Branding
       doc.setFontSize(18);
       doc.setTextColor(15, 23, 42);
       doc.text('HAYA STRUCTURES LLC', 14, 20);
       doc.setFontSize(12);
       doc.setTextColor(100);
-      doc.text('Structural Beam Verification Report', 14, 28);
+      doc.text('Advanced Structural Beam Verification Report', 14, 28);
       doc.setFontSize(10);
       doc.text(`Date Generated: ${dateStr}`, 14, 34);
       doc.line(14, 40, 196, 40);
 
+      // Design Inputs Table
       doc.setFontSize(12);
-      doc.text('1. Design Input Parameters', 14, 48);
+      doc.text('1. Design Input Parameters & Support Configuration', 14, 48);
       autoTable(doc, {
         startY: 52,
         head: [['Parameter', 'Value', 'Unit']],
         body: [
           ['Beam Span', `${result.span ?? length}`, 'm'],
-          ['Support Type', `${support.replace('_', ' ')}`, '-'],
-          ['Point Load', `${load}`, 'kN'],
+          ['Support Type', `${support.replace('_', ' ').toUpperCase()}`, '-'],
+          ['Total Active Loads', `${loads.length}`, 'items'],
         ],
         theme: 'striped',
         headStyles: { fillColor: [14, 116, 144] },
       });
 
       let lastY = (doc as any).lastAutoTable.finalY + 10;
-      doc.text('2. Computed Statics', 14, lastY);
+      doc.text('2. Computed Reaction Statics & Critical Extremes', 14, lastY);
       autoTable(doc, {
         startY: lastY + 4,
         head: [['Metric', 'Value', 'Unit']],
         body: [
-          ['Reaction R_A', `${result.reactions?.R_A ?? 0}`, 'kN'],
-          ['Reaction R_B', `${result.reactions?.R_B ?? 0}`, 'kN'],
+          ['Reaction R_A (Left Support)', `${result.reactions?.R_A ?? 0}`, 'kN'],
+          ['Reaction R_B (Right Support)', `${result.reactions?.R_B ?? 0}`, 'kN'],
           ['Max Shear Force (V_max)', `${result.critical_values?.max_shear_force ?? 0}`, 'kN'],
           ['Max Bending Moment (M_max)', `${result.critical_values?.max_bending_moment ?? 0}`, 'kN·m'],
+          ['Max Deflection (Δ_max)', `${result.critical_values?.max_deflection ?? 0}`, 'mm'],
         ],
         theme: 'striped',
         headStyles: { fillColor: [15, 118, 110] },
       });
 
+      // Embed Graphs via html2canvas
       if (chartsRef.current) {
-        const canvas = await html2canvas(chartsRef.current, { scale: 2 });
+        const canvas = await html2canvas(chartsRef.current, { scale: 2, useCORS: true });
         const imgData = canvas.toDataURL('image/png');
         lastY = (doc as any).lastAutoTable.finalY + 10;
 
-        if (lastY > 190) { doc.addPage(); lastY = 20; }
-        doc.text('3. SFD & BMD Diagrams', 14, lastY);
-        doc.addImage(imgData, 'PNG', 14, lastY + 4, 182, 75);
+        if (lastY > 180) { 
+          doc.addPage(); 
+          lastY = 20; 
+        }
+        
+        doc.setFontSize(12);
+        doc.setTextColor(15, 23, 42);
+        doc.text('3. Shear Force & Bending Moment Diagrams (SFD & BMD)', 14, lastY);
+        doc.addImage(imgData, 'PNG', 14, lastY + 4, 182, 85);
       }
 
-      doc.save(`Haya_Structures_Report_${length}m.pdf`);
+      doc.save(`Haya_Structures_Beam_${length}m_Report.pdf`);
     } catch (err) {
       console.error(err);
-      alert('Failed to generate PDF.');
+      alert('Failed to generate PDF export package.');
     } finally {
       setDownloadingPdf(false);
     }
@@ -141,7 +184,7 @@ export default function HayaStructuresHub() {
               ← Back to Rutta.com Home
             </Link>
             <h1 className="text-3xl font-extrabold text-cyan-400 mt-1">HAYA STRUCTURES SUITE</h1>
-            <p className="text-sm text-slate-400">Integrated Structural Engineering Platform</p>
+            <p className="text-sm text-slate-400">Integrated Structural Engineering & Finite Element Analysis Platform</p>
           </div>
 
           <div className="flex bg-slate-900 p-1.5 rounded-xl border border-slate-800 gap-1 flex-wrap">
@@ -192,13 +235,16 @@ export default function HayaStructuresHub() {
               </div>
             </div>
 
-            {/* Render Calculator based on Sub-Toggle */}
+            {/* Beam Calculator Module */}
             {structuralElement === 'beam' ? (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-4 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800">
-                  <h3 className="font-semibold text-slate-200">Beam Design Parameters</h3>
+                
+                {/* Left Controls Panel */}
+                <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800">
+                  <h3 className="font-semibold text-slate-200 border-b border-slate-800 pb-2">Beam Geometry & Supports</h3>
+                  
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Span Length (m)</label>
+                    <label className="block text-xs text-slate-400 mb-1">Span Length L (m)</label>
                     <input
                       type="number"
                       value={length}
@@ -206,95 +252,196 @@ export default function HayaStructuresHub() {
                       className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200"
                     />
                   </div>
+
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Support Condition</label>
+                    <label className="block text-xs text-slate-400 mb-1">Support Condition Type</label>
                     <select
                       value={support}
                       onChange={(e) => setSupport(e.target.value as any)}
                       className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200"
                     >
-                      <option value="simply_supported">Simply Supported</option>
-                      <option value="cantilever">Cantilever</option>
+                      <option value="simply_supported">Simply Supported (Pinned-Pinned)</option>
+                      <option value="cantilever">Cantilever (Fixed-Free)</option>
+                      <option value="fixed_fixed">Fixed - Fixed</option>
+                      <option value="propped_cantilever">Propped Cantilever (Fixed-Pinned)</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Point Load (kN)</label>
-                    <input
-                      type="number"
-                      value={load}
-                      onChange={(e) => setLoad(Number(e.target.value))}
-                      className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200"
-                    />
+
+                  {/* Multi-Load Manager */}
+                  <div className="pt-2 border-t border-slate-800 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-semibold text-slate-200 text-sm">Applied Loads Configuration</h4>
+                      <button
+                        onClick={addLoad}
+                        className="text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-2.5 py-1 rounded hover:bg-cyan-500/30 transition"
+                      >
+                        + Add Load
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                      {loads.map((loadItem, index) => (
+                        <div key={loadItem.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2 relative">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-cyan-400">Load #{index + 1}</span>
+                            {loads.length > 1 && (
+                              <button onClick={() => removeLoad(loadItem.id)} className="text-red-400 hover:text-red-300 text-xs">
+                                Remove
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] text-slate-400">Type</label>
+                              <select
+                                value={loadItem.type}
+                                onChange={(e) => updateLoad(loadItem.id, 'type', e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200"
+                              >
+                                <option value="point">Point Load (kN)</option>
+                                <option value="udl">UDL (kN/m)</option>
+                                <option value="moment">Moment (kN·m)</option>
+                                <option value="triangular">Triangular / Trapezoidal</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] text-slate-400">
+                                {loadItem.type === 'udl' ? 'Intensity (kN/m)' : loadItem.type === 'moment' ? 'Moment (kN·m)' : 'Magnitude (kN)'}
+                              </label>
+                              <input
+                                type="number"
+                                value={loadItem.magnitude}
+                                onChange={(e) => updateLoad(loadItem.id, 'magnitude', Number(e.target.value))}
+                                className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] text-slate-400">Position / Start (m)</label>
+                              <input
+                                type="number"
+                                value={loadItem.position}
+                                onChange={(e) => updateLoad(loadItem.id, 'position', Number(e.target.value))}
+                                className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200"
+                              />
+                            </div>
+
+                            {(loadItem.type === 'udl' || loadItem.type === 'triangular') && (
+                              <div>
+                                <label className="block text-[10px] text-slate-400">Distributed Length (m)</label>
+                                <input
+                                  type="number"
+                                  value={loadItem.length ?? length}
+                                  onChange={(e) => updateLoad(loadItem.id, 'length', Number(e.target.value))}
+                                  className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200"
+                                />
+                              </div>
+                            )}
+
+                            {loadItem.type === 'triangular' && (
+                              <div>
+                                <label className="block text-[10px] text-slate-400">End Magnitude (kN/m)</label>
+                                <input
+                                  type="number"
+                                  value={loadItem.magnitudeEnd ?? 0}
+                                  onChange={(e) => updateLoad(loadItem.id, 'magnitudeEnd', Number(e.target.value))}
+                                  className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
+
                   <button
                     onClick={handleAnalyze}
                     disabled={loading}
-                    className="w-full bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold py-2.5 rounded transition disabled:opacity-50"
+                    className="w-full bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold py-2.5 rounded transition disabled:opacity-50 mt-4"
                   >
-                    {loading ? 'Analyzing...' : 'Run Beam Analysis'}
+                    {loading ? 'Running FEM & Equilibrium Solver...' : 'Run Comprehensive Beam Analysis'}
                   </button>
 
                   {result && (
-                    <div className="mt-4 pt-4 border-t border-slate-800 space-y-2 text-sm">
-                      <p>Max Shear: <span className="text-cyan-400 font-mono">{result.critical_values?.max_shear_force ?? 0} kN</span></p>
-                      <p>Max Moment: <span className="text-emerald-400 font-mono">{result.critical_values?.max_bending_moment ?? 0} kN·m</span></p>
+                    <div className="mt-4 pt-4 border-t border-slate-800 space-y-2 text-sm bg-slate-950 p-3 rounded-lg border border-slate-800">
+                      <p className="text-xs text-slate-400 font-bold uppercase mb-1">Computed Summary:</p>
+                      <p>Left Reaction (R_A): <span className="text-cyan-400 font-mono">{result.reactions?.R_A ?? 0} kN</span></p>
+                      <p>Right Reaction (R_B): <span className="text-cyan-400 font-mono">{result.reactions?.R_B ?? 0} kN</span></p>
+                      <p>Max Shear Force: <span className="text-cyan-400 font-mono">{result.critical_values?.max_shear_force ?? 0} kN</span></p>
+                      <p>Max Bending Moment: <span className="text-emerald-400 font-mono">{result.critical_values?.max_bending_moment ?? 0} kN·m</span></p>
+                      
                       <button
                         onClick={generatePDF}
                         disabled={downloadingPdf}
-                        className="w-full mt-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded transition"
+                        className="w-full mt-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded transition shadow-lg"
                       >
-                        {downloadingPdf ? 'Generating PDF...' : '📄 Download PDF Report'}
+                        {downloadingPdf ? 'Generating PDF Report...' : '📄 Download PDF Report (With Graphs)'}
                       </button>
                     </div>
                   )}
                 </div>
 
-                <div className="lg:col-span-8 bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
+                {/* Right Visual Plots Panel (Captured for PDF) */}
+                <div className="lg:col-span-7 bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
                   {chartData.length > 0 ? (
-                    <div ref={chartsRef} className="space-y-6 bg-slate-900 p-2">
+                    <div ref={chartsRef} className="space-y-6 bg-slate-900 p-3 rounded-lg">
+                      <div className="text-xs font-bold text-slate-300 mb-2 border-b border-slate-800 pb-1 flex justify-between">
+                        <span>HAYA STRUCTURES - BEAM ANALYSIS RESULTS</span>
+                        <span className="text-cyan-400 font-mono">Span: {length}m | {support.toUpperCase()}</span>
+                      </div>
+
+                      {/* Shear Force Diagram (SFD) */}
                       <div>
-                        <h4 className="text-xs font-semibold text-cyan-400 mb-2 uppercase">Shear Force Diagram (SFD)</h4>
-                        <div className="h-44 w-full bg-slate-950/50 p-2 rounded border border-slate-800">
+                        <h4 className="text-xs font-semibold text-cyan-400 mb-1 uppercase">Shear Force Diagram (SFD) [kN]</h4>
+                        <div className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={chartData}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                               <XAxis dataKey="x" stroke="#64748b" fontSize={10} unit="m" />
                               <YAxis stroke="#64748b" fontSize={10} unit="kN" />
                               <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '11px' }} />
-                              <ReferenceLine y={0} stroke="#475569" />
-                              <Line type="monotone" dataKey="Shear" stroke="#38bdf8" strokeWidth={2} dot={false} />
+                              <ReferenceLine y={0} stroke="#475569" strokeWidth={1.5} />
+                              <Line type="monotone" dataKey="Shear" stroke="#38bdf8" strokeWidth={2.5} dot={false} />
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
                       </div>
 
+                      {/* Bending Moment Diagram (BMD) */}
                       <div>
-                        <h4 className="text-xs font-semibold text-emerald-400 mb-2 uppercase">Bending Moment Diagram (BMD)</h4>
-                        <div className="h-44 w-full bg-slate-950/50 p-2 rounded border border-slate-800">
+                        <h4 className="text-xs font-semibold text-emerald-400 mb-1 uppercase">Bending Moment Diagram (BMD) [kN·m]</h4>
+                        <div className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={chartData}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                               <XAxis dataKey="x" stroke="#64748b" fontSize={10} unit="m" />
                               <YAxis stroke="#64748b" fontSize={10} unit="kN·m" />
                               <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '11px' }} />
-                              <ReferenceLine y={0} stroke="#475569" />
-                              <Line type="monotone" dataKey="Moment" stroke="#34d399" strokeWidth={2} dot={false} />
+                              <ReferenceLine y={0} stroke="#475569" strokeWidth={1.5} />
+                              <Line type="monotone" dataKey="Moment" stroke="#34d399" strokeWidth={2.5} dot={false} />
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="text-center text-slate-500 py-20">
-                      Configure your beam parameters and click &quot;Run Beam Analysis&quot; to render diagrams.
+                    <div className="text-center text-slate-500 py-32 space-y-2">
+                      <p className="text-lg">Configure your beam parameters and multi-load profiles.</p>
+                      <p className="text-xs">Click &quot;Run Comprehensive Beam Analysis&quot; to generate SFD, BMD, and printable PDF reports.</p>
                     </div>
                   )}
                 </div>
+
               </div>
             ) : (
               <div className="bg-slate-900 p-12 rounded-xl border border-slate-800 text-center text-slate-400">
                 <h3 className="text-xl font-semibold text-cyan-400 mb-2 capitalize">{structuralElement} Analysis Module</h3>
-                <p>Finite element modeling and boundary formulations for {structuralElement}s are initializing.</p>
+                <p>Finite element matrix formulations and boundary solvers for {structuralElement} elements are initializing.</p>
               </div>
             )}
           </div>
