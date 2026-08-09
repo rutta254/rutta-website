@@ -1,382 +1,299 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import Link from 'next/link';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine,
+} from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 
-type ElementType = 'beam' | 'column' | 'truss_2d';
-type BeamSupport = 'simply_supported' | 'cantilever' | 'fixed_fixed';
-type ColumnBoundary = 'pinned_pinned' | 'fixed_free' | 'fixed_fixed';
+export default function HayaStructures() {
+  const [length, setLength] = useState(6);
+  const [load, setLoad] = useState(10);
+  const [support, setSupport] = useState<'simply_supported' | 'cantilever'>('simply_supported');
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
-interface PlotPoint {
-  x: number;
-  moment: number;
-}
-
-interface StructuralResult {
-  effective_length?: number;
-  critical_buckling_load_kn?: number;
-  applied_load_kn?: number;
-  is_safe?: boolean;
-  // Support both nested and flattened structures
-  critical_values?: {
-    max_shear_force?: number;
-    max_bending_moment?: number;
-  };
-  max_shear_force?: number;
-  max_bending_moment?: number;
-  reactions?: Record<string, number>;
-  plot_points?: PlotPoint[];
-  status?: string;
-  message?: string;
-}
-
-export default function StructuralAnalysisTool() {
-  const [elementType, setElementType] = useState<ElementType>('beam');
-  const [length, setLength] = useState<number>(6);
-  const [load, setLoad] = useState<number>(10);
-  const [support, setSupport] = useState<BeamSupport>('simply_supported');
-  const [axialLoad, setAxialLoad] = useState<number>(150);
-  const [boundary, setBoundary] = useState<ColumnBoundary>('pinned_pinned');
-  const [trussNodes, setTrussNodes] = useState<number>(3);
-  const [trussMembers, setTrussMembers] = useState<number>(3);
-
-  const [result, setResult] = useState<StructuralResult | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [downloadingPdf, setDownloadingPdf] = useState<boolean>(false);
+  // Reference for the charts container to capture for the PDF report
+  const chartsRef = useRef<HTMLDivElement>(null);
 
   const handleAnalyze = async () => {
     setLoading(true);
-    setResult(null);
-
-    let payload: Record<string, unknown> = { element_type: elementType };
-
-    if (elementType === 'beam') {
-      payload = {
-        ...payload,
+    try {
+      const payload = {
+        element_type: 'beam',
         span: Number(length),
         support,
-        load: Number(load),
+        loads: [
+          {
+            type: 'point',
+            magnitude: Number(load),
+            position: Number(length) / 2,
+          },
+        ],
       };
-    } else if (elementType === 'column') {
-      payload = {
-        ...payload,
-        length: Number(length),
-        load: Number(axialLoad),
-        boundary,
-      };
-    } else if (elementType === 'truss_2d') {
-      payload = {
-        ...payload,
-        nodes_count: Number(trussNodes),
-        members_count: Number(trussMembers),
-        load: Number(load),
-      };
-    }
 
-    try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error(`Server returned status ${res.status}`);
-      const jsonResponse = await res.json();
-      
-      // Safely extract data whether nested under 'data' or returned directly
-      const actualData = jsonResponse.data !== undefined ? jsonResponse.data : jsonResponse;
-      setResult(actualData);
+      if (!res.ok) {
+        throw new Error(`Server returned status ${res.status}`);
+      }
+      const data = await res.json();
+      setResult(data.data || data);
     } catch (err) {
       console.error(err);
-      alert('Error connecting to backend API.');
+      alert('Error connecting to backend API. Please check your Render service status.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDownloadPdf = async () => {
+  // Enhanced PDF generator capturing both statics and chart graphics
+  const generatePDF = async () => {
+    if (!result) return;
     setDownloadingPdf(true);
-    try {
-      let payload: Record<string, unknown> = {
-        element_type: elementType,
-        span: Number(length),
-        length: Number(length),
-        load: elementType === 'column' ? Number(axialLoad) : Number(load),
-        support,
-        boundary,
-        action: 'pdf',
-      };
 
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+    try {
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const dateStr = new Date().toLocaleDateString();
+
+      // Header Title
+      doc.setFontSize(18);
+      doc.setTextColor(15, 23, 42); // slate-900
+      doc.text('HAYA STRUCTURES LLC', 14, 20);
+      doc.setFontSize(12);
+      doc.setTextColor(100);
+      doc.text('Structural Beam Verification Report', 14, 28);
+      doc.setFontSize(10);
+      doc.text(`Date Generated: ${dateStr}`, 14, 34);
+      doc.text('Engineered via Cloud API Pipeline', 14, 40);
+      doc.line(14, 45, 196, 45); // Horizontal divider
+
+      // Input Parameters Section
+      doc.setFontSize(12);
+      doc.setTextColor(15, 23, 42);
+      doc.text('1. Design Input Parameters', 14, 53);
+
+      autoTable(doc, {
+        startY: 57,
+        head: [['Parameter', 'Value', 'Unit']],
+        body: [
+          ['Beam Span / Length', `${result.span ?? length}`, 'm'],
+          ['Support Configuration', `${support.replace('_', ' ')}`, '-'],
+          ['Point Load Magnitude', `${load}`, 'kN'],
+          ['Point Load Location', `${Number(length) / 2}`, 'm (Mid-span)'],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [14, 116, 144] }, // cyan-700
       });
 
-      if (!res.ok) throw new Error('PDF download failed');
+      // Statics Results Section
+      let lastY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFontSize(12);
+      doc.text('2. Computed Structural Statics', 14, lastY);
 
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'rutta_structural_report.pdf';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (err) {
-      console.error(err);
-      alert('Could not download PDF report.');
+      autoTable(doc, {
+        startY: lastY + 4,
+        head: [['Metric', 'Value', 'Unit']],
+        body: [
+          ['Support Reaction R_A', `${result.reactions?.R_A ?? 0}`, 'kN'],
+          ['Support Reaction R_B', `${result.reactions?.R_B ?? 0}`, 'kN'],
+          ['Maximum Shear Force (V_max)', `${result.critical_values?.max_shear_force ?? 0}`, 'kN'],
+          ['Maximum Bending Moment (M_max)', `${result.critical_values?.max_bending_moment ?? 0}`, 'kN·m'],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [15, 118, 110] }, // teal-700
+      });
+
+      // Capture Charts Element as Image and Embed into PDF
+      if (chartsRef.current) {
+        const canvas = await html2canvas(chartsRef.current, { scale: 2 });
+        const imgData = canvas.toDataURL('image/png');
+
+        lastY = (doc as any).lastAutoTable.finalY + 10;
+        
+        // Check if we need a new page for charts
+        if (lastY > 200) {
+          doc.addPage();
+          lastY = 20;
+        }
+
+        doc.setFontSize(12);
+        doc.setTextColor(15, 23, 42);
+        doc.text('3. Shear Force & Bending Moment Diagrams', 14, lastY);
+
+        const imgWidth = 182; // mm (196 - 14 margins)
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        doc.addImage(imgData, 'PNG', 14, lastY + 4, imgWidth, Math.min(imgHeight, 80));
+      }
+
+      // Verification & Sign-off
+      const signY = 270; 
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text('Calculations performed using Cloud-Native Beam Analysis API v1.0.', 14, signY);
+      doc.text('Approved by Structural Lead: _________________________', 14, signY + 6);
+
+      // Download PDF
+      doc.save(`Haya_Structures_Beam_Report_${length}m_${load}kN.pdf`);
+    } catch (error) {
+      console.error('PDF Generation Error:', error);
+      alert('Failed to generate PDF report.');
     } finally {
       setDownloadingPdf(false);
     }
   };
 
-  // Helper values to prevent N/A bugs
-  const shearVal = result?.critical_values?.max_shear_force ?? result?.max_shear_force;
-  const momentVal = result?.critical_values?.max_bending_moment ?? result?.max_bending_moment;
+  const chartData =
+    result?.x_coords?.map((x: number, i: number) => ({
+      x: Number(x.toFixed(2)),
+      Shear: Number((result.shear_force?.[i] ?? 0).toFixed(2)),
+      Moment: Number((result.bending_moment?.[i] ?? 0).toFixed(2)),
+      Deflection: Number((result.deflection_mm?.[i] ?? 0).toFixed(3)),
+    })) || [];
 
   return (
-    <div className="min-h-screen bg-black text-white p-6 font-sans">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-extrabold text-white mb-2 font-['Plus_Jakarta_Sans']">
-          Haya Structures Analysis Suite
-        </h1>
-        <p className="text-neutral-400 mb-8">Multi-Element Structural Calculation Engine</p>
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Navigation & Header */}
+        <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+          <div>
+            <Link href="/" className="text-cyan-400 text-sm hover:underline">
+              ← Back to Rutta.com Home
+            </Link>
+            <h1 className="text-2xl font-bold tracking-tight text-cyan-400 mt-1">
+              HAYA STRUCTURES LLC
+            </h1>
+            <p className="text-sm text-slate-400">
+              Live Cloud-Native Structural Beam Analysis & PDF Report Generator
+            </p>
+          </div>
+        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Sidebar Controls */}
-          <div className="lg:col-span-4 bg-neutral-950 p-6 rounded-3xl border border-neutral-800 space-y-6 shadow-2xl">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left Column: Controls & Summary */}
+          <div className="lg:col-span-4 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800">
+            <h2 className="font-semibold text-slate-200">Design Parameters</h2>
+            
             <div>
-              <label className="block text-sm font-semibold text-neutral-300 mb-2">Select Structural Element:</label>
+              <label className="block text-xs text-slate-400 mb-1">Beam Span / Length (m)</label>
+              <input
+                type="number"
+                value={length}
+                onChange={(e) => setLength(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Support Condition</label>
               <select
-                value={elementType}
-                onChange={(e) => setElementType(e.target.value as ElementType)}
-                className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-white font-medium focus:outline-none focus:border-neutral-500"
+                value={support}
+                onChange={(e) => setSupport(e.target.value as any)}
+                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200"
               >
-                <option value="beam">Flexural Beam (SFD / BMD / Deflection)</option>
-                <option value="column">Axial Column (Euler Buckling & Stress)</option>
-                <option value="truss_2d">2D Truss (Method of Joints / Axial Force)</option>
+                <option value="simply_supported">Simply Supported</option>
+                <option value="cantilever">Cantilever</option>
               </select>
             </div>
 
-            <hr className="border-neutral-800" />
-
-            {elementType === 'beam' && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-1">Beam Span (m):</label>
-                  <input
-                    type="number"
-                    value={length}
-                    onChange={(e) => setLength(Number(e.target.value))}
-                    className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-white focus:outline-none focus:border-neutral-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-1">Support Condition:</label>
-                  <select
-                    value={support}
-                    onChange={(e) => setSupport(e.target.value as BeamSupport)}
-                    className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-white focus:outline-none focus:border-neutral-500"
-                  >
-                    <option value="simply_supported">Simply Supported</option>
-                    <option value="cantilever">Cantilever</option>
-                    <option value="fixed_fixed">Fixed-Fixed</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-1">Uniform/Point Load (kN/m or kN):</label>
-                  <input
-                    type="number"
-                    value={load}
-                    onChange={(e) => setLoad(Number(e.target.value))}
-                    className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-white focus:outline-none focus:border-neutral-500"
-                  />
-                </div>
-              </div>
-            )}
-
-            {elementType === 'column' && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-1">Column Height / Length (m):</label>
-                  <input
-                    type="number"
-                    value={length}
-                    onChange={(e) => setLength(Number(e.target.value))}
-                    className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-white focus:outline-none focus:border-neutral-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-1">Boundary End Conditions:</label>
-                  <select
-                    value={boundary}
-                    onChange={(e) => setBoundary(e.target.value as ColumnBoundary)}
-                    className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-white focus:outline-none focus:border-neutral-500"
-                  >
-                    <option value="pinned_pinned">Pinned-Pinned (K = 1.0)</option>
-                    <option value="fixed_free">Fixed-Free (K = 2.0)</option>
-                    <option value="fixed_fixed">Fixed-Fixed (K = 0.5)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-1">Axial Load P (kN):</label>
-                  <input
-                    type="number"
-                    value={axialLoad}
-                    onChange={(e) => setAxialLoad(Number(e.target.value))}
-                    className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-white focus:outline-none focus:border-neutral-500"
-                  />
-                </div>
-              </div>
-            )}
-
-            {elementType === 'truss_2d' && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-1">Number of Joints/Nodes:</label>
-                  <input
-                    type="number"
-                    value={trussNodes}
-                    onChange={(e) => setTrussNodes(Number(e.target.value))}
-                    className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-white focus:outline-none focus:border-neutral-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-1">Number of Members:</label>
-                  <input
-                    type="number"
-                    value={trussMembers}
-                    onChange={(e) => setTrussMembers(Number(e.target.value))}
-                    className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-white focus:outline-none focus:border-neutral-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-1">Joint Nodal Load (kN):</label>
-                  <input
-                    type="number"
-                    value={load}
-                    onChange={(e) => setLoad(Number(e.target.value))}
-                    className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-white focus:outline-none focus:border-neutral-500"
-                  />
-                </div>
-              </div>
-            )}
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Point Load Magnitude (kN)</label>
+              <input
+                type="number"
+                value={load}
+                onChange={(e) => setLoad(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200"
+              />
+            </div>
 
             <button
               onClick={handleAnalyze}
               disabled={loading}
-              className="w-full bg-white hover:bg-neutral-200 text-black font-bold py-3.5 rounded-xl transition disabled:opacity-50 shadow-md"
+              className="w-full bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold py-2.5 rounded transition disabled:opacity-50"
             >
-              {loading ? 'Analyzing...' : `Analyze ${elementType.toUpperCase()}`}
+              {loading ? 'Analyzing...' : 'Run Analysis via Cloud API'}
             </button>
-          </div>
-
-          {/* Dynamic Display Area */}
-          <div className="lg:col-span-8 bg-neutral-950 p-8 rounded-3xl border border-neutral-800 flex flex-col justify-between shadow-2xl">
-            <div>
-              <h2 className="text-xl font-bold text-white mb-6">Structural Results</h2>
-
-              {!result ? (
-                <div className="text-center py-24 border border-dashed border-neutral-800 rounded-2xl">
-                  <p className="text-neutral-500">Select element parameters and click Analyze to generate results.</p>
-                </div>
-              ) : (
-                <div className="space-y-6 text-sm">
-                  {elementType === 'column' && (
-                    <div className="space-y-3 bg-neutral-900/60 p-6 rounded-2xl border border-neutral-800">
-                      <p className="flex justify-between">
-                        <span className="text-neutral-400">Effective Length (Le):</span> 
-                        <span className="font-semibold">{result.effective_length ?? 'N/A'} m</span>
-                      </p>
-                      <p className="flex justify-between">
-                        <span className="text-neutral-400">Euler Critical Buckling Load (P_cr):</span>
-                        <span className="text-white font-mono font-bold">
-                          {result.critical_buckling_load_kn ?? 'N/A'} kN
-                        </span>
-                      </p>
-                      <p className="flex justify-between">
-                        <span className="text-neutral-400">Applied Load (P_apply):</span> 
-                        <span className="font-semibold">{result.applied_load_kn ?? axialLoad} kN</span>
-                      </p>
-                      <div className="pt-2 border-t border-neutral-800 flex justify-between items-center">
-                        <span className="text-neutral-400">Status:</span>
-                        {result.is_safe ? (
-                          <span className="px-3 py-1 bg-white text-black font-bold rounded-lg text-xs">PASS (No Buckling)</span>
-                        ) : (
-                          <span className="px-3 py-1 bg-neutral-800 text-rose-400 font-bold rounded-lg text-xs border border-rose-500/30">FAIL (Buckling Risk!)</span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {elementType === 'beam' && (
-                    <div className="space-y-6">
-                      <div className="grid grid-cols-2 gap-4 bg-neutral-900/60 p-6 rounded-2xl border border-neutral-800">
-                        <div>
-                          <p className="text-neutral-400 text-xs mb-1">Max Shear Force</p>
-                          <p className="text-2xl font-black text-white">
-                            {shearVal !== undefined ? `${shearVal} kN` : 'N/A'}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-neutral-400 text-xs mb-1">Max Bending Moment</p>
-                          <p className="text-2xl font-black text-white">
-                            {momentVal !== undefined ? `${momentVal} kN·m` : 'N/A'}
-                          </p>
-                        </div>
-                      </div>
-
-                      {result.reactions && (
-                        <div className="bg-neutral-900/60 p-4 rounded-2xl border border-neutral-800">
-                          <p className="text-neutral-300 font-medium">
-                            Reactions: <span className="font-mono text-neutral-400">R_A = {result.reactions.R_A ?? 0} kN, R_B = {result.reactions.R_B ?? 0} kN</span>
-                          </p>
-                        </div>
-                      )}
-
-                      {result.plot_points && result.plot_points.length > 0 && (
-                        <div className="bg-neutral-900/60 p-6 rounded-2xl border border-neutral-800">
-                          <p className="text-xs text-neutral-400 mb-4 font-semibold uppercase tracking-wider">Bending Moment Distribution Profile (X vs M):</p>
-                          <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 h-44 flex items-end gap-1.5 overflow-x-auto">
-                            {result.plot_points.map((pt, idx) => {
-                              const maxM = Math.max(...result.plot_points!.map(p => Math.abs(p.moment)), 1);
-                              const heightPct = Math.max(Math.round((Math.abs(pt.moment) / maxM) * 100), 8);
-                              return (
-                                <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative min-w-[20px]">
-                                  <div 
-                                    className="w-full bg-white hover:bg-neutral-300 rounded-t transition-all"
-                                    style={{ height: `${heightPct}%` }}
-                                  />
-                                  <span className="text-[10px] text-neutral-500 mt-2">{pt.x}m</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {elementType === 'truss_2d' && (
-                    <div className="space-y-3 bg-neutral-900/60 p-6 rounded-2xl border border-neutral-800">
-                      <p><strong>Status:</strong> {result.status || 'Analysis complete'}</p>
-                      {result.message && <p className="text-neutral-400">{result.message}</p>}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
 
             {result && (
-              <div className="mt-8 pt-6 border-t border-neutral-800 flex justify-between items-center">
-                <span className="text-xs text-neutral-500">Calculation engine synced</span>
+              <div className="mt-4 pt-4 border-t border-slate-800 space-y-2 text-sm">
+                <h3 className="font-semibold text-slate-200">Statics Summary</h3>
+                <p>Max Shear Force: <span className="text-cyan-400 font-mono">{result.critical_values?.max_shear_force ?? 0} kN</span></p>
+                <p>Max Bending Moment: <span className="text-emerald-400 font-mono">{result.critical_values?.max_bending_moment ?? 0} kN·m</span></p>
+                <p>Support R_A: <span className="font-mono">{result.reactions?.R_A ?? 0} kN</span></p>
+                <p>Support R_B: <span className="font-mono">{result.reactions?.R_B ?? 0} kN</span></p>
+
                 <button
-                  onClick={handleDownloadPdf}
+                  onClick={generatePDF}
                   disabled={downloadingPdf}
-                  className="bg-neutral-900 hover:bg-neutral-800 text-white border border-neutral-700 font-bold px-5 py-2.5 rounded-xl text-xs transition disabled:opacity-50"
+                  className="w-full mt-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded transition flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  {downloadingPdf ? 'Generating PDF...' : 'Download PDF Report'}
+                  {downloadingPdf ? 'Generating PDF...' : '📄 Download PDF Verification Report'}
                 </button>
+              </div>
+            )}
+          </div>
+
+          {/* Right Column: Graphs / Diagrams display */}
+          <div className="lg:col-span-8 bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
+            {chartData.length > 0 ? (
+              <div ref={chartsRef} className="space-y-6 bg-slate-900 p-2">
+                {/* Shear Force Diagram (SFD) */}
+                <div>
+                  <h3 className="text-xs font-semibold text-cyan-400 mb-2 uppercase tracking-wider">
+                    Shear Force Diagram (SFD) - [kN]
+                  </h3>
+                  <div className="h-48 w-full bg-slate-950/50 p-2 rounded border border-slate-800">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                        <XAxis dataKey="x" stroke="#64748b" fontSize={10} unit="m" />
+                        <YAxis stroke="#64748b" fontSize={10} unit="kN" />
+                        <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '12px' }} />
+                        <ReferenceLine y={0} stroke="#475569" />
+                        <Line type="monotone" dataKey="Shear" stroke="#38bdf8" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Bending Moment Diagram (BMD) */}
+                <div>
+                  <h3 className="text-xs font-semibold text-emerald-400 mb-2 uppercase tracking-wider">
+                    Bending Moment Diagram (BMD) - [kN·m]
+                  </h3>
+                  <div className="h-48 w-full bg-slate-950/50 p-2 rounded border border-slate-800">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                        <XAxis dataKey="x" stroke="#64748b" fontSize={10} unit="m" />
+                        <YAxis stroke="#64748b" stroke="#64748b" fontSize={10} unit="kN·m" />
+                        <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '12px' }} />
+                        <ReferenceLine y={0} stroke="#475569" />
+                        <Line type="monotone" dataKey="Moment" stroke="#34d399" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-slate-500 py-20">
+                Run the analysis to render live Shear Force/Bending Moment diagrams & enable PDF export.
               </div>
             )}
           </div>

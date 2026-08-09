@@ -2,15 +2,15 @@ import Link from 'next/link';
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-black text-white font-sans selection:bg-white selection:text-black">
+    <main className="min-h-screen bg-black text-white font-sans selection:bg-white selection:text-black overflow-x-hidden">
       {/* Top Navigation Bar */}
-      <nav className="flex justify-between items-center px-8 py-6 border-b border-neutral-800 sticky top-0 bg-black/90 backdrop-blur-md z-50">
+      <nav className="flex flex-col sm:flex-row justify-between items-center px-6 sm:px-8 py-5 border-b border-neutral-800 sticky top-0 bg-black/90 backdrop-blur-md z-50 gap-4">
         {/* Larger, rounded typography for RUTTA.COM */}
-        <h1 className="text-4xl font-black tracking-tight text-white font-['Plus_Jakarta_Sans'] uppercase">
+        <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-white font-['Plus_Jakarta_Sans'] uppercase">
           RUTTA<span className="text-neutral-500 font-light">.COM</span>
         </h1>
         
-        <div className="space-x-8 text-sm font-semibold tracking-wide">
+        <div className="flex flex-wrap justify-center gap-4 sm:space-x-8 text-xs sm:text-sm font-semibold tracking-wide">
           <Link href="#haya" className="text-neutral-400 hover:text-white transition">Haya Structures</Link>
           <Link href="#cloudmore" className="text-neutral-400 hover:text-white transition">Cloudmore</Link>
           <Link href="#art4u" className="text-neutral-400 hover:text-white transition">Art4u</Link>
@@ -18,27 +18,27 @@ export default function Home() {
       </nav>
 
       {/* Hero Header */}
-      <section className="text-center py-28 px-4 max-w-6xl mx-auto">
+      <section className="text-center py-16 sm:py-28 px-4 max-w-6xl mx-auto">
         <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs font-semibold tracking-wider uppercase mb-8">
           <span className="w-2 h-2 rounded-full bg-white"></span>
           Central Hub & Portfolio
         </div>
         
-        {/* Single-line responsive hero heading */}
-        <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6 text-white whitespace-nowrap">
+        {/* Removed whitespace-nowrap so it wraps nicely on mobile */}
+        <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6 text-white leading-tight">
           Engineering, Apparel & Visual Art
         </h2>
         
-        <p className="text-neutral-400 text-lg mb-12 max-w-2xl mx-auto font-normal leading-relaxed">
+        <p className="text-neutral-400 text-base sm:text-lg mb-12 max-w-2xl mx-auto font-normal leading-relaxed px-2">
           Welcome to my central portal. Showcasing specialized work across civil structural engineering, modern streetwear fashion, visual art galleries, and cloud development.
         </p>
       </section>
 
       {/* Business Sections Grid */}
-      <section className="max-w-6xl mx-auto grid md:grid-cols-3 gap-8 px-6 pb-28">
+      <section className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 px-6 pb-28">
         
         {/* Haya Structures LLC Card */}
-        <div id="haya" className="bg-neutral-950 p-8 rounded-3xl border border-neutral-800 hover:border-neutral-500 transition-all shadow-2xl flex flex-col justify-between">
+        <div id="haya" className="bg-neutral-950 p-6 sm:p-8 rounded-3xl border border-neutral-800 hover:border-neutral-500 transition-all shadow-2xl flex flex-col justify-between">
           <div>
             <div className="w-12 h-12 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white font-bold text-lg mb-6">
               HS
@@ -54,7 +54,7 @@ export default function Home() {
         </div>
 
         {/* Cloudmore Collections Card */}
-        <div id="cloudmore" className="bg-neutral-950 p-8 rounded-3xl border border-neutral-800 hover:border-neutral-500 transition-all shadow-2xl flex flex-col justify-between">
+        <div id="cloudmore" className="bg-neutral-950 p-6 sm:p-8 rounded-3xl border border-neutral-800 hover:border-neutral-500 transition-all shadow-2xl flex flex-col justify-between">
           <div>
             <div className="w-12 h-12 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white font-bold text-lg mb-6">
               CC
@@ -70,7 +70,7 @@ export default function Home() {
         </div>
 
         {/* Art4u Card */}
-        <div id="art4u" className="bg-neutral-950 p-8 rounded-3xl border border-neutral-800 hover:border-neutral-500 transition-all shadow-2xl flex flex-col justify-between">
+        <div id="art4u" className="bg-neutral-950 p-6 sm:p-8 rounded-3xl border border-neutral-800 hover:border-neutral-500 transition-all shadow-2xl flex flex-col justify-between">
           <div>
             <div className="w-12 h-12 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white font-bold text-lg mb-6">
               A4
