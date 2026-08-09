@@ -282,7 +282,8 @@ export default function HayaStructures() {
                       <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                         <XAxis dataKey="x" stroke="#64748b" fontSize={10} unit="m" />
-                        <YAxis stroke="#64748b" stroke="#64748b" fontSize={10} unit="kN·m" />
+                        {/* Duplicate stroke attribute fixed below */}
+                        <YAxis stroke="#64748b" fontSize={10} unit="kN·m" />
                         <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '12px' }} />
                         <ReferenceLine y={0} stroke="#475569" />
                         <Line type="monotone" dataKey="Moment" stroke="#34d399" strokeWidth={2} dot={false} />
