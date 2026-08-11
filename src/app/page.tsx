@@ -44,8 +44,8 @@ export default function Home() {
           Engineering, Apparel & Visual Art
         </h1>
         <p className="max-w-2xl mx-auto text-slate-400 text-sm sm:text-base leading-relaxed">
-          Welcome to my central portal. Showcasing specialized work across civil structural engineering, 
-          modern streetwear fashion, visual art galleries, and cloud development.
+          Welcome to my central portal, showcasing specialized work across civil & structural engineering, 
+          cloud development, modern fashion, and visual art galleries.
         </p>
       </div>
 
@@ -61,10 +61,10 @@ export default function Home() {
                   HS
                 </div>
                 <h2 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">
-                  Haya Structures
+                  Haya Structures LLC
                 </h2>
                 <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
-                  Civil & Structural engineering calculation suites and beam analysis tools.
+                  Civil & Structural Engineering: Analysis, Design, Consultancy and Projects.
                 </p>
               </div>
               <div className="mt-6 flex items-center text-blue-400 text-xs font-semibold">
@@ -87,16 +87,16 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Column 2: Cloudmore & Gold (XAU/USD) */}
+        {/* Column 2: CloudMore & Gold (XAU/USD) */}
         <div className="flex flex-col gap-4">
           <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
             <div>
               <div className="w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400 font-bold mb-4 text-base">
                 CM
               </div>
-              <h2 className="text-xl font-bold text-white">Cloudmore</h2>
+              <h2 className="text-xl font-bold text-white">CloudMore</h2>
               <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
-                Cloud infrastructure pipelines, automated CI/CD workflows, and deployments.
+                Cloud Infrastructure Pipelines, Automated CI/CD Workflows, and Deployments.
               </p>
             </div>
             <div className="mt-6 text-xs text-purple-400 font-semibold uppercase tracking-wider">
@@ -118,16 +118,16 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Column 3: Visual Art & EUR/GBP */}
+        {/* Column 3: Mr.Universe & EUR/GBP */}
         <div className="flex flex-col gap-4">
           <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
             <div>
               <div className="w-10 h-10 rounded-xl bg-amber-600/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold mb-4 text-base">
-                VA
+                Mr.U
               </div>
-              <h2 className="text-xl font-bold text-white">Visual Art</h2>
+              <h2 className="text-xl font-bold text-white">Mr.Universe</h2>
               <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
-                Creative design portfolios, modern digital galleries, and storytelling.
+                Apparels, Accessories and Lifestyle.
               </p>
             </div>
             <div className="mt-6 text-xs text-amber-400 font-semibold uppercase tracking-wider">
@@ -149,16 +149,16 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Column 4: Forex Watch / USD/JPY */}
+        {/* Column 4: Art4U / USD/JPY */}
         <div className="flex flex-col gap-4">
           <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
             <div>
               <div className="w-10 h-10 rounded-xl bg-emerald-600/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold mb-4 text-base">
                 FX
               </div>
-              <h2 className="text-xl font-bold text-white">Forex Watch</h2>
+              <h2 className="text-xl font-bold text-white">Art4U</h2>
               <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
-                Tracking live momentum and major currency pair behaviors for future trading.
+               Creative Design Portfolios, Modern Digital Galleries, and Storytelling.
               </p>
             </div>
             <div className="mt-6 text-xs text-emerald-400 font-semibold uppercase tracking-wider">
