@@ -4,14 +4,12 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 
 export default function Home() {
-  // Real-time tracking mockup states for your target watchlist
   const [marketData, setMarketData] = useState({
     eurusd: { price: "1.0845", change: "+0.12%", status: "Bullish Trend" },
     xauusd: { price: "2342.10", change: "+0.45%", status: "Safe-Haven Active" },
     eurgbp: { price: "0.8520", change: "-0.05%", status: "Range Bound" },
   });
 
-  // Simulated live tick update for demonstration
   useEffect(() => {
     const interval = setInterval(() => {
       setMarketData(prev => ({
@@ -27,7 +25,6 @@ export default function Home() {
     <main className="min-h-screen bg-black text-white font-sans selection:bg-white selection:text-black overflow-x-hidden">
       {/* Top Navigation Bar */}
       <nav className="flex flex-col sm:flex-row justify-between items-center px-6 sm:px-8 py-5 border-b border-neutral-800 sticky top-0 bg-black/90 backdrop-blur-md z-50 gap-4">
-        {/* Larger, rounded typography for RUTTA.COM */}
         <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-white font-['Plus_Jakarta_Sans'] uppercase">
           RUTTA<span className="text-neutral-500 font-light">.COM</span>
         </h1>
@@ -149,8 +146,8 @@ export default function Home() {
                 {marketData.xauusd.price}
               </div>
               <div className="flex justify-between text-xs text-neutral-400 border-t border-neutral-900 pt-3 mt-4">
-                <span>Behavior: Safe-Haven</span>
-                <span className="text-amber-400 font-semibold">{marketData.xauusd.change}</span>
+                <span>Behavior: High Volatility</span>
+                <span className="text-emerald-400 font-semibold">{marketData.xauusd.change}</span>
               </div>
             </div>
 
@@ -165,7 +162,7 @@ export default function Home() {
               </div>
               <div className="flex justify-between text-xs text-neutral-400 border-t border-neutral-900 pt-3 mt-4">
                 <span>Behavior: Range Bound</span>
-                <span className="text-blue-400 font-semibold">{marketData.eurgbp.change}</span>
+                <span className="text-rose-400 font-semibold">{marketData.eurgbp.change}</span>
               </div>
             </div>
 
@@ -173,3 +170,5 @@ export default function Home() {
         </div>
       </section>
     </main>
+  );
+}
