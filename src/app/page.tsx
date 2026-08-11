@@ -1,4 +1,5 @@
-'client'
+'use client';
+
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 
@@ -139,3 +140,36 @@ export default function Home() {
             </div>
 
             {/* Gold XAU/USD Card */}
+            <div className="bg-neutral-950 p-6 rounded-3xl border border-neutral-800 hover:border-neutral-700 transition">
+              <div className="flex justify-between items-center mb-4">
+                <span className="font-bold text-white text-lg">XAU/USD (Gold)</span>
+                <span className="text-xs px-2.5 py-1 rounded-full bg-neutral-900 text-neutral-300 border border-neutral-800">Safe-Haven</span>
+              </div>
+              <div className="text-3xl font-mono font-bold text-amber-400 mb-2">
+                {marketData.xauusd.price}
+              </div>
+              <div className="flex justify-between text-xs text-neutral-400 border-t border-neutral-900 pt-3 mt-4">
+                <span>Behavior: Safe-Haven</span>
+                <span className="text-amber-400 font-semibold">{marketData.xauusd.change}</span>
+              </div>
+            </div>
+
+            {/* EUR/GBP Card */}
+            <div className="bg-neutral-950 p-6 rounded-3xl border border-neutral-800 hover:border-neutral-700 transition">
+              <div className="flex justify-between items-center mb-4">
+                <span className="font-bold text-white text-lg">EUR/GBP</span>
+                <span className="text-xs px-2.5 py-1 rounded-full bg-neutral-900 text-neutral-300 border border-neutral-800">Cross Pair</span>
+              </div>
+              <div className="text-3xl font-mono font-bold text-blue-400 mb-2">
+                {marketData.eurgbp.price}
+              </div>
+              <div className="flex justify-between text-xs text-neutral-400 border-t border-neutral-900 pt-3 mt-4">
+                <span>Behavior: Range Bound</span>
+                <span className="text-blue-400 font-semibold">{marketData.eurgbp.change}</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+    </main>

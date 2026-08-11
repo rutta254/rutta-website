@@ -4,15 +4,39 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 import math
 import io
+import importlib
+import importlib.util
 
-try:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-    REPORTLAB_AVAILABLE = True
-except Exception:
-    REPORTLAB_AVAILABLE = False
+REPORTLAB_AVAILABLE = False
+letter = None
+SimpleDocTemplate = None
+Paragraph = None
+Spacer = None
+Table = None
+TableStyle = None
+getSampleStyleSheet = None
+ParagraphStyle = None
+colors = None
+
+if importlib.util.find_spec("reportlab") is not None:
+    try:
+        reportlab_lib_pagesizes = importlib.import_module("reportlab.lib.pagesizes")
+        reportlab_platypus = importlib.import_module("reportlab.platypus")
+        reportlab_lib_styles = importlib.import_module("reportlab.lib.styles")
+        reportlab_lib = importlib.import_module("reportlab.lib")
+
+        letter = reportlab_lib_pagesizes.letter
+        SimpleDocTemplate = reportlab_platypus.SimpleDocTemplate
+        Paragraph = reportlab_platypus.Paragraph
+        Spacer = reportlab_platypus.Spacer
+        Table = reportlab_platypus.Table
+        TableStyle = reportlab_platypus.TableStyle
+        getSampleStyleSheet = reportlab_lib_styles.getSampleStyleSheet
+        ParagraphStyle = reportlab_lib_styles.ParagraphStyle
+        colors = reportlab_lib.colors
+        REPORTLAB_AVAILABLE = True
+    except Exception:
+        REPORTLAB_AVAILABLE = False
 
 app = FastAPI()
 
