@@ -22,9 +22,9 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="h-screen w-screen bg-black text-white font-sans selection:bg-white selection:text-black overflow-hidden flex flex-col">
+    <main className="min-h-screen bg-black text-white font-sans selection:bg-white selection:text-black flex flex-col">
       {/* Top Navigation Bar */}
-      <nav className="flex-none flex justify-between items-center px-6 py-3 border-b border-neutral-800 bg-black/90 backdrop-blur-md z-50">
+      <nav className="flex justify-between items-center px-6 py-4 border-b border-neutral-800 bg-black/90 backdrop-blur-md sticky top-0 z-50">
         <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white font-['Plus_Jakarta_Sans'] uppercase">
           RUTTA<span className="text-neutral-500 font-light">.COM</span>
         </h1>
@@ -37,142 +37,148 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* Main Split Layout: Preserving structure with a slimmer right sidebar */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+      {/* Main Centered Wrapper */}
+      <div className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-8 flex flex-col justify-between">
         
-        {/* LEFT MAIN SECTION: Retaining original structure & sizing (8 Cols) */}
-        <div className="lg:col-span-8 h-full flex flex-col justify-between p-6 sm:p-8 lg:border-r border-neutral-800 overflow-y-auto">
-          <div>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-300 text-[11px] font-semibold tracking-wider uppercase mb-4">
-              <span className="w-2 h-2 rounded-full bg-white"></span>
-              Central Hub & Portfolio
-            </div>
-            
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight mb-3 text-white leading-tight">
-              Engineering, Apparel & Visual Art
-            </h2>
-            
-            <p className="text-neutral-400 text-sm sm:text-base max-w-2xl font-normal leading-relaxed mb-8">
-              Welcome to my central portal. Showcasing specialized work across civil structural engineering, modern streetwear fashion, visual art galleries, and cloud development.
-            </p>
-
-            {/* Business Cards Grid (Original Structure) */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              
-              {/* Haya Structures LLC */}
-              <div id="haya" className="bg-neutral-950 p-5 rounded-xl border border-neutral-800 hover:border-neutral-500 transition flex flex-col justify-between shadow-lg">
-                <div>
-                  <div className="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white font-bold text-sm mb-4">
-                    HS
-                  </div>
-                  <h3 className="text-base font-bold text-white mb-1.5">Haya Structures</h3>
-                  <p className="text-neutral-400 text-xs mb-6 leading-relaxed">
-                    Civil & Structural Engineering consulting & automated calculation tools.
-                  </p>
-                </div>
-                <Link href="/haya-structures" className="inline-flex items-center justify-center w-full bg-white hover:bg-neutral-200 text-black font-bold py-2.5 rounded-lg text-xs transition shadow">
-                  Visit Site →
-                </Link>
-              </div>
-
-              {/* Cloudmore Collections */}
-              <div id="cloudmore" className="bg-neutral-950 p-5 rounded-xl border border-neutral-800 hover:border-neutral-500 transition flex flex-col justify-between shadow-lg">
-                <div>
-                  <div className="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white font-bold text-sm mb-4">
-                    CC
-                  </div>
-                  <h3 className="text-base font-bold text-white mb-1.5">Cloudmore</h3>
-                  <p className="text-neutral-400 text-xs mb-6 leading-relaxed">
-                    Modern streetwear and apparel collections for everyday expression.
-                  </p>
-                </div>
-                <span className="inline-flex items-center justify-center w-full bg-neutral-900 text-neutral-400 font-semibold py-2.5 rounded-lg text-xs border border-neutral-800">
-                  Coming Soon
-                </span>
-              </div>
-
-              {/* Art4u */}
-              <div id="art4u" className="bg-neutral-950 p-5 rounded-xl border border-neutral-800 hover:border-neutral-500 transition flex flex-col justify-between shadow-lg">
-                <div>
-                  <div className="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white font-bold text-sm mb-4">
-                    A4
-                  </div>
-                  <h3 className="text-base font-bold text-white mb-1.5">Art4u</h3>
-                  <p className="text-neutral-400 text-xs mb-6 leading-relaxed">
-                    Visual art gallery featuring physical paintings and fine-art commissions.
-                  </p>
-                </div>
-                <span className="inline-flex items-center justify-center w-full bg-neutral-900 text-neutral-400 font-semibold py-2.5 rounded-lg text-xs border border-neutral-800">
-                  Coming Soon
-                </span>
-              </div>
-
-            </div>
+        {/* Top Central Hero Content */}
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-300 text-[11px] font-semibold tracking-wider uppercase mb-4">
+            <span className="w-2 h-2 rounded-full bg-white"></span>
+            Central Hub & Portfolio
           </div>
+          
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight mb-3 text-white leading-tight">
+            Engineering, Apparel & Visual Art
+          </h2>
+          
+          <p className="text-neutral-400 text-sm sm:text-base max-w-2xl font-normal leading-relaxed mb-8">
+            Welcome to my central portal. Showcasing specialized work across civil structural engineering, modern streetwear fashion, visual art galleries, and cloud development.
+          </p>
 
-          <footer className="text-xs text-neutral-500 pt-4 border-t border-neutral-900 flex justify-between">
-            <span>© {new Date().getFullYear()} Rutta.com. All rights reserved.</span>
-            <span>Next.js & Tailwind CSS</span>
-          </footer>
+          {/* Business Cards Grid (Haya, Cloudmore, Art4u) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+            
+            {/* Haya Structures LLC */}
+            <div id="haya" className="bg-neutral-950 p-5 rounded-xl border border-neutral-800 hover:border-neutral-500 transition flex flex-col justify-between shadow-lg">
+              <div>
+                <div className="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white font-bold text-sm mb-4">
+                  HS
+                </div>
+                <h3 className="text-base font-bold text-white mb-1.5">Haya Structures</h3>
+                <p className="text-neutral-400 text-xs mb-6 leading-relaxed">
+                  Civil & Structural Engineering consulting & automated calculation tools.
+                </p>
+              </div>
+              <Link href="/haya-structures" className="inline-flex items-center justify-center w-full bg-white hover:bg-neutral-200 text-black font-bold py-2.5 rounded-lg text-xs transition shadow">
+                Visit Site →
+              </Link>
+            </div>
+
+            {/* Cloudmore Collections */}
+            <div id="cloudmore" className="bg-neutral-950 p-5 rounded-xl border border-neutral-800 hover:border-neutral-500 transition flex flex-col justify-between shadow-lg">
+              <div>
+                <div className="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white font-bold text-sm mb-4">
+                  CC
+                </div>
+                <h3 className="text-base font-bold text-white mb-1.5">Cloudmore</h3>
+                <p className="text-neutral-400 text-xs mb-6 leading-relaxed">
+                  Modern streetwear and apparel collections for everyday expression.
+                </p>
+              </div>
+              <span className="inline-flex items-center justify-center w-full bg-neutral-900 text-neutral-400 font-semibold py-2.5 rounded-lg text-xs border border-neutral-800">
+                Coming Soon
+              </span>
+            </div>
+
+            {/* Art4u (Visual Art Section) */}
+            <div id="art4u" className="bg-neutral-950 p-5 rounded-xl border border-neutral-800 hover:border-neutral-500 transition flex flex-col justify-between shadow-lg">
+              <div>
+                <div className="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white font-bold text-sm mb-4">
+                  A4
+                </div>
+                <h3 className="text-base font-bold text-white mb-1.5">Art4u</h3>
+                <p className="text-neutral-400 text-xs mb-6 leading-relaxed">
+                  Visual art gallery featuring physical paintings and fine-art commissions.
+                </p>
+              </div>
+              <span className="inline-flex items-center justify-center w-full bg-neutral-900 text-neutral-400 font-semibold py-2.5 rounded-lg text-xs border border-neutral-800">
+                Coming Soon
+              </span>
+            </div>
+
+          </div>
         </div>
 
-        {/* RIGHT SIDEBAR: Slim, Compact Vertical Forex Ticker (4 Cols) */}
-        <div id="watchlist" className="lg:col-span-4 h-full p-6 bg-neutral-950/40 flex flex-col justify-between overflow-hidden">
-          <div>
-            <div className="flex justify-between items-center mb-4">
+        {/* BOTTOM SECTION: Centered Content Left, Very Narrow Strip Right (Positioned below Visual Art) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start pt-4 border-t border-neutral-900">
+          
+          {/* Left Area (Spans 8 columns for balance) */}
+          <div className="lg:col-span-8">
+            <h4 className="text-sm font-semibold text-neutral-300 mb-2">About the Live Watchlist</h4>
+            <p className="text-xs text-neutral-500 leading-relaxed">
+              Tracking behavior patterns on major pairs like EUR/USD, Gold (XAU/USD), and cross pairs without capital exposure. Monitoring trends helps build macro intuition over time.
+            </p>
+          </div>
+
+          {/* Right Narrow Strip Ticker (Spans 4 columns, designed slim & compact) */}
+          <div id="watchlist" className="lg:col-span-4 bg-neutral-950/60 p-4 rounded-xl border border-neutral-800/80">
+            <div className="flex justify-between items-center mb-3">
               <div>
-                <span className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold">Live Feed</span>
-                <h3 className="text-base font-extrabold text-white">Forex Watchlist</h3>
+                <span className="text-[9px] uppercase tracking-widest text-neutral-500 font-bold">Live Feed</span>
+                <h3 className="text-xs font-extrabold text-white">Forex Watchlist</h3>
               </div>
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             </div>
 
-            {/* Vertical Stack: Slim, space-saving layout */}
-            <div className="flex flex-col gap-3">
+            {/* Vertical Stack: Slim cards */}
+            <div className="flex flex-col gap-2.5">
               
               {/* EUR/USD */}
-              <div className="bg-neutral-950 p-3.5 rounded-xl border border-neutral-800/80 hover:border-neutral-700 transition">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold text-white text-xs">EUR/USD</span>
-                  <span className="text-emerald-400 font-mono font-semibold text-xs">{marketData.eurusd.change}</span>
+              <div className="bg-black p-2.5 rounded-lg border border-neutral-800/60">
+                <div className="flex justify-between items-center mb-0.5">
+                  <span className="font-bold text-white text-[11px]">EUR/USD</span>
+                  <span className="text-emerald-400 font-mono text-[10px] font-semibold">{marketData.eurusd.change}</span>
                 </div>
                 <div className="flex justify-between items-baseline font-mono">
-                  <span className="text-lg font-bold text-neutral-200">{marketData.eurusd.price}</span>
-                  <span className="text-[10px] text-neutral-500 uppercase">Baseline</span>
+                  <span className="text-sm font-bold text-neutral-200">{marketData.eurusd.price}</span>
+                  <span className="text-[9px] text-neutral-500 uppercase">Baseline</span>
                 </div>
               </div>
 
               {/* XAU/USD (Gold) */}
-              <div className="bg-neutral-950 p-3.5 rounded-xl border border-neutral-800/80 hover:border-neutral-700 transition">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold text-white text-xs">XAU/USD (Gold)</span>
-                  <span className="text-emerald-400 font-mono font-semibold text-xs">{marketData.xauusd.change}</span>
+              <div className="bg-black p-2.5 rounded-lg border border-neutral-800/60">
+                <div className="flex justify-between items-center mb-0.5">
+                  <span className="font-bold text-white text-[11px]">XAU/USD (Gold)</span>
+                  <span className="text-emerald-400 font-mono text-[10px] font-semibold">{marketData.xauusd.change}</span>
                 </div>
                 <div className="flex justify-between items-baseline font-mono">
-                  <span className="text-lg font-bold text-amber-400">{marketData.xauusd.price}</span>
-                  <span className="text-[10px] text-neutral-500 uppercase">Safe-Haven</span>
+                  <span className="text-sm font-bold text-amber-400">{marketData.xauusd.price}</span>
+                  <span className="text-[9px] text-neutral-500 uppercase">Safe-Haven</span>
                 </div>
               </div>
 
               {/* EUR/GBP */}
-              <div className="bg-neutral-950 p-3.5 rounded-xl border border-neutral-800/80 hover:border-neutral-700 transition">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold text-white text-xs">EUR/GBP</span>
-                  <span className="text-rose-400 font-mono font-semibold text-xs">{marketData.eurgbp.change}</span>
+              <div className="bg-black p-2.5 rounded-lg border border-neutral-800/60">
+                <div className="flex justify-between items-center mb-0.5">
+                  <span className="font-bold text-white text-[11px]">EUR/GBP</span>
+                  <span className="text-rose-400 font-mono text-[10px] font-semibold">{marketData.eurgbp.change}</span>
                 </div>
                 <div className="flex justify-between items-baseline font-mono">
-                  <span className="text-lg font-bold text-blue-400">{marketData.eurgbp.price}</span>
-                  <span className="text-[10px] text-neutral-500 uppercase">Cross Pair</span>
+                  <span className="text-sm font-bold text-blue-400">{marketData.eurgbp.price}</span>
+                  <span className="text-[9px] text-neutral-500 uppercase">Cross Pair</span>
                 </div>
               </div>
 
             </div>
           </div>
 
-          <div className="text-[10px] text-neutral-500 text-center pt-3 border-t border-neutral-900">
-            Real-time behavior simulation feed
-          </div>
         </div>
+
+        {/* Footer */}
+        <footer className="text-xs text-neutral-500 pt-6 mt-6 border-t border-neutral-900 flex justify-between">
+          <span>© {new Date().getFullYear()} Rutta.com. All rights reserved.</span>
+          <span>Next.js & Tailwind CSS</span>
+        </footer>
 
       </div>
     </main>
