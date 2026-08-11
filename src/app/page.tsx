@@ -49,8 +49,81 @@ export default function Home() {
         </p>
       </div>
 
-      {/* Forex Watchlist Section Header */}
-      <div className="w-full max-w-6xl flex flex-col sm:flex-row items-start sm:items-center justify-between mt-6 mb-2 px-2 border-b border-slate-900 pb-3 gap-2">
+      {/* Main Centered Grid: Four Main Portfolio Toggles */}
+      <div className="w-full max-w-6xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 my-6">
+        
+        {/* Column 1: Haya Structures */}
+        <Link href="/haya-structures" className="group flex flex-col">
+          <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl transition-all duration-300 group-hover:border-blue-500/50 group-hover:bg-slate-900 flex flex-col justify-between">
+            <div>
+              <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold mb-4 text-base">
+                HS
+              </div>
+              <h2 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">
+                Haya Structures LLC
+              </h2>
+              <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
+                Civil & Structural Engineering: Analysis, Design, Consultancy and Projects.
+              </p>
+            </div>
+            <div className="mt-6 flex items-center text-blue-400 text-xs font-semibold">
+              Launch Suite &rarr;
+            </div>
+          </div>
+        </Link>
+
+        {/* Column 2: CloudMore */}
+        <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+          <div>
+            <div className="w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400 font-bold mb-4 text-base">
+              CM
+            </div>
+            <h2 className="text-xl font-bold text-white">CloudMore</h2>
+            <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
+              Cloud Infrastructure Pipelines, Automated CI/CD Workflows, and Deployments.
+            </p>
+          </div>
+          <div className="mt-6 text-xs text-purple-400 font-semibold uppercase tracking-wider">
+            Active Environment
+          </div>
+        </div>
+
+        {/* Column 3: Mr.Universe */}
+        <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+          <div>
+            <div className="w-10 h-10 rounded-xl bg-amber-600/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold mb-4 text-base">
+              Mr.U
+            </div>
+            <h2 className="text-xl font-bold text-white">Mr.Universe</h2>
+            <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
+              Apparels, Accessories and Lifestyle.
+            </p>
+          </div>
+          <div className="mt-6 text-xs text-amber-400 font-semibold uppercase tracking-wider">
+            Gallery Portfolio
+          </div>
+        </div>
+
+        {/* Column 4: Art4U */}
+        <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+          <div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-600/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold mb-4 text-base">
+              @4u
+            </div>
+            <h2 className="text-xl font-bold text-white">Art4U</h2>
+            <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
+              Creative Design Portfolios, Modern Digital Galleries, and Storytelling.
+            </p>
+          </div>
+          <div className="mt-6 text-xs text-emerald-400 font-semibold uppercase tracking-wider">
+            Creative Portfolio
+          </div>
+        </div>
+
+      </div>
+
+      {/* Forex Watchlist Section Header (Placed directly below the 4 main toggles) */}
+      <div className="w-full max-w-6xl flex flex-col sm:flex-row items-start sm:items-center justify-between mt-8 mb-4 px-2 border-b border-slate-900 pb-3 gap-2">
         <div className="flex items-center space-x-2">
           <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
           <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white">Forex Watchlist</h2>
@@ -63,134 +136,62 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Main Centered Grid */}
-      <div className="w-full max-w-6xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 my-6">
+      {/* Currency Cards Grid (Directly beneath the Forex Watchlist header) */}
+      <div className="w-full max-w-6xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         
-        {/* Column 1: Haya Structures & EUR/USD */}
-        <div className="flex flex-col gap-4">
-          <Link href="/haya-structures" className="group flex-1">
-            <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl transition-all duration-300 group-hover:border-blue-500/50 group-hover:bg-slate-900 flex flex-col justify-between">
-              <div>
-                <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold mb-4 text-base">
-                  HS
-                </div>
-                <h2 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">
-                  Haya Structures LLC
-                </h2>
-                <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
-                  Civil & Structural Engineering: Analysis, Design, Consultancy and Projects.
-                </p>
-              </div>
-              <div className="mt-6 flex items-center text-blue-400 text-xs font-semibold">
-                Launch Suite &rarr;
-              </div>
-            </div>
-          </Link>
-
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between shadow-lg">
-            <div>
-              <span className="text-[11px] font-bold text-slate-400 block tracking-wide">EUR/USD</span>
-              <span className="text-base font-mono font-bold text-white">{marketData.eurusd.price}</span>
-            </div>
-            <div className="text-right">
-              <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                {marketData.eurusd.change}
-              </span>
-              <span className="block text-[9px] text-slate-500 mt-0.5">{marketData.eurusd.status}</span>
-            </div>
+        {/* EUR/USD */}
+        <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between shadow-lg">
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 block tracking-wide">EUR/USD</span>
+            <span className="text-base font-mono font-bold text-white">{marketData.eurusd.price}</span>
+          </div>
+          <div className="text-right">
+            <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+              {marketData.eurusd.change}
+            </span>
+            <span className="block text-[9px] text-slate-500 mt-0.5">{marketData.eurusd.status}</span>
           </div>
         </div>
 
-        {/* Column 2: CloudMore & Gold (XAU/USD) */}
-        <div className="flex flex-col gap-4">
-          <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
-            <div>
-              <div className="w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400 font-bold mb-4 text-base">
-                CM
-              </div>
-              <h2 className="text-xl font-bold text-white">CloudMore</h2>
-              <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
-                Cloud Infrastructure Pipelines, Automated CI/CD Workflows, and Deployments.
-              </p>
-            </div>
-            <div className="mt-6 text-xs text-purple-400 font-semibold uppercase tracking-wider">
-              Active Environment
-            </div>
+        {/* Gold XAU/USD */}
+        <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between shadow-lg">
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 block tracking-wide">Gold XAU/USD</span>
+            <span className="text-base font-mono font-bold text-white">{marketData.xauusd.price}</span>
           </div>
-
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between shadow-lg">
-            <div>
-              <span className="text-[11px] font-bold text-slate-400 block tracking-wide">Gold XAU/USD</span>
-              <span className="text-base font-mono font-bold text-white">{marketData.xauusd.price}</span>
-            </div>
-            <div className="text-right">
-              <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                {marketData.xauusd.change}
-              </span>
-              <span className="block text-[9px] text-slate-500 mt-0.5">{marketData.xauusd.status}</span>
-            </div>
+          <div className="text-right">
+            <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+              {marketData.xauusd.change}
+            </span>
+            <span className="block text-[9px] text-slate-500 mt-0.5">{marketData.xauusd.status}</span>
           </div>
         </div>
 
-        {/* Column 3: Mr.Universe & EUR/GBP */}
-        <div className="flex flex-col gap-4">
-          <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
-            <div>
-              <div className="w-10 h-10 rounded-xl bg-amber-600/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold mb-4 text-base">
-                Mr.U
-              </div>
-              <h2 className="text-xl font-bold text-white">Mr.Universe</h2>
-              <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
-                Apparels, Accessories and Lifestyle.
-              </p>
-            </div>
-            <div className="mt-6 text-xs text-amber-400 font-semibold uppercase tracking-wider">
-              Gallery Portfolio
-            </div>
+        {/* EUR/GBP */}
+        <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between shadow-lg">
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 block tracking-wide">EUR/GBP</span>
+            <span className="text-base font-mono font-bold text-white">{marketData.eurgbp.price}</span>
           </div>
-
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between shadow-lg">
-            <div>
-              <span className="text-[11px] font-bold text-slate-400 block tracking-wide">EUR/GBP</span>
-              <span className="text-base font-mono font-bold text-white">{marketData.eurgbp.price}</span>
-            </div>
-            <div className="text-right">
-              <span className="text-[11px] font-semibold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">
-                {marketData.eurgbp.change}
-              </span>
-              <span className="block text-[9px] text-slate-500 mt-0.5">{marketData.eurgbp.status}</span>
-            </div>
+          <div className="text-right">
+            <span className="text-[11px] font-semibold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">
+              {marketData.eurgbp.change}
+            </span>
+            <span className="block text-[9px] text-slate-500 mt-0.5">{marketData.eurgbp.status}</span>
           </div>
         </div>
 
-        {/* Column 4: Art4U / USD/JPY */}
-        <div className="flex flex-col gap-4">
-          <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
-            <div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-600/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold mb-4 text-base">
-                @4u
-              </div>
-              <h2 className="text-xl font-bold text-white">Art4U</h2>
-              <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
-                Creative Design Portfolios, Modern Digital Galleries, and Storytelling.
-              </p>
-            </div>
-            <div className="mt-6 text-xs text-emerald-400 font-semibold uppercase tracking-wider">
-              Creative Portfolio
-            </div>
+        {/* USD/JPY */}
+        <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between shadow-lg">
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 block tracking-wide">USD/JPY</span>
+            <span className="text-base font-mono font-bold text-white">{marketData.usdjpy.price}</span>
           </div>
-
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between shadow-lg">
-            <div>
-              <span className="text-[11px] font-bold text-slate-400 block tracking-wide">USD/JPY</span>
-              <span className="text-base font-mono font-bold text-white">{marketData.usdjpy.price}</span>
-            </div>
-            <div className="text-right">
-              <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                {marketData.usdjpy.change}
-              </span>
-              <span className="block text-[9px] text-slate-500 mt-0.5">{marketData.usdjpy.status}</span>
-            </div>
+          <div className="text-right">
+            <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+              {marketData.usdjpy.change}
+            </span>
+            <span className="block text-[9px] text-slate-500 mt-0.5">{marketData.usdjpy.status}</span>
           </div>
         </div>
 
