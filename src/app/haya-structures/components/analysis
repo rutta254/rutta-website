@@ -1,0 +1,8 @@
+export default function GenericAnalysisTool({ title }: { title: string }) {
+  return (
+    <div className="bg-slate-900 p-12 rounded-xl border border-slate-800 text-center text-slate-400">
+      <h3 className="text-xl font-semibold text-cyan-400 mb-2">{title} Analysis Module</h3>
+      <p>Finite element matrix formulations and boundary solvers are initializing.</p>
+    </div>
+  );
+}
