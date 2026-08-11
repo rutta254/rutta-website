@@ -2,30 +2,53 @@
 
 import { useState } from 'react';
 import BeamAnalysisTool from './BeamAnalysisTool';
+import ColumnAnalysisTool from './ColumnAnalysisTool';
+import FoundationAnalysisTool from './FoundationAnalysisTool';
+import FrameAnalysisTool from './FrameAnalysisTool';
+import SlabAnalysisTool from './SlabAnalysisTool';
+import TrussAnalysisTool from './TrussAnalysisTool';
+import WallAnalysisTool from './WallAnalysisTool';
 
-const GenericAnalysisTool = ({ title }: { title: string }) => (
-  <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 text-slate-100">
-    <h3 className="text-lg font-semibold mb-4">{title} Analysis</h3>
-    <p className="text-sm text-slate-400">
-      Select a structural element to view analysis options.
-    </p>
-  </div>
-);
+type ElementType = 'beam' | 'column' | 'slab' | 'wall' | 'truss' | 'foundation' | 'frame';
+
+interface ElementOption {
+  id: ElementType;
+  label: string;
+}
+
+const ELEMENTS: ElementOption[] = [
+  { id: 'beam', label: 'Beams' },
+  { id: 'column', label: 'Columns' },
+  { id: 'slab', label: 'Slabs' },
+  { id: 'wall', label: 'Walls' },
+  { id: 'truss', label: 'Trusses' },
+  { id: 'foundation', label: 'Foundations' },
+  { id: 'frame', label: 'Frames' },
+];
 
 export default function AnalysisSection() {
-  const [structuralElement, setStructuralElement] = useState<
-    'beam' | 'column' | 'slab' | 'wall' | 'truss' | 'foundation' | 'frame'
-  >('beam');
+  const [activeElement, setActiveElement] = useState<ElementType>('beam');
 
-  const elements = [
-    { id: 'beam', label: 'Beams' },
-    { id: 'column', label: 'Columns' },
-    { id: 'slab', label: 'Slabs' },
-    { id: 'wall', label: 'Walls' },
-    { id: 'truss', label: 'Trusses' },
-    { id: 'foundation', label: 'Foundations' },
-    { id: 'frame', label: 'Frames' },
-  ];
+  const renderSelectedTool = () => {
+    switch (activeElement) {
+      case 'beam':
+        return <BeamAnalysisTool />;
+      case 'column':
+        return <ColumnAnalysisTool />;
+      case 'foundation':
+        return <FoundationAnalysisTool />;
+      case 'frame':
+        return <FrameAnalysisTool />;
+      case 'slab':
+        return <SlabAnalysisTool />;
+      case 'truss':
+        return <TrussAnalysisTool />;
+      case 'wall':
+        return <WallAnalysisTool />;
+      default:
+        return <BeamAnalysisTool />;
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -34,12 +57,12 @@ export default function AnalysisSection() {
           Select Structural Element for Analysis
         </h2>
         <div className="flex gap-2 overflow-x-auto pb-2">
-          {elements.map((el) => (
+          {ELEMENTS.map((el) => (
             <button
               key={el.id}
-              onClick={() => setStructuralElement(el.id as any)}
+              onClick={() => setActiveElement(el.id)}
               className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition ${
-                structuralElement === el.id
+                activeElement === el.id
                   ? 'bg-teal-500 text-slate-950 font-bold'
                   : 'bg-slate-950 text-slate-300 border border-slate-800 hover:bg-slate-800'
               }`}
@@ -50,11 +73,9 @@ export default function AnalysisSection() {
         </div>
       </div>
 
-      {structuralElement === 'beam' ? (
-        <BeamAnalysisTool />
-      ) : (
-        <GenericAnalysisTool title={structuralElement.toUpperCase()} />
-      )}
+      <div className="tool-viewport">
+        {renderSelectedTool()}
+      </div>
     </div>
   );
 }

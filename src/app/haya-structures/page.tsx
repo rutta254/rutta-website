@@ -3,41 +3,11 @@
 import { useState } from 'react';
 import Link from 'next/link';
 
-function AnalysisSection() {
-  return (
-    <section className="space-y-4">
-      <h2 className="text-2xl font-bold text-white">Analysis</h2>
-      <p className="text-slate-400">Integrated finite element analysis for modern structural engineering workflows.</p>
-    </section>
-  );
-}
-
-function DesignSection() {
-  return (
-    <section className="space-y-4">
-      <h2 className="text-2xl font-bold text-white">Design</h2>
-      <p className="text-slate-400">Design tools and templates for reinforced concrete, steel, and composite structures.</p>
-    </section>
-  );
-}
-
-function ConsultancySection() {
-  return (
-    <section className="space-y-4">
-      <h2 className="text-2xl font-bold text-white">Consultancy</h2>
-      <p className="text-slate-400">Expert structural consultancy services and project advisory support.</p>
-    </section>
-  );
-}
-
-function ProjectsSection() {
-  return (
-    <section className="space-y-4">
-      <h2 className="text-2xl font-bold text-white">Projects</h2>
-      <p className="text-slate-400">Overview of recent projects and case studies from the HAYA Structures suite.</p>
-    </section>
-  );
-}
+// Standalone component imports
+import AnalysisSection from './components/AnalysisSection/AnalysisSection';
+import ConsultancySection from './components/ConsultancySection1/ConsultancySection1';
+import DesignSection from './components/DesignSection/DesignSection';
+import ProjectsSection from './components/ProjectsSection/ProjectsSection';
 
 export default function HayaStructuresHub() {
   const [activeTab, setActiveTab] = useState<'analysis' | 'design' | 'consultancy' | 'projects'>('analysis');

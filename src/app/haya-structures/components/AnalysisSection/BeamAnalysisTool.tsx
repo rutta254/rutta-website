@@ -15,6 +15,8 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
+type SupportType = 'simply_supported' | 'cantilever' | 'fixed_fixed' | 'propped_cantilever';
+
 interface LoadItem {
   id: string;
   type: 'point' | 'udl' | 'moment' | 'triangular';
@@ -24,14 +26,30 @@ interface LoadItem {
   length?: number;
 }
 
+interface AnalysisResult {
+  span?: number;
+  reactions?: {
+    R_A?: number;
+    R_B?: number;
+  };
+  critical_values?: {
+    max_shear_force?: number;
+    max_bending_moment?: number;
+    max_deflection?: number;
+  };
+  x_coords?: number[];
+  shear_force?: number[];
+  bending_moment?: number[];
+}
+
 export default function BeamAnalysisTool() {
   const [length, setLength] = useState<number>(6);
-  const [support, setSupport] = useState<'simply_supported' | 'cantilever' | 'fixed_fixed' | 'propped_cantilever'>('simply_supported');
+  const [support, setSupport] = useState<SupportType>('simply_supported');
   const [loads, setLoads] = useState<LoadItem[]>([
     { id: '1', type: 'point', magnitude: 15, position: 3 }
   ]);
 
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const chartsRef = useRef<HTMLDivElement>(null);
@@ -47,7 +65,7 @@ export default function BeamAnalysisTool() {
     setLoads(loads.filter(l => l.id !== id));
   };
 
-  const updateLoad = (id: string, field: keyof LoadItem, value: any) => {
+  const updateLoad = (id: string, field: keyof LoadItem, value: string | number) => {
     setLoads(loads.map(l => l.id === id ? { ...l, [field]: value } : l));
   };
 
@@ -115,7 +133,7 @@ export default function BeamAnalysisTool() {
         headStyles: { fillColor: [14, 116, 144] },
       });
 
-      let lastY = (doc as any).lastAutoTable.finalY + 10;
+      let lastY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
       doc.text('2. Computed Reaction Statics & Critical Extremes', 14, lastY);
       autoTable(doc, {
         startY: lastY + 4,
@@ -134,7 +152,7 @@ export default function BeamAnalysisTool() {
       if (chartsRef.current) {
         const canvas = await html2canvas(chartsRef.current, { scale: 2, useCORS: true });
         const imgData = canvas.toDataURL('image/png');
-        lastY = (doc as any).lastAutoTable.finalY + 10;
+        lastY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
 
         if (lastY > 180) { 
           doc.addPage(); 
@@ -204,7 +222,7 @@ export default function BeamAnalysisTool() {
           <label className="block text-xs text-slate-400 mb-1">Support Condition Type</label>
           <select
             value={support}
-            onChange={(e) => setSupport(e.target.value as any)}
+            onChange={(e) => setSupport(e.target.value as SupportType)}
             className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200"
           >
             <option value="simply_supported">Simply Supported (Pinned-Pinned)</option>
@@ -353,11 +371,11 @@ export default function BeamAnalysisTool() {
               {support === 'fixed_fixed' && (<>{drawFixed(marginX, true)}{drawFixed(marginX + beamWidth, false)}</>)}
               {support === 'propped_cantilever' && (<>{drawFixed(marginX, true)}{drawPin(marginX + beamWidth)}</>)}
 
-              {loads.map((load, i) => {
+              {loads.map((load) => {
                 const startX = getX(Math.min(load.position, length));
                 if (load.type === 'point') {
                   return (
-                    <g key={`load-${i}`}>
+                    <g key={load.id}>
                       <line x1={startX} y1={beamY - 40} x2={startX} y2={beamY - 5} stroke="#06b6d4" strokeWidth="3" />
                       <polygon points={`${startX},${beamY} ${startX - 5},${beamY - 10} ${startX + 5},${beamY - 10}`} fill="#06b6d4" />
                       <text x={startX} y={beamY - 45} fill="#22d3ee" fontSize="12" textAnchor="middle" fontWeight="bold">{load.magnitude} kN</text>
@@ -370,7 +388,7 @@ export default function BeamAnalysisTool() {
                   const udlWidth = Math.max(endX - startX, 0);
                   if (udlWidth > 0) {
                     return (
-                      <g key={`load-${i}`}>
+                      <g key={load.id}>
                         {load.type === 'udl' ? (
                           <rect x={startX} y={beamY - 25} width={udlWidth} height="20" fill="#0ea5e9" fillOpacity="0.2" stroke="#0ea5e9" strokeWidth="1" strokeDasharray="4 2" />
                         ) : (
@@ -385,7 +403,7 @@ export default function BeamAnalysisTool() {
                 }
                 if (load.type === 'moment') {
                   return (
-                    <g key={`load-${i}`}>
+                    <g key={load.id}>
                       <path d={`M ${startX - 15} ${beamY - 15} A 15 15 0 1 1 ${startX + 15} ${beamY - 15}`} fill="none" stroke="#f59e0b" strokeWidth="2.5" />
                       <text x={startX} y={beamY - 35} fill="#fbbf24" fontSize="12" textAnchor="middle" fontWeight="bold">{load.magnitude} kN·m</text>
                     </g>
@@ -408,7 +426,7 @@ export default function BeamAnalysisTool() {
               <div>
                 <h4 className="text-xs font-semibold text-cyan-400 mb-1 uppercase">Shear Force Diagram (SFD) [kN]</h4>
                 <div className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                       <XAxis dataKey="x" stroke="#64748b" fontSize={10} unit="m" />
@@ -424,7 +442,7 @@ export default function BeamAnalysisTool() {
               <div>
                 <h4 className="text-xs font-semibold text-emerald-400 mb-1 uppercase">Bending Moment Diagram (BMD) [kN·m]</h4>
                 <div className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                       <XAxis dataKey="x" stroke="#64748b" fontSize={10} unit="m" />
