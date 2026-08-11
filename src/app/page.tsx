@@ -1,6 +1,27 @@
+'client'
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
 
 export default function Home() {
+  // Real-time tracking mockup states for your target watchlist
+  const [marketData, setMarketData] = useState({
+    eurusd: { price: "1.0845", change: "+0.12%", status: "Bullish Trend" },
+    xauusd: { price: "2342.10", change: "+0.45%", status: "Safe-Haven Active" },
+    eurgbp: { price: "0.8520", change: "-0.05%", status: "Range Bound" },
+  });
+
+  // Simulated live tick update for demonstration
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMarketData(prev => ({
+        eurusd: { ...prev.eurusd, price: (1.0840 + Math.random() * 0.0010).toFixed(4) },
+        xauusd: { ...prev.xauusd, price: (2340 + Math.random() * 5).toFixed(2) },
+        eurgbp: { ...prev.eurgbp, price: (0.8515 + Math.random() * 0.0010).toFixed(4) },
+      }));
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <main className="min-h-screen bg-black text-white font-sans selection:bg-white selection:text-black overflow-x-hidden">
       {/* Top Navigation Bar */}
@@ -14,6 +35,7 @@ export default function Home() {
           <Link href="#haya" className="text-neutral-400 hover:text-white transition">Haya Structures</Link>
           <Link href="#cloudmore" className="text-neutral-400 hover:text-white transition">Cloudmore</Link>
           <Link href="#art4u" className="text-neutral-400 hover:text-white transition">Art4u</Link>
+          <Link href="#watchlist" className="text-white hover:text-neutral-300 transition">Market Watch</Link>
         </div>
       </nav>
 
@@ -24,7 +46,6 @@ export default function Home() {
           Central Hub & Portfolio
         </div>
         
-        {/* Removed whitespace-nowrap so it wraps nicely on mobile */}
         <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6 text-white leading-tight">
           Engineering, Apparel & Visual Art
         </h2>
@@ -35,7 +56,7 @@ export default function Home() {
       </section>
 
       {/* Business Sections Grid */}
-      <section className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 px-6 pb-28">
+      <section className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 px-6 pb-20">
         
         {/* Haya Structures LLC Card */}
         <div id="haya" className="bg-neutral-950 p-6 sm:p-8 rounded-3xl border border-neutral-800 hover:border-neutral-500 transition-all shadow-2xl flex flex-col justify-between">
@@ -86,6 +107,35 @@ export default function Home() {
         </div>
 
       </section>
-    </main>
-  );
-}
+
+      {/* Live Forex & Market Watchlist Section */}
+      <section id="watchlist" className="max-w-6xl mx-auto px-6 pb-28">
+        <div className="border-t border-neutral-800 pt-16">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 gap-4">
+            <div>
+              <span className="text-xs uppercase tracking-widest text-neutral-500 font-bold">Personal Tracking Hub</span>
+              <h3 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">Live Market Watchlist</h3>
+            </div>
+            <p className="text-neutral-400 text-sm max-w-md">
+              Monitoring core asset behaviors, macroeconomic trends, and volatility across major baseline instruments without financial risk.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            {/* EUR/USD Card */}
+            <div className="bg-neutral-950 p-6 rounded-3xl border border-neutral-800 hover:border-neutral-700 transition">
+              <div className="flex justify-between items-center mb-4">
+                <span className="font-bold text-white text-lg">EUR/USD</span>
+                <span className="text-xs px-2.5 py-1 rounded-full bg-neutral-900 text-neutral-300 border border-neutral-800">Major Baseline</span>
+              </div>
+              <div className="text-3xl font-mono font-bold text-emerald-400 mb-2">
+                {marketData.eurusd.price}
+              </div>
+              <div className="flex justify-between text-xs text-neutral-400 border-t border-neutral-900 pt-3 mt-4">
+                <span>Behavior: Trend Steady</span>
+                <span className="text-emerald-400 font-semibold">{marketData.eurusd.change}</span>
+              </div>
+            </div>
+
+            {/* Gold XAU/USD Card */}
