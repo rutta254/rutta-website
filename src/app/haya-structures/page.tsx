@@ -173,6 +173,133 @@ export default function HayaStructuresHub() {
     Moment: Number((result.bending_moment?.[i] ?? 0).toFixed(2)),
   })) || [];
 
+  // ---------------------------------------------------------
+  // DYNAMIC SVG BEAM VISUALIZER
+  // ---------------------------------------------------------
+  const renderBeamVisualizer = () => {
+    const svgWidth = 800;
+    const svgHeight = 220;
+    const marginX = 100;
+    const beamWidth = svgWidth - 2 * marginX;
+    const scaleX = length > 0 ? beamWidth / length : 0;
+    const beamY = 120;
+    const beamThickness = 12;
+
+    const getX = (val: number) => marginX + (val * scaleX);
+
+    // Helpers to draw supports
+    const drawPin = (x: number) => (
+      <g key={`pin-${x}`}>
+        <polygon points={`${x},${beamY + beamThickness} ${x - 15},${beamY + beamThickness + 25} ${x + 15},${beamY + beamThickness + 25}`} fill="#64748b" />
+        <line x1={x - 20} y1={beamY + beamThickness + 25} x2={x + 20} y2={beamY + beamThickness + 25} stroke="#64748b" strokeWidth="4" />
+      </g>
+    );
+
+    const drawFixed = (x: number, isLeft: boolean) => (
+      <g key={`fixed-${x}`}>
+        <rect x={isLeft ? x - 15 : x} y={beamY - 30} width="15" height={60 + beamThickness} fill="#475569" />
+        <line x1={isLeft ? x - 15 : x + 15} y1={beamY - 30} x2={isLeft ? x - 15 : x + 15} y2={beamY + 30 + beamThickness} stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 4" />
+      </g>
+    );
+
+    return (
+      <div className="w-full overflow-hidden bg-slate-950/50 rounded-lg border border-slate-800 mb-6 flex justify-center p-4">
+        <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-48 drop-shadow-md">
+          
+          {/* Dimension Line */}
+          <line x1={marginX} y1={beamY + 60} x2={marginX + beamWidth} y2={beamY + 60} stroke="#475569" strokeWidth="1" />
+          <line x1={marginX} y1={beamY + 55} x2={marginX} y2={beamY + 65} stroke="#475569" strokeWidth="2" />
+          <line x1={marginX + beamWidth} y1={beamY + 55} x2={marginX + beamWidth} y2={beamY + 65} stroke="#475569" strokeWidth="2" />
+          <text x={marginX + beamWidth / 2} y={beamY + 80} fill="#94a3b8" fontSize="14" textAnchor="middle" fontWeight="bold">
+            Span (L) = {length}m
+          </text>
+
+          {/* The Beam */}
+          <rect x={marginX} y={beamY} width={beamWidth} height={beamThickness} fill="#94a3b8" rx="2" />
+
+          {/* Supports */}
+          {support === 'simply_supported' && (
+            <>
+              {drawPin(marginX)}
+              {drawPin(marginX + beamWidth)}
+            </>
+          )}
+          {support === 'cantilever' && drawFixed(marginX, true)}
+          {support === 'fixed_fixed' && (
+            <>
+              {drawFixed(marginX, true)}
+              {drawFixed(marginX + beamWidth, false)}
+            </>
+          )}
+          {support === 'propped_cantilever' && (
+            <>
+              {drawFixed(marginX, true)}
+              {drawPin(marginX + beamWidth)}
+            </>
+          )}
+
+          {/* Applied Loads */}
+          {loads.map((load, i) => {
+            const startX = getX(Math.min(load.position, length));
+            
+            if (load.type === 'point') {
+              return (
+                <g key={`load-${i}`}>
+                  <line x1={startX} y1={beamY - 40} x2={startX} y2={beamY - 5} stroke="#06b6d4" strokeWidth="3" markerEnd="url(#arrowhead)" />
+                  <polygon points={`${startX},${beamY} ${startX - 5},${beamY - 10} ${startX + 5},${beamY - 10}`} fill="#06b6d4" />
+                  <text x={startX} y={beamY - 45} fill="#22d3ee" fontSize="12" textAnchor="middle" fontWeight="bold">{load.magnitude} kN</text>
+                </g>
+              );
+            }
+            
+            if (load.type === 'udl' || load.type === 'triangular') {
+              const loadLen = load.length || length;
+              const endX = getX(Math.min(load.position + loadLen, length));
+              const udlWidth = Math.max(endX - startX, 0);
+              
+              if (udlWidth > 0) {
+                return (
+                  <g key={`load-${i}`}>
+                    {load.type === 'udl' ? (
+                      <rect x={startX} y={beamY - 25} width={udlWidth} height="20" fill="#0ea5e9" fillOpacity="0.2" stroke="#0ea5e9" strokeWidth="1" strokeDasharray="4 2" />
+                    ) : (
+                      <polygon points={`${startX},${beamY - 5} ${startX},${beamY - 25} ${endX},${beamY - 5}`} fill="#8b5cf6" fillOpacity="0.2" stroke="#8b5cf6" strokeWidth="1" />
+                    )}
+                    
+                    {/* Drawing smaller arrows inside the UDL */}
+                    {Array.from({ length: Math.max(3, Math.floor(udlWidth / 30)) }).map((_, idx, arr) => {
+                      const arrowX = startX + (udlWidth / (arr.length - 1)) * idx;
+                      return (
+                        <g key={`udl-arrow-${idx}`}>
+                           <line x1={arrowX} y1={beamY - 25} x2={arrowX} y2={beamY - 5} stroke={load.type === 'udl' ? "#0ea5e9" : "#8b5cf6"} strokeWidth="1.5" />
+                           <polygon points={`${arrowX},${beamY} ${arrowX - 3},${beamY - 6} ${arrowX + 3},${beamY - 6}`} fill={load.type === 'udl' ? "#0ea5e9" : "#8b5cf6"} />
+                        </g>
+                      )
+                    })}
+                    <text x={startX + udlWidth / 2} y={beamY - 32} fill={load.type === 'udl' ? "#38bdf8" : "#a78bfa"} fontSize="12" textAnchor="middle" fontWeight="bold">
+                      {load.type === 'udl' ? `${load.magnitude} kN/m` : `${load.magnitude} - ${load.magnitudeEnd || 0} kN/m`}
+                    </text>
+                  </g>
+                );
+              }
+            }
+
+            if (load.type === 'moment') {
+              return (
+                 <g key={`load-${i}`}>
+                   <path d={`M ${startX - 15} ${beamY - 15} A 15 15 0 1 1 ${startX + 15} ${beamY - 15}`} fill="none" stroke="#f59e0b" strokeWidth="2.5" />
+                   <polygon points={`${startX + 15},${beamY - 15} ${startX + 10},${beamY - 22} ${startX + 20},${beamY - 22}`} fill="#f59e0b" />
+                   <text x={startX} y={beamY - 35} fill="#fbbf24" fontSize="12" textAnchor="middle" fontWeight="bold">{load.magnitude} kN·m</text>
+                 </g>
+              )
+            }
+            return null;
+          })}
+        </svg>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -386,57 +513,68 @@ export default function HayaStructuresHub() {
                   )}
                 </div>
 
-                {/* Right Visual Plots Panel (Captured for PDF) */}
-                <div className="lg:col-span-7 bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
-                  {chartData.length > 0 ? (
-                    <div ref={chartsRef} className="space-y-6 bg-slate-900 p-3 rounded-lg">
-                      <div className="text-xs font-bold text-slate-300 mb-2 border-b border-slate-800 pb-1 flex justify-between">
-                        <span>HAYA STRUCTURES - BEAM ANALYSIS RESULTS</span>
-                        <span className="text-cyan-400 font-mono">Span: {length}m | {support.toUpperCase()}</span>
-                      </div>
+                {/* Right Visual Plots Panel */}
+                <div className="lg:col-span-7 space-y-6">
+                  
+                  {/* DYNAMIC SVG VISUALIZER */}
+                  <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
+                    <h3 className="text-xs font-bold text-slate-300 mb-4 border-b border-slate-800 pb-2">
+                      LIVE BEAM VISUALIZATION
+                    </h3>
+                    {renderBeamVisualizer()}
+                  </div>
 
-                      {/* Shear Force Diagram (SFD) */}
-                      <div>
-                        <h4 className="text-xs font-semibold text-cyan-400 mb-1 uppercase">Shear Force Diagram (SFD) [kN]</h4>
-                        <div className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={chartData}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                              <XAxis dataKey="x" stroke="#64748b" fontSize={10} unit="m" />
-                              <YAxis stroke="#64748b" fontSize={10} unit="kN" />
-                              <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '11px' }} />
-                              <ReferenceLine y={0} stroke="#475569" strokeWidth={1.5} />
-                              <Line type="monotone" dataKey="Shear" stroke="#38bdf8" strokeWidth={2.5} dot={false} />
-                            </LineChart>
-                          </ResponsiveContainer>
+                  {/* ANALYSIS RESULTS (SFD & BMD) */}
+                  <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
+                    {chartData.length > 0 ? (
+                      <div ref={chartsRef} className="space-y-6 bg-slate-900 p-3 rounded-lg">
+                        <div className="text-xs font-bold text-slate-300 mb-2 border-b border-slate-800 pb-1 flex justify-between">
+                          <span>HAYA STRUCTURES - BEAM ANALYSIS RESULTS</span>
+                          <span className="text-cyan-400 font-mono">Span: {length}m | {support.toUpperCase()}</span>
+                        </div>
+
+                        {/* Shear Force Diagram (SFD) */}
+                        <div>
+                          <h4 className="text-xs font-semibold text-cyan-400 mb-1 uppercase">Shear Force Diagram (SFD) [kN]</h4>
+                          <div className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={chartData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                                <XAxis dataKey="x" stroke="#64748b" fontSize={10} unit="m" />
+                                <YAxis stroke="#64748b" fontSize={10} unit="kN" />
+                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '11px' }} />
+                                <ReferenceLine y={0} stroke="#475569" strokeWidth={1.5} />
+                                <Line type="monotone" dataKey="Shear" stroke="#38bdf8" strokeWidth={2.5} dot={false} />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* Bending Moment Diagram (BMD) */}
+                        <div>
+                          <h4 className="text-xs font-semibold text-emerald-400 mb-1 uppercase">Bending Moment Diagram (BMD) [kN·m]</h4>
+                          <div className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={chartData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                                <XAxis dataKey="x" stroke="#64748b" fontSize={10} unit="m" />
+                                <YAxis stroke="#64748b" fontSize={10} unit="kN·m" />
+                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '11px' }} />
+                                <ReferenceLine y={0} stroke="#475569" strokeWidth={1.5} />
+                                <Line type="monotone" dataKey="Moment" stroke="#34d399" strokeWidth={2.5} dot={false} />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
                         </div>
                       </div>
-
-                      {/* Bending Moment Diagram (BMD) */}
-                      <div>
-                        <h4 className="text-xs font-semibold text-emerald-400 mb-1 uppercase">Bending Moment Diagram (BMD) [kN·m]</h4>
-                        <div className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={chartData}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                              <XAxis dataKey="x" stroke="#64748b" fontSize={10} unit="m" />
-                              <YAxis stroke="#64748b" fontSize={10} unit="kN·m" />
-                              <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '11px' }} />
-                              <ReferenceLine y={0} stroke="#475569" strokeWidth={1.5} />
-                              <Line type="monotone" dataKey="Moment" stroke="#34d399" strokeWidth={2.5} dot={false} />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
+                    ) : (
+                      <div className="text-center text-slate-500 py-16 space-y-2">
+                        <p className="text-lg">SFD & BMD will appear here.</p>
+                        <p className="text-xs">Click &quot;Run Comprehensive Beam Analysis&quot; to generate output graphs.</p>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="text-center text-slate-500 py-32 space-y-2">
-                      <p className="text-lg">Configure your beam parameters and multi-load profiles.</p>
-                      <p className="text-xs">Click &quot;Run Comprehensive Beam Analysis&quot; to generate SFD, BMD, and printable PDF reports.</p>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
-
               </div>
             ) : (
               <div className="bg-slate-900 p-12 rounded-xl border border-slate-800 text-center text-slate-400">
