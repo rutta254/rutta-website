@@ -28,10 +28,7 @@ interface LoadItem {
 
 interface AnalysisResult {
   span?: number;
-  reactions?: {
-    R_A?: number;
-    R_B?: number;
-  };
+  reactions?: { R_A?: number; R_B?: number };
   critical_values?: {
     max_shear_force?: number;
     max_bending_moment?: number;
@@ -46,27 +43,28 @@ export default function BeamAnalysisTool() {
   const [length, setLength] = useState<number>(6);
   const [support, setSupport] = useState<SupportType>('simply_supported');
   const [loads, setLoads] = useState<LoadItem[]>([
-    { id: '1', type: 'point', magnitude: 15, position: 3 }
+    { id: '1', type: 'point', magnitude: 15, position: 3 },
   ]);
 
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
-  const chartsRef = useRef<HTMLDivElement>(null);
+
+  const reportCaptureRef = useRef<HTMLDivElement>(null);
 
   const addLoad = () => {
     setLoads([
       ...loads,
-      { id: Date.now().toString(), type: 'point', magnitude: 10, position: length / 2 }
+      { id: Date.now().toString(), type: 'point', magnitude: 10, position: length / 2 },
     ]);
   };
 
   const removeLoad = (id: string) => {
-    setLoads(loads.filter(l => l.id !== id));
+    setLoads(loads.filter((l) => l.id !== id));
   };
 
   const updateLoad = (id: string, field: keyof LoadItem, value: string | number) => {
-    setLoads(loads.map(l => l.id === id ? { ...l, [field]: value } : l));
+    setLoads(loads.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
   };
 
   const handleAnalyze = async () => {
@@ -76,7 +74,7 @@ export default function BeamAnalysisTool() {
         element_type: 'beam',
         span: Number(length),
         support,
-        loads: loads.map(l => ({
+        loads: loads.map((l) => ({
           type: l.type,
           magnitude: Number(l.magnitude),
           magnitudeEnd: l.magnitudeEnd !== undefined ? Number(l.magnitudeEnd) : undefined,
@@ -109,76 +107,98 @@ export default function BeamAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
+      // Document Header
       doc.setFontSize(18);
       doc.setTextColor(15, 23, 42);
-      doc.text('HAYA STRUCTURES LLC', 14, 20);
-      doc.setFontSize(12);
+      doc.text('HAYA STRUCTURES LLC', 14, 18);
+      doc.setFontSize(11);
       doc.setTextColor(100);
-      doc.text('Advanced Structural Beam Verification Report', 14, 28);
-      doc.setFontSize(10);
-      doc.text(`Date Generated: ${dateStr}`, 14, 34);
-      doc.line(14, 40, 196, 40);
+      doc.text('Comprehensive Beam Analysis & Verification Report', 14, 25);
+      doc.setFontSize(9);
+      doc.text(`Date Generated: ${dateStr}`, 14, 30);
+      doc.line(14, 34, 196, 34);
 
-      doc.setFontSize(12);
-      doc.text('1. Design Input Parameters & Support Configuration', 14, 48);
+      // Section 1: Inputs
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text('1. Beam Geometry & Boundary Conditions', 14, 42);
+
       autoTable(doc, {
-        startY: 52,
+        startY: 46,
         head: [['Parameter', 'Value', 'Unit']],
         body: [
-          ['Beam Span', `${result.span ?? length}`, 'm'],
-          ['Support Type', `${support.replace('_', ' ').toUpperCase()}`, '-'],
-          ['Total Active Loads', `${loads.length}`, 'items'],
+          ['Span Length (L)', `${result.span ?? length}`, 'm'],
+          ['Support Configuration', `${support.replace('_', ' ').toUpperCase()}`, '-'],
+          ['Applied Load Count', `${loads.length}`, 'items'],
         ],
         theme: 'striped',
         headStyles: { fillColor: [14, 116, 144] },
       });
 
-      let lastY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
-      doc.text('2. Computed Reaction Statics & Critical Extremes', 14, lastY);
+      // Section 1b: Applied Loads Table
+      let lastY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+      doc.text('Applied Loading Schedule', 14, lastY);
+
+      const loadRows = loads.map((l, index) => [
+        `Load #${index + 1}`,
+        l.type.toUpperCase(),
+        `${l.magnitude} ${l.type === 'udl' ? 'kN/m' : 'kN'}`,
+        `${l.position} m`,
+        l.length ? `${l.length} m` : '-',
+      ]);
+
       autoTable(doc, {
         startY: lastY + 4,
-        head: [['Metric', 'Value', 'Unit']],
+        head: [['Load ID', 'Type', 'Magnitude', 'Position (Start)', 'Span Length']],
+        body: loadRows,
+        theme: 'grid',
+        headStyles: { fillColor: [51, 65, 85] },
+      });
+
+      // Section 2: Statics & Extremes
+      lastY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+      doc.text('2. Computed Support Reactions & Critical Extremes', 14, lastY);
+
+      autoTable(doc, {
+        startY: lastY + 4,
+        head: [['Metric Description', 'Value', 'Unit']],
         body: [
-          ['Reaction R_A (Left Support)', `${result.reactions?.R_A ?? 0}`, 'kN'],
-          ['Reaction R_B (Right Support)', `${result.reactions?.R_B ?? 0}`, 'kN'],
-          ['Max Shear Force (V_max)', `${result.critical_values?.max_shear_force ?? 0}`, 'kN'],
-          ['Max Bending Moment (M_max)', `${result.critical_values?.max_bending_moment ?? 0}`, 'kN·m'],
-          ['Max Deflection (Δ_max)', `${result.critical_values?.max_deflection ?? 0}`, 'mm'],
+          ['Left Support Reaction (R_A)', `${result.reactions?.R_A ?? 0}`, 'kN'],
+          ['Right Support Reaction (R_B)', `${result.reactions?.R_B ?? 0}`, 'kN'],
+          ['Max Shear Force (|V_max|)', `${result.critical_values?.max_shear_force ?? 0}`, 'kN'],
+          ['Max Bending Moment (|M_max|)', `${result.critical_values?.max_bending_moment ?? 0}`, 'kN·m'],
+          ['Max Midspan Deflection', `${result.critical_values?.max_deflection ?? 0}`, 'mm'],
         ],
         theme: 'striped',
         headStyles: { fillColor: [15, 118, 110] },
       });
 
-      if (chartsRef.current) {
-        const canvas = await html2canvas(chartsRef.current, { scale: 2, useCORS: true });
+      // Section 3: Captured Visuals (SVG Beam + SFD/BMD Charts)
+      if (reportCaptureRef.current) {
+        const canvas = await html2canvas(reportCaptureRef.current, { scale: 2, useCORS: true });
         const imgData = canvas.toDataURL('image/png');
-        lastY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
 
-        if (lastY > 180) { 
-          doc.addPage(); 
-          lastY = 20; 
-        }
-        
-        doc.setFontSize(12);
-        doc.setTextColor(15, 23, 42);
-        doc.text('3. Shear Force & Bending Moment Diagrams (SFD & BMD)', 14, lastY);
-        doc.addImage(imgData, 'PNG', 14, lastY + 4, 182, 85);
+        doc.addPage();
+        doc.setFontSize(11);
+        doc.text('3. Structural Visualization, SFD & BMD Diagrams', 14, 18);
+        doc.addImage(imgData, 'PNG', 14, 24, 182, 240);
       }
 
       doc.save(`Haya_Structures_Beam_${length}m_Report.pdf`);
     } catch (err) {
       console.error(err);
-      alert('Failed to generate PDF export package.');
+      alert('Failed to generate PDF report.');
     } finally {
       setDownloadingPdf(false);
     }
   };
 
-  const chartData = result?.x_coords?.map((x: number, i: number) => ({
-    x: Number(x.toFixed(2)),
-    Shear: Number((result.shear_force?.[i] ?? 0).toFixed(2)),
-    Moment: Number((result.bending_moment?.[i] ?? 0).toFixed(2)),
-  })) || [];
+  const chartData =
+    result?.x_coords?.map((x: number, i: number) => ({
+      x: Number(x.toFixed(2)),
+      Shear: Number((result.shear_force?.[i] ?? 0).toFixed(2)),
+      Moment: Number((result.bending_moment?.[i] ?? 0).toFixed(2)),
+    })) || [];
 
   const svgWidth = 800;
   const svgHeight = 220;
@@ -187,27 +207,46 @@ export default function BeamAnalysisTool() {
   const scaleX = length > 0 ? beamWidth / length : 0;
   const beamY = 120;
   const beamThickness = 12;
-  const getX = (val: number) => marginX + (val * scaleX);
+  const getX = (val: number) => marginX + val * scaleX;
 
   const drawPin = (x: number) => (
     <g key={`pin-${x}`}>
-      <polygon points={`${x},${beamY + beamThickness} ${x - 15},${beamY + beamThickness + 25} ${x + 15},${beamY + beamThickness + 25}`} fill="#64748b" />
-      <line x1={x - 20} y1={beamY + beamThickness + 25} x2={x + 20} y2={beamY + beamThickness + 25} stroke="#64748b" strokeWidth="4" />
+      <polygon
+        points={`${x},${beamY + beamThickness} ${x - 15},${beamY + beamThickness + 25} ${x + 15},${beamY + beamThickness + 25}`}
+        fill="#64748b"
+      />
+      <line
+        x1={x - 20}
+        y1={beamY + beamThickness + 25}
+        x2={x + 20}
+        y2={beamY + beamThickness + 25}
+        stroke="#64748b"
+        strokeWidth="4"
+      />
     </g>
   );
 
   const drawFixed = (x: number, isLeft: boolean) => (
     <g key={`fixed-${x}`}>
       <rect x={isLeft ? x - 15 : x} y={beamY - 30} width="15" height={60 + beamThickness} fill="#475569" />
-      <line x1={isLeft ? x - 15 : x + 15} y1={beamY - 30} x2={isLeft ? x - 15 : x + 15} y2={beamY + 30 + beamThickness} stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 4" />
+      <line
+        x1={isLeft ? x - 15 : x + 15}
+        y1={beamY - 30}
+        x2={isLeft ? x - 15 : x + 15}
+        y2={beamY + 30 + beamThickness}
+        stroke="#94a3b8"
+        strokeWidth="2"
+        strokeDasharray="4 4"
+      />
     </g>
   );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Control Panel Column */}
       <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800">
         <h3 className="font-semibold text-slate-200 border-b border-slate-800 pb-2">Beam Geometry & Supports</h3>
-        
+
         <div>
           <label className="block text-xs text-slate-400 mb-1">Span Length L (m)</label>
           <input
@@ -266,7 +305,6 @@ export default function BeamAnalysisTool() {
                       <option value="point">Point Load (kN)</option>
                       <option value="udl">UDL (kN/m)</option>
                       <option value="moment">Moment (kN·m)</option>
-                      <option value="triangular">Triangular / Trapezoidal</option>
                     </select>
                   </div>
 
@@ -285,7 +323,7 @@ export default function BeamAnalysisTool() {
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[10px] text-slate-400">Position / Start (m)</label>
+                    <label className="block text-[10px] text-slate-400">Position (m)</label>
                     <input
                       type="number"
                       value={loadItem.position}
@@ -294,25 +332,13 @@ export default function BeamAnalysisTool() {
                     />
                   </div>
 
-                  {(loadItem.type === 'udl' || loadItem.type === 'triangular') && (
+                  {loadItem.type === 'udl' && (
                     <div>
-                      <label className="block text-[10px] text-slate-400">Distributed Length (m)</label>
+                      <label className="block text-[10px] text-slate-400">Length (m)</label>
                       <input
                         type="number"
                         value={loadItem.length ?? length}
                         onChange={(e) => updateLoad(loadItem.id, 'length', Number(e.target.value))}
-                        className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200"
-                      />
-                    </div>
-                  )}
-
-                  {loadItem.type === 'triangular' && (
-                    <div>
-                      <label className="block text-[10px] text-slate-400">End Magnitude (kN/m)</label>
-                      <input
-                        type="number"
-                        value={loadItem.magnitudeEnd ?? 0}
-                        onChange={(e) => updateLoad(loadItem.id, 'magnitudeEnd', Number(e.target.value))}
                         className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200"
                       />
                     </div>
@@ -328,7 +354,7 @@ export default function BeamAnalysisTool() {
           disabled={loading}
           className="w-full bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold py-2.5 rounded transition disabled:opacity-50 mt-4"
         >
-          {loading ? 'Running FEM & Equilibrium Solver...' : 'Run Comprehensive Beam Analysis'}
+          {loading ? 'Running Structural Solver...' : 'Run Comprehensive Beam Analysis'}
         </button>
 
         {result && (
@@ -338,28 +364,28 @@ export default function BeamAnalysisTool() {
             <p>Right Reaction (R_B): <span className="text-cyan-400 font-mono">{result.reactions?.R_B ?? 0} kN</span></p>
             <p>Max Shear Force: <span className="text-cyan-400 font-mono">{result.critical_values?.max_shear_force ?? 0} kN</span></p>
             <p>Max Bending Moment: <span className="text-emerald-400 font-mono">{result.critical_values?.max_bending_moment ?? 0} kN·m</span></p>
-            
+
             <button
               onClick={generatePDF}
               disabled={downloadingPdf}
               className="w-full mt-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded transition shadow-lg"
             >
-              {downloadingPdf ? 'Generating PDF Report...' : '📄 Download PDF Report (With Graphs)'}
+              {downloadingPdf ? 'Generating PDF Package...' : '📄 Download Complete PDF Report'}
             </button>
           </div>
         )}
       </div>
 
-      <div className="lg:col-span-7 space-y-6">
+      {/* Visual Report Capture Section */}
+      <div className="lg:col-span-7 space-y-6" ref={reportCaptureRef}>
+        {/* SVG Beam Diagram */}
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
           <h3 className="text-xs font-bold text-slate-300 mb-4 border-b border-slate-800 pb-2">
             LIVE BEAM VISUALIZATION
           </h3>
-          <div className="w-full overflow-hidden bg-slate-950/50 rounded-lg border border-slate-800 mb-6 flex justify-center p-4">
+          <div className="w-full overflow-hidden bg-slate-950/50 rounded-lg border border-slate-800 mb-2 flex justify-center p-4">
             <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-48 drop-shadow-md">
               <line x1={marginX} y1={beamY + 60} x2={marginX + beamWidth} y2={beamY + 60} stroke="#475569" strokeWidth="1" />
-              <line x1={marginX} y1={beamY + 55} x2={marginX} y2={beamY + 65} stroke="#475569" strokeWidth="2" />
-              <line x1={marginX + beamWidth} y1={beamY + 55} x2={marginX + beamWidth} y2={beamY + 65} stroke="#475569" strokeWidth="2" />
               <text x={marginX + beamWidth / 2} y={beamY + 80} fill="#94a3b8" fontSize="14" textAnchor="middle" fontWeight="bold">
                 Span (L) = {length}m
               </text>
@@ -378,36 +404,26 @@ export default function BeamAnalysisTool() {
                     <g key={load.id}>
                       <line x1={startX} y1={beamY - 40} x2={startX} y2={beamY - 5} stroke="#06b6d4" strokeWidth="3" />
                       <polygon points={`${startX},${beamY} ${startX - 5},${beamY - 10} ${startX + 5},${beamY - 10}`} fill="#06b6d4" />
-                      <text x={startX} y={beamY - 45} fill="#22d3ee" fontSize="12" textAnchor="middle" fontWeight="bold">{load.magnitude} kN</text>
+                      <text x={startX} y={beamY - 45} fill="#22d3ee" fontSize="12" textAnchor="middle" fontWeight="bold">
+                        {load.magnitude} kN
+                      </text>
                     </g>
                   );
                 }
-                if (load.type === 'udl' || load.type === 'triangular') {
+                if (load.type === 'udl') {
                   const loadLen = load.length || length;
                   const endX = getX(Math.min(load.position + loadLen, length));
                   const udlWidth = Math.max(endX - startX, 0);
                   if (udlWidth > 0) {
                     return (
                       <g key={load.id}>
-                        {load.type === 'udl' ? (
-                          <rect x={startX} y={beamY - 25} width={udlWidth} height="20" fill="#0ea5e9" fillOpacity="0.2" stroke="#0ea5e9" strokeWidth="1" strokeDasharray="4 2" />
-                        ) : (
-                          <polygon points={`${startX},${beamY - 5} ${startX},${beamY - 25} ${endX},${beamY - 5}`} fill="#8b5cf6" fillOpacity="0.2" stroke="#8b5cf6" strokeWidth="1" />
-                        )}
-                        <text x={startX + udlWidth / 2} y={beamY - 32} fill={load.type === 'udl' ? "#38bdf8" : "#a78bfa"} fontSize="12" textAnchor="middle" fontWeight="bold">
-                          {load.type === 'udl' ? `${load.magnitude} kN/m` : `${load.magnitude} - ${load.magnitudeEnd || 0} kN/m`}
+                        <rect x={startX} y={beamY - 25} width={udlWidth} height="20" fill="#0ea5e9" fillOpacity="0.2" stroke="#0ea5e9" strokeWidth="1" strokeDasharray="4 2" />
+                        <text x={startX + udlWidth / 2} y={beamY - 32} fill="#38bdf8" fontSize="12" textAnchor="middle" fontWeight="bold">
+                          {load.magnitude} kN/m
                         </text>
                       </g>
                     );
                   }
-                }
-                if (load.type === 'moment') {
-                  return (
-                    <g key={load.id}>
-                      <path d={`M ${startX - 15} ${beamY - 15} A 15 15 0 1 1 ${startX + 15} ${beamY - 15}`} fill="none" stroke="#f59e0b" strokeWidth="2.5" />
-                      <text x={startX} y={beamY - 35} fill="#fbbf24" fontSize="12" textAnchor="middle" fontWeight="bold">{load.magnitude} kN·m</text>
-                    </g>
-                  );
                 }
                 return null;
               })}
@@ -415,11 +431,12 @@ export default function BeamAnalysisTool() {
           </div>
         </div>
 
+        {/* SFD & BMD Recharts Output */}
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
           {chartData.length > 0 ? (
-            <div ref={chartsRef} className="space-y-6 bg-slate-900 p-3 rounded-lg">
+            <div className="space-y-6 bg-slate-900 p-3 rounded-lg">
               <div className="text-xs font-bold text-slate-300 mb-2 border-b border-slate-800 pb-1 flex justify-between">
-                <span>HAYA STRUCTURES - BEAM ANALYSIS RESULTS</span>
+                <span>ANALYSIS RESULTS (SFD & BMD)</span>
                 <span className="text-cyan-400 font-mono">Span: {length}m | {support.toUpperCase()}</span>
               </div>
 
