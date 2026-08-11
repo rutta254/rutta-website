@@ -1,8 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import BeamAnalysisTool from './analysis/BeamAnalysisTool';
-import GenericAnalysisTool from './analysis/ColumnAnalysisTool';
+import BeamAnalysisTool from './BeamAnalysisTool';
+
+const GenericAnalysisTool = ({ title }: { title: string }) => (
+  <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 text-slate-100">
+    <h3 className="text-lg font-semibold mb-4">{title} Analysis</h3>
+    <p className="text-sm text-slate-400">
+      Select a structural element to view analysis options.
+    </p>
+  </div>
+);
 
 export default function AnalysisSection() {
   const [structuralElement, setStructuralElement] = useState<
