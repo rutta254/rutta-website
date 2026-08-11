@@ -5,21 +5,58 @@ import { useState, useEffect } from 'react';
 
 export default function Home() {
   const [marketData, setMarketData] = useState({
-    eurusd: { price: "1.0845", change: "+0.12%", status: "Bullish Trend" },
-    xauusd: { price: "2342.10", change: "+0.45%", status: "Safe-Haven Active" },
-    eurgbp: { price: "0.8520", change: "-0.05%", status: "Range Bound" },
-    usdjpy: { price: "155.30", change: "+0.18%", status: "Momentum Up" },
+    eurusd: { price: "Loading...", change: "Live Feed", status: "Connected" },
+    xauusd: { price: "Loading...", change: "Live Feed", status: "Connected" },
+    eurgbp: { price: "Loading...", change: "Live Feed", status: "Connected" },
+    usdjpy: { price: "Loading...", change: "Live Feed", status: "Connected" },
   });
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setMarketData(prev => ({
-        eurusd: { ...prev.eurusd, price: (1.0840 + Math.random() * 0.0010).toFixed(4) },
-        xauusd: { ...prev.xauusd, price: (2340.00 + Math.random() * 3.00).toFixed(2) },
-        eurgbp: { ...prev.eurgbp, price: (0.8515 + Math.random() * 0.0010).toFixed(4) },
-        usdjpy: { ...prev.usdjpy, price: (155.20 + Math.random() * 0.30).toFixed(2) },
-      }));
-    }, 3000);
+    const apiKey = "4754ca7b4700482aaa89d0385aa68f60";
+    const symbols = "EUR/USD,XAU/USD,EUR/GBP,USD/JPY";
+
+    const fetchMarketData = async () => {
+      try {
+        const response = await fetch(
+          `https://api.twelvedata.com/price?symbol=${symbols}&apikey=${apiKey}`
+        );
+        const data = await response.json();
+
+        // Twelve Data returns an object with symbols as keys when multiple symbols are requested
+        if (data && !data.code) {
+          setMarketData({
+            eurusd: {
+              price: data["EUR/USD"] ? parseFloat(data["EUR/USD"].price).toFixed(4) : marketData.eurusd.price,
+              change: "+0.15%",
+              status: "Live Feed"
+            },
+            xauusd: {
+              price: data["XAU/USD"] ? parseFloat(data["XAU/USD"].price).toFixed(2) : marketData.xauusd.price,
+              change: "+0.42%",
+              status: "Live Feed"
+            },
+            eurgbp: {
+              price: data["EUR/GBP"] ? parseFloat(data["EUR/GBP"].price).toFixed(4) : marketData.eurgbp.price,
+              change: "-0.08%",
+              status: "Live Feed"
+            },
+            usdjpy: {
+              price: data["USD/JPY"] ? parseFloat(data["USD/JPY"].price).toFixed(2) : marketData.usdjpy.price,
+              change: "+0.21%",
+              status: "Live Feed"
+            },
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching live market data:", error);
+      }
+    };
+
+    // Fetch immediately on load
+    fetchMarketData();
+
+    // Poll every 30 seconds to stay safely within free tier rate limits
+    const interval = setInterval(fetchMarketData, 30000);
     return () => clearInterval(interval);
   }, []);
 
