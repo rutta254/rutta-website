@@ -85,6 +85,7 @@ interface ColumnResult {
   pm_envelope: { m: number; p: number }[];
 }
 
+// Utility to snapshot DOM SVG elements (2D drawing & Recharts) to PNG base64 for jsPDF inclusion
 const captureSvgToCanvas = (containerEl: HTMLElement | null): Promise<string | null> => {
   return new Promise((resolve) => {
     if (!containerEl) return resolve(null);
@@ -98,12 +99,12 @@ const captureSvgToCanvas = (containerEl: HTMLElement | null): Promise<string | n
 
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const scale = 2;
-      canvas.width = (svgEl.clientWidth || 500) * scale;
-      canvas.height = (svgEl.clientHeight || 250) * scale;
+      const scale = 2; // High DPI rendering
+      canvas.width = (svgEl.clientWidth || 300) * scale;
+      canvas.height = (svgEl.clientHeight || 300) * scale;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.fillStyle = '#0f172a';
+        ctx.fillStyle = '#0f172a'; // Slate 900 background matching
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/png');
@@ -377,7 +378,6 @@ export default function ColumnAnalysisTool() {
       const f_y = Number(fy);
       const f_ys = Number(fys);
 
-      // Component Axial Capacity Contributions (kN)
       const Pc = (0.85 * f_c * Ac) / 1000;
       const Ps = (f_y * Ast) / 1000;
       const Pa = (f_ys * Ass) / 1000;
@@ -394,7 +394,6 @@ export default function ColumnAnalysisTool() {
       const d_eff_x = grossH - cover - Number(tieDiam) - db / 2;
       const d_eff_y = grossB - cover - Number(tieDiam) - db / 2;
 
-      // Component Moment Capacity Contributions (kNm)
       const Mc = (0.85 * f_c * grossB * Math.pow(grossH, 2)) / 4 / 1e6;
       const Ms = (0.8 * Ast * f_y * (d_eff_x - grossH / 2)) / 1e6;
       const Ma = (Zx_steel * f_ys) / 1e6;
@@ -505,6 +504,7 @@ export default function ColumnAnalysisTool() {
     }
   };
 
+  // --- UPDATED PDF GENERATOR (NOW EMBEDS BOTH 2D & 3D VIEWS) ---
   const generatePDF = async () => {
     if (!result) return;
     setDownloadingPdf(true);
@@ -513,6 +513,7 @@ export default function ColumnAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
+      // Header Band
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, 210, 18, 'F');
 
@@ -526,24 +527,34 @@ export default function ColumnAnalysisTool() {
       doc.setTextColor(226, 232, 240);
       doc.text(`Code Standard: ${designCode} | Section: ${sectionType.toUpperCase()} | Date: ${dateStr}`, 10, 14);
 
+      // Section 1: Visuals Band (2D Drawing, 3D Canvas, & P-M Diagram)
       doc.setFillColor(30, 41, 59);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(255, 255, 255);
       doc.rect(10, 21, 190, 6, 'F');
-      doc.text('1. 2D / 3D COLUMN GEOMETRY & P-M CAPACITY INTERACTION DIAGRAM', 12, 25);
+      doc.text('1. 2D CROSS-SECTION DETAIL, 3D MODEL & P-M CAPACITY ENVELOPE', 12, 25);
 
+      // Capture 2D Cross Section Drawing
+      const img2D = await captureSvgToCanvas(svg2dRef.current);
+      if (img2D) {
+        doc.addImage(img2D, 'PNG', 10, 28, 60, 48);
+      }
+
+      // Capture WebGL 3D Model Canvas
       const canvas3D = mountRef.current?.querySelector('canvas');
       if (canvas3D) {
         const img3D = canvas3D.toDataURL('image/png');
-        doc.addImage(img3D, 'PNG', 10, 28, 93, 48);
+        doc.addImage(img3D, 'PNG', 73, 28, 62, 48);
       }
 
+      // Capture P-M Interaction Diagram
       const chartImg = await captureSvgToCanvas(chartRef.current);
       if (chartImg) {
-        doc.addImage(chartImg, 'PNG', 107, 28, 93, 48);
+        doc.addImage(chartImg, 'PNG', 138, 28, 62, 48);
       }
 
+      // Section 2: Input & Capacity Verification Tables
       doc.setFillColor(30, 41, 59);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
@@ -588,6 +599,7 @@ export default function ColumnAnalysisTool() {
         bodyStyles: { fontSize: 7, cellPadding: 1.5 },
       });
 
+      // Section 3: Demand Capacity Ratio Matrix
       doc.setFillColor(30, 41, 59);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
@@ -612,6 +624,7 @@ export default function ColumnAnalysisTool() {
         bodyStyles: { fontSize: 7, cellPadding: 1.5 },
       });
 
+      // Engineering Approval Box
       const finalY = (doc as any).lastAutoTable.finalY + 6;
 
       doc.setFillColor(248, 250, 252);
@@ -663,6 +676,7 @@ export default function ColumnAnalysisTool() {
       doc.setTextColor(100, 116, 139);
       doc.text('Authorized Structural Engineer Signature', 129, finalY + 30);
 
+      // Footer
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 287, 210, 10, 'F');
       doc.setFontSize(6.5);
@@ -898,71 +912,66 @@ export default function ColumnAnalysisTool() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 min-h-[260px]">
-            {/* 2D Cross Section SVG Drawing */}
-            {(viewMode === '2d' || viewMode === 'split') && (
-              <div
-                ref={svg2dRef}
-                className={`w-full bg-slate-950 border border-slate-800 rounded-lg p-2 flex flex-col items-center justify-center relative ${viewMode === '2d' ? 'md:col-span-2' : ''}`}
-              >
-                <div className="absolute top-2 left-2 text-[10px] font-semibold text-slate-400">2D Section Detail</div>
-                <svg viewBox="-20 -20 540 540" className="w-full h-56 max-w-[240px]">
-                  {/* Concrete Core */}
-                  {isCircular ? (
-                    <circle cx="250" cy="250" r="230" fill="#334155" stroke="#94a3b8" strokeWidth="4" />
-                  ) : (
-                    <rect x="20" y="20" width="460" height="460" fill="#334155" stroke="#94a3b8" strokeWidth="4" rx="4" />
-                  )}
+            {/* 2D Cross Section SVG Drawing (Maintained for DOM + PDF Capture) */}
+            <div
+              ref={svg2dRef}
+              className={`w-full bg-slate-950 border border-slate-800 rounded-lg p-2 flex-col items-center justify-center relative ${
+                viewMode === '3d' ? 'hidden' : 'flex'
+              } ${viewMode === '2d' ? 'md:col-span-2' : ''}`}
+            >
+              <div className="absolute top-2 left-2 text-[10px] font-semibold text-slate-400">2D Section Detail</div>
+              <svg viewBox="-20 -20 540 540" className="w-full h-56 max-w-[240px]">
+                {/* Concrete Core */}
+                {isCircular ? (
+                  <circle cx="250" cy="250" r="230" fill="#334155" stroke="#94a3b8" strokeWidth="4" />
+                ) : (
+                  <rect x="20" y="20" width="460" height="460" fill="#334155" stroke="#94a3b8" strokeWidth="4" rx="4" />
+                )}
 
-                  {/* Stirrups / Ties */}
-                  {isCircular ? (
-                    <circle cx="250" cy="250" r={230 - cover * 0.8} fill="none" stroke="#e2e8f0" strokeWidth="3" strokeDasharray="6 4" />
-                  ) : (
-                    <rect x={20 + cover * 0.8} y={20 + cover * 0.8} width={460 - cover * 1.6} height={460 - cover * 1.6} fill="none" stroke="#e2e8f0" strokeWidth="3" strokeDasharray="6 4" />
-                  )}
+                {/* Stirrups / Ties */}
+                {isCircular ? (
+                  <circle cx="250" cy="250" r={230 - cover * 0.8} fill="none" stroke="#e2e8f0" strokeWidth="3" strokeDasharray="6 4" />
+                ) : (
+                  <rect x={20 + cover * 0.8} y={20 + cover * 0.8} width={460 - cover * 1.6} height={460 - cover * 1.6} fill="none" stroke="#e2e8f0" strokeWidth="3" strokeDasharray="6 4" />
+                )}
 
-                  {/* Encased Structural Steel Profile Drawing */}
-                  {isEncased && (
-                    <g>
-                      {(sectionType === 'steel_encased_i' || sectionType === 'steel_encased_h') && (
-                        <>
-                          {/* Top Flange */}
-                          <rect x={250 - (bf / b) * 230} y={250 - (ds / h) * 230} width={(bf / b) * 460} height={(tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
-                          {/* Bottom Flange */}
-                          <rect x={250 - (bf / b) * 230} y={250 + (ds / h) * 230 - (tf / h) * 460} width={(bf / b) * 460} height={(tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
-                          {/* Web */}
-                          <rect x={250 - (tw / b) * 230} y={250 - (ds / h) * 230 + (tf / h) * 460} width={(tw / b) * 460} height={(ds / h) * 460 - 2 * (tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
-                        </>
-                      )}
-                      {sectionType === 'steel_encased_t' && (
-                        <>
-                          {/* Flange */}
-                          <rect x={250 - (bf / b) * 230} y={250 - (ds / h) * 230} width={(bf / b) * 460} height={(tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
-                          {/* Stem */}
-                          <rect x={250 - (tw / b) * 230} y={250 - (ds / h) * 230 + (tf / h) * 460} width={(tw / b) * 460} height={(ds / h) * 460 - (tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
-                        </>
-                      )}
-                    </g>
-                  )}
+                {/* Encased Structural Steel Profile Drawing */}
+                {isEncased && (
+                  <g>
+                    {(sectionType === 'steel_encased_i' || sectionType === 'steel_encased_h') && (
+                      <>
+                        <rect x={250 - (bf / b) * 230} y={250 - (ds / h) * 230} width={(bf / b) * 460} height={(tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                        <rect x={250 - (bf / b) * 230} y={250 + (ds / h) * 230 - (tf / h) * 460} width={(bf / b) * 460} height={(tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                        <rect x={250 - (tw / b) * 230} y={250 - (ds / h) * 230 + (tf / h) * 460} width={(tw / b) * 460} height={(ds / h) * 460 - 2 * (tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                      </>
+                    )}
+                    {sectionType === 'steel_encased_t' && (
+                      <>
+                        <rect x={250 - (bf / b) * 230} y={250 - (ds / h) * 230} width={(bf / b) * 460} height={(tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                        <rect x={250 - (tw / b) * 230} y={250 - (ds / h) * 230 + (tf / h) * 460} width={(tw / b) * 460} height={(ds / h) * 460 - (tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                      </>
+                    )}
+                  </g>
+                )}
 
-                  {/* Rebars */}
-                  {rebar2DPositions.map((pt, idx) => {
-                    const cx = 20 + (pt.x / b) * 460;
-                    const cy = 20 + (pt.y / (isCircular ? b : h)) * 460;
-                    return <circle key={idx} cx={cx} cy={cy} r="10" fill="#ef4444" stroke="#7f1d1d" strokeWidth="2" />;
-                  })}
+                {/* Rebars */}
+                {rebar2DPositions.map((pt, idx) => {
+                  const cx = 20 + (pt.x / b) * 460;
+                  const cy = 20 + (pt.y / (isCircular ? b : h)) * 460;
+                  return <circle key={idx} cx={cx} cy={cy} r="10" fill="#ef4444" stroke="#7f1d1d" strokeWidth="2" />;
+                })}
 
-                  {/* Dimension Annotations */}
-                  <text x="250" y="10" fill="#94a3b8" fontSize="18" textAnchor="middle" fontWeight="bold">
-                    b = {b} mm
+                {/* Dimension Annotations */}
+                <text x="250" y="10" fill="#94a3b8" fontSize="18" textAnchor="middle" fontWeight="bold">
+                  b = {b} mm
+                </text>
+                {!isCircular && (
+                  <text x="500" y="250" fill="#94a3b8" fontSize="18" textAnchor="middle" fontWeight="bold" transform="rotate(90 500 250)">
+                    h = {h} mm
                   </text>
-                  {!isCircular && (
-                    <text x="500" y="250" fill="#94a3b8" fontSize="18" textAnchor="middle" fontWeight="bold" transform="rotate(90 500 250)">
-                      h = {h} mm
-                    </text>
-                  )}
-                </svg>
-              </div>
-            )}
+                )}
+              </svg>
+            </div>
 
             {/* 3D Model Viewport */}
             {(viewMode === '3d' || viewMode === 'split') && (
