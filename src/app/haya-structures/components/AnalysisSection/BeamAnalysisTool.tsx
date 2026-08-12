@@ -104,7 +104,7 @@ function solveBeamLocally(
   });
 
   if (support === 'simply_supported') {
-    R_B = totalEquivMomentA / L;
+    R_B = totalEquivMomentA / (L || 1);
     R_A = totalEquivForce - R_B;
   } else if (support === 'cantilever') {
     R_A = totalEquivForce;
@@ -115,7 +115,7 @@ function solveBeamLocally(
     M_A = totalEquivMomentA / 2;
     M_B = -totalEquivMomentA / 2;
   } else if (support === 'propped_cantilever') {
-    R_B = (3 * totalEquivMomentA) / (2 * L);
+    R_B = (3 * totalEquivMomentA) / (2 * (L || 1));
     R_A = totalEquivForce - R_B;
     M_A = totalEquivMomentA - R_B * L;
   }
@@ -142,7 +142,7 @@ function solveBeamLocally(
         } else if (load.type === 'triangular') {
           const len = load.length && load.length > 0 ? load.length : L - load.position;
           const activeLen = Math.min(x - load.position, len);
-          const wPeak = load.magnitude * (activeLen / len);
+          const wPeak = load.magnitude * (activeLen / (len || 1));
           const f = 0.5 * wPeak * activeLen;
           V -= f;
           M -= f * (x - load.position - activeLen / 3);
@@ -154,23 +154,24 @@ function solveBeamLocally(
     bendingMoment[i] = Number(M.toFixed(2));
 
     // Elastic Deflection Approximation (mm)
-    const EI = props.E * 1e6 * (props.I * 1e-8); // kN*m2
-    const maxM = Math.max(...bendingMoment.map(Math.abs));
-    deflection[i] = Number(((-(maxM * L * L) / (10 * (EI || 1))) * Math.sin((Math.PI * x) / L) * 1000).toFixed(2));
+    const EI = (props.E || 30000) * 1e6 * ((props.I || 1) * 1e-8); // kN*m2
+    const maxM = Math.max(...bendingMoment.map((val) => Math.abs(val) || 0));
+    const delta = (-(maxM * L * L) / (10 * (EI || 1))) * Math.sin((Math.PI * x) / (L || 1)) * 1000;
+    deflection[i] = Number((isNaN(delta) ? 0 : delta).toFixed(2));
   }
 
-  const maxV = Math.max(...shear.map(Math.abs));
-  const maxM = Math.max(...bendingMoment.map(Math.abs));
-  const maxDef = Math.max(...deflection.map(Math.abs));
+  const maxV = Math.max(...shear.map((v) => Math.abs(v) || 0));
+  const maxM = Math.max(...bendingMoment.map((m) => Math.abs(m) || 0));
+  const maxDef = Math.max(...deflection.map((d) => Math.abs(d) || 0));
 
   // Capacities computation based on Material Type
   let M_rd = 0;
   let V_rd = 0;
 
   if (materialType === 'rc') {
-    const d = props.h - 40; // Effective depth
+    const d = props.h - 40;
     M_rd = Number(((0.87 * props.fy * (3 * Math.PI * 8 * 8) * d) / 1e6).toFixed(2));
-    V_rd = Number(((0.18 * Math.sqrt(props.fc) * props.b * d) / 1000).toFixed(2));
+    V_rd = Number(((0.18 * Math.sqrt(props.fc || 25) * props.b * d) / 1000).toFixed(2));
   } else if (materialType === 'steel') {
     M_rd = Number(((props.Zx * 1000 * props.fy) / 1e6).toFixed(2));
     V_rd = Number(((0.6 * props.fy * props.b * props.h) / 1000).toFixed(2));
@@ -232,6 +233,7 @@ export default function BeamAnalysisTool() {
   const [kmodTimber, setKmodTimber] = useState<number>(0.8);
 
   const [viewDiagramOverlay, setViewDiagramOverlay] = useState<'none' | 'sfd' | 'bmd' | 'deflection'>('none');
+  const [chartTab, setChartTab] = useState<'sfd_bmd' | 'deflection'>('sfd_bmd');
 
   const [loads, setLoads] = useState<LoadItem[]>([
     { id: '1', type: 'point', magnitude: 25, position: 3 },
@@ -250,18 +252,18 @@ export default function BeamAnalysisTool() {
     const mount = mountRef.current;
     if (!mount) return;
 
-    const width = mount.clientWidth;
-    const height = mount.clientHeight;
+    const widthVal = mount.clientWidth || 600;
+    const heightVal = mount.clientHeight || 300;
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
     scene.background = new THREE.Color(0x0f172a);
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(45, widthVal / heightVal, 0.1, 1000);
     camera.position.set(length / 2, length * 0.6, length * 1.2);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    renderer.setSize(width, height);
+    renderer.setSize(widthVal, heightVal);
     renderer.setPixelRatio(window.devicePixelRatio);
     mount.appendChild(renderer.domElement);
 
@@ -321,21 +323,39 @@ export default function BeamAnalysisTool() {
       drawSupport(length, 'pin');
     }
 
-    // Load Vectors Visualiser
+    // Dynamic 3D Load Vectors Rendering
     loads.forEach((load) => {
       if (load.type === 'point') {
-        const dir = new THREE.Vector3(0, -1, 0);
-        const origin = new THREE.Vector3(load.position, 1.2, 0);
-        const arrow = new THREE.ArrowHelper(dir, origin, 1.0, 0xef4444, 0.2, 0.15);
+        const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(load.position, 1.2, 0), 1.0, 0xef4444, 0.2, 0.15);
         scene.add(arrow);
       } else if (load.type === 'udl') {
         const uLen = load.length && load.length > 0 ? load.length : length - load.position;
         const count = Math.max(3, Math.floor(uLen * 2));
         for (let i = 0; i < count; i++) {
-          const px = load.position + (i / (count - 1)) * uLen;
+          const px = load.position + (i / Math.max(1, count - 1)) * uLen;
           const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(px, 0.8, 0), 0.6, 0x38bdf8, 0.15, 0.1);
           scene.add(arrow);
         }
+      } else if (load.type === 'triangular') {
+        const uLen = load.length && load.length > 0 ? load.length : length - load.position;
+        const count = Math.max(4, Math.floor(uLen * 3));
+        for (let i = 0; i < count; i++) {
+          const ratio = i / Math.max(1, count - 1);
+          const px = load.position + ratio * uLen;
+          const height = 0.2 + ratio * 0.8;
+          const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(px, height + 0.2, 0), height, 0xf59e0b, 0.15, 0.1);
+          scene.add(arrow);
+        }
+      } else if (load.type === 'moment') {
+        const curve = new THREE.EllipseCurve(load.position, 0.5, 0.3, 0.3, 0, Math.PI * 1.5, false, 0);
+        const curvePoints = curve.getPoints(20);
+        const geometry = new THREE.BufferGeometry().setFromPoints(curvePoints.map((p) => new THREE.Vector3(p.x, p.y, 0)));
+        const material = new THREE.LineBasicMaterial({ color: 0xa855f7, linewidth: 3 });
+        const ellipse = new THREE.Line(geometry, material);
+        scene.add(ellipse);
+
+        const arrowHead = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(load.position + 0.3, 0.5, 0), 0.15, 0xa855f7, 0.12, 0.1);
+        scene.add(arrowHead);
       }
     });
 
@@ -352,17 +372,20 @@ export default function BeamAnalysisTool() {
       const scale = viewDiagramOverlay === 'deflection' ? 0.05 : 0.015;
 
       result.x_coords.forEach((x, idx) => {
-        const val = values[idx] || 0;
+        const rawVal = values ? values[idx] : 0;
+        const val = typeof rawVal === 'number' && !isNaN(rawVal) ? rawVal : 0;
         points.push(new THREE.Vector3(x, val * scale, 0.2));
       });
 
-      const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-      const lineMat = new THREE.LineBasicMaterial({
-        color: viewDiagramOverlay === 'sfd' ? 0xef4444 : viewDiagramOverlay === 'bmd' ? 0x38bdf8 : 0x10b981,
-        linewidth: 3,
-      });
-      const diagramLine = new THREE.Line(lineGeo, lineMat);
-      scene.add(diagramLine);
+      if (points.length > 0) {
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+        const lineMat = new THREE.LineBasicMaterial({
+          color: viewDiagramOverlay === 'sfd' ? 0xef4444 : viewDiagramOverlay === 'bmd' ? 0x38bdf8 : 0x10b981,
+          linewidth: 3,
+        });
+        const diagramLine = new THREE.Line(lineGeo, lineMat);
+        scene.add(diagramLine);
+      }
     }
 
     let animId: number;
@@ -449,7 +472,7 @@ export default function BeamAnalysisTool() {
         setResult(localData);
       }
     } catch (err) {
-      console.warn('API connection offline. Using in-browser Finite Element matrix solver.', err);
+      console.warn('API offline. Executing locally.', err);
       const localData = solveBeamLocally(length, support, loads, materialType, {
         E: materialType === 'steel' ? 200000 : 30000,
         I: (width * Math.pow(depth, 3)) / 12,
@@ -475,7 +498,7 @@ export default function BeamAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
-      // Compact Header Block
+      // Header Block
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, 210, 16, 'F');
 
@@ -487,9 +510,16 @@ export default function BeamAnalysisTool() {
       doc.setTextColor(226, 232, 240);
       doc.text(`Material: ${materialType.toUpperCase()} | Code: ${designCode} | Date: ${dateStr}`, 12, 14);
 
+      // Embedded 3D Viewport Capture into PDF
+      const canvas = mountRef.current?.querySelector('canvas');
+      if (canvas) {
+        const imgData = canvas.toDataURL('image/png');
+        doc.addImage(imgData, 'PNG', 12, 18, 186, 70);
+      }
+
       // Input & Output Summary Tables
       autoTable(doc, {
-        startY: 18,
+        startY: 92,
         margin: { left: 12 },
         tableWidth: 90,
         head: [['Design Input Parameter', 'Value / Unit']],
@@ -506,7 +536,7 @@ export default function BeamAnalysisTool() {
       });
 
       autoTable(doc, {
-        startY: 18,
+        startY: 92,
         margin: { left: 108 },
         tableWidth: 90,
         head: [['Verification Metric', 'Calculated Output']],
@@ -515,6 +545,7 @@ export default function BeamAnalysisTool() {
           ['Design Moment Capacity (M_rd)', `${result.design_verification?.M_rd ?? 0} kN·m`],
           ['Max Applied Shear |V_max|', `${result.critical_values?.max_shear_force ?? 0} kN`],
           ['Design Shear Capacity (V_rd)', `${result.design_verification?.V_rd ?? 0} kN`],
+          ['Max Deflection |δ_max|', `${result.critical_values?.max_deflection ?? 0} mm`],
           ['Overall DCR Status', `${result.design_verification?.overallDCR ?? 0} [${result.design_verification?.status}]`],
         ],
         theme: 'grid',
@@ -575,7 +606,7 @@ export default function BeamAnalysisTool() {
           </select>
         </div>
 
-        {/* Material Selection Tabs */}
+        {/* Material Tabs */}
         <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-center text-xs font-semibold">
           {(['rc', 'steel', 'timber', 'composite'] as MaterialType[]).map((mat) => (
             <button
@@ -615,7 +646,6 @@ export default function BeamAnalysisTool() {
           </div>
         </div>
 
-        {/* Section Dimension Inputs */}
         {materialType === 'rc' && (
           <div className="grid grid-cols-3 gap-2">
             <div>
@@ -705,9 +735,12 @@ export default function BeamAnalysisTool() {
             <p className="text-xs">
               Shear Capacity (V_rd): <span className="text-cyan-400 font-mono">{result.design_verification?.V_rd ?? 0} kN</span> (DCR: {result.design_verification?.shearDCR ?? 0})
             </p>
+            <p className="text-xs">
+              Max Deflection: <span className="text-emerald-400 font-mono">{result.critical_values?.max_deflection ?? 0} mm</span>
+            </p>
 
             <button onClick={generatePDF} disabled={downloadingPdf} className="w-full mt-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded transition shadow-lg text-xs">
-              {downloadingPdf ? 'Generating PDF...' : '📄 Download PDF Calculation Report'}
+              {downloadingPdf ? 'Generating PDF...' : '📄 Download PDF Report (With 3D Capture)'}
             </button>
           </div>
         )}
@@ -743,18 +776,50 @@ export default function BeamAnalysisTool() {
         {/* Structural Diagrams Section */}
         {result && (
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-4">
-            <h4 className="text-xs font-bold text-slate-300 border-b border-slate-800 pb-2">STRUCTURAL DIAGRAMS (SFD / BMD)</h4>
-            <div className="h-44 w-full">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+              <h4 className="text-xs font-bold text-slate-300">STRUCTURAL RESPONSE DIAGRAMS</h4>
+              <div className="flex space-x-1">
+                <button
+                  onClick={() => setChartTab('sfd_bmd')}
+                  className={`px-2 py-1 text-[10px] font-bold rounded transition ${
+                    chartTab === 'sfd_bmd' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  SFD & BMD
+                </button>
+                <button
+                  onClick={() => setChartTab('deflection')}
+                  className={`px-2 py-1 text-[10px] font-bold rounded transition ${
+                    chartTab === 'deflection' ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  DEFLECTION (mm)
+                </button>
+              </div>
+            </div>
+
+            <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="x" stroke="#94a3b8" fontSize={10} />
-                  <YAxis stroke="#94a3b8" fontSize={10} />
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: 11 }} />
-                  <ReferenceLine y={0} stroke="#64748b" />
-                  <Line type="monotone" dataKey="Shear" stroke="#ef4444" strokeWidth={2} dot={false} name="Shear Force (kN)" />
-                  <Line type="monotone" dataKey="Moment" stroke="#38bdf8" strokeWidth={2} dot={false} name="Bending Moment (kNm)" />
-                </LineChart>
+                {chartTab === 'sfd_bmd' ? (
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis dataKey="x" stroke="#94a3b8" fontSize={10} />
+                    <YAxis stroke="#94a3b8" fontSize={10} />
+                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: 11 }} />
+                    <ReferenceLine y={0} stroke="#64748b" />
+                    <Line type="monotone" dataKey="Shear" stroke="#ef4444" strokeWidth={2} dot={false} name="Shear Force (kN)" />
+                    <Line type="monotone" dataKey="Moment" stroke="#38bdf8" strokeWidth={2} dot={false} name="Bending Moment (kNm)" />
+                  </LineChart>
+                ) : (
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis dataKey="x" stroke="#94a3b8" fontSize={10} />
+                    <YAxis stroke="#94a3b8" fontSize={10} />
+                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: 11 }} />
+                    <ReferenceLine y={0} stroke="#64748b" />
+                    <Line type="monotone" dataKey="Deflection" stroke="#10b981" strokeWidth={2} dot={false} name="Deflection (mm)" />
+                  </LineChart>
+                )}
               </ResponsiveContainer>
             </div>
           </div>
