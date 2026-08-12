@@ -11,7 +11,6 @@ import {
   Tooltip,
 } from 'recharts';
 import jsPDF from 'jspdf';
-autoTable;
 import autoTable from 'jspdf-autotable';
 
 type MaterialType = 'rc' | 'steel' | 'timber' | 'composite';
@@ -20,9 +19,29 @@ type DesignCode = 'ACI318' | 'BS8110' | 'EC2' | 'EC3' | 'AISC360' | 'EC5' | 'NDS
 interface ColumnResult {
   material_type?: MaterialType;
   design_code?: DesignCode;
-  inputs?: { width: number; depth: number; cover: number; fc: number; fy: number; numBars: number; barDiam: number; length: number; kFactor: number; pu: number; m1: number; m2: number };
+  inputs?: {
+    width: number;
+    depth: number;
+    cover: number;
+    fc: number;
+    fy: number;
+    numBars: number;
+    barDiam: number;
+    length: number;
+    kFactor: number;
+    pu: number;
+    m1: number;
+    m2: number;
+  };
   section_properties?: { Ag: number; Ast: number; rebarRatio: number };
-  slenderness?: { klr?: number; limit?: number; isSlender?: boolean; Pcr?: number; delta_ns?: number; Mc?: number };
+  slenderness?: {
+    klr?: number;
+    limit?: number;
+    isSlender?: boolean;
+    Pcr?: number;
+    delta_ns?: number;
+    Mc?: number;
+  };
   capacity?: { phiPn_max?: number; dcr?: number; status?: 'SAFE' | 'OVERSTRESSED' };
   pm_envelope?: { c: number; Pn: number; Mn: number; phiPn: number; phiMn: number }[];
   bar_locations?: { x: number; y: number }[];

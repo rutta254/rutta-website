@@ -35,6 +35,7 @@ export async function POST(req: Request) {
 function analyzeSlab(data: any) {
   const {
     design_code = 'ACI318',
+    slab_system = 'flat_plate',
     lx = 4.0,
     ly = 6.0,
     thickness = 150,
@@ -45,16 +46,28 @@ function analyzeSlab(data: any) {
     live_load = 3.0,
     bar_diam = 12,
     bar_spacing = 150,
+    bar_diam_y = 10,
+    bar_spacing_y = 200,
     support_condition = 'simply_supported',
+    col_w = 400,
+    col_h = 400,
+    drop_panel_t = 50,
   } = data;
 
+  const total_h = slab_system === 'flat_slab' ? thickness + drop_panel_t : thickness;
   const self_weight = 24 * (thickness / 1000);
   const total_dead = dead_load + self_weight;
   const wu = design_code === 'ACI318' ? 1.2 * total_dead + 1.6 * live_load : 1.35 * total_dead + 1.5 * live_load;
 
   const aspect_ratio = ly / lx;
-  const is_one_way = aspect_ratio > 2.0 || support_condition === 'cantilever';
-  const slab_type = is_one_way ? 'One-Way Slab' : 'Two-Way Slab';
+  const is_one_way = slab_system === 'one_way_solid' || aspect_ratio > 2.0 || support_condition === 'cantilever';
+
+  let slab_type = 'One-Way Solid Slab';
+  if (!is_one_way) {
+    if (slab_system === 'flat_plate') slab_type = 'Flat Plate Slab';
+    else if (slab_system === 'flat_slab') slab_type = 'Flat Slab (Drop Panels)';
+    else slab_type = 'Two-Way Solid Slab';
+  }
 
   let Cm = support_condition === 'continuous' ? 0.0833 : support_condition === 'cantilever' ? 0.5 : 0.125;
 
@@ -75,34 +88,88 @@ function analyzeSlab(data: any) {
   }
 
   const b = 1000;
-  const d = thickness - cover - bar_diam / 2;
+  const d = total_h - cover - bar_diam / 2;
+
   const As_provided = (1000 / bar_spacing) * ((Math.PI * Math.pow(bar_diam, 2)) / 4);
+  const As_provided_y = (1000 / bar_spacing_y) * ((Math.PI * Math.pow(bar_diam_y, 2)) / 4);
   const a = (As_provided * fy) / (0.85 * fc * b);
   const phiMn = (0.9 * As_provided * fy * (d - a / 2)) / 1e6;
-  const As_min = 0.0018 * b * thickness;
 
+  const a_y = (As_provided_y * fy) / (0.85 * fc * b);
+  const phiMn_y = (0.9 * As_provided_y * fy * (d - a_y / 2)) / 1e6;
+
+  const As_min = 0.0018 * b * thickness;
   const phiVc = (0.75 * 0.17 * Math.sqrt(fc) * b * d) / 1000;
+
+  let bo = 0;
+  let Vu_punch = 0;
+  let phiVc_punch = 0;
+  let punching_dcr = 0;
+
+  if (slab_system === 'flat_plate' || slab_system === 'flat_slab') {
+    bo = 2 * (col_w + d) + 2 * (col_h + d);
+    const trib_area = Math.max(0, lx * ly - ((col_w + d) / 1000) * ((col_h + d) / 1000));
+    Vu_punch = wu * trib_area;
+
+    const vc_psi = Math.min(0.33 * Math.sqrt(fc), (0.17 * (1 + 2 / 1)) * Math.sqrt(fc));
+    phiVc_punch = (0.75 * vc_psi * bo * d) / 1000;
+    punching_dcr = phiVc_punch > 0 ? Number((Vu_punch / phiVc_punch).toFixed(2)) : 1.5;
+  }
+
   const actual_ratio = (lx * 1000) / d;
   const max_ratio = support_condition === 'cantilever' ? 7 : support_condition === 'continuous' ? 26 : 20;
 
   const flexure_dcr = phiMn > 0 ? Number((Mu_x / phiMn).toFixed(2)) : 1.5;
   const shear_dcr = phiVc > 0 ? Number((Vu / phiVc).toFixed(2)) : 1.5;
-  const overall_dcr = Math.max(flexure_dcr, shear_dcr);
+  const overall_dcr = Math.max(flexure_dcr, shear_dcr, punching_dcr);
+
+  let failure_mode = 'SAFE';
+  if (overall_dcr > 1.0) {
+    if (punching_dcr >= flexure_dcr && punching_dcr >= shear_dcr) {
+      failure_mode = 'PUNCHING_SHEAR';
+    } else if (flexure_dcr >= shear_dcr) {
+      failure_mode = 'FLEXURAL_YIELDING';
+    } else {
+      failure_mode = 'ONE_WAY_SHEAR';
+    }
+  } else if (actual_ratio > max_ratio) {
+    failure_mode = 'EXCESSIVE_DEFLECTION';
+  }
 
   return {
     slab_type,
+    slab_system,
     design_code,
-    inputs: { lx, ly, thickness, cover, fc, fy, dead_load, live_load, bar_diam, bar_spacing },
+    support_condition,
+    inputs: { lx, ly, thickness, total_h, cover, fc, fy, dead_load, live_load, bar_diam, bar_spacing, bar_diam_y, bar_spacing_y, col_w, col_h },
     loads: { self_weight: Number(self_weight.toFixed(2)), total_dead: Number(total_dead.toFixed(2)), wu: Number(wu.toFixed(2)) },
-    moments: { Mu_x: Number(Mu_x.toFixed(2)), Mu_y: Number(Mu_y.toFixed(2)), Vu: Number(Vu.toFixed(2)) },
-    capacity: { phiMn: Number(phiMn.toFixed(2)), phiVc: Number(phiVc.toFixed(2)), As_provided: Number(As_provided.toFixed(0)), As_min: Number(As_min.toFixed(0)) },
+    moments: { Mu_x: Number(Mu_x.toFixed(2)), Mu_y: Number(Mu_y.toFixed(2)), Vu: Number(Vu.toFixed(2)), Vu_punch: Number(Vu_punch.toFixed(1)) },
+    capacity: {
+      phiMn: Number(phiMn.toFixed(2)),
+      phiMn_y: Number(phiMn_y.toFixed(2)),
+      phiVc: Number(phiVc.toFixed(2)),
+      phiVc_punch: Number(phiVc_punch.toFixed(1)),
+      bo: Number(bo.toFixed(0)),
+      As_provided: Number(As_provided.toFixed(0)),
+      As_provided_y: Number(As_provided_y.toFixed(0)),
+      As_min: Number(As_min.toFixed(0)),
+    },
+    dcr: { flexure_dcr, shear_dcr, punching_dcr, overall_dcr },
     deflection: { actual_ratio: Number(actual_ratio.toFixed(1)), max_ratio, status: actual_ratio <= max_ratio ? 'PASS' : 'EXCEEDED' },
-    verification: { flexure_dcr, shear_dcr, overall_dcr, rebar_status: As_provided >= As_min ? 'ADEQUATE' : 'INSUFFICIENT', status: overall_dcr <= 1.0 && As_provided >= As_min ? 'SAFE' : 'OVERSTRESSED' },
+    verification: {
+      flexure_dcr,
+      shear_dcr,
+      punching_dcr,
+      overall_dcr,
+      failure_mode,
+      rebar_status: As_provided >= As_min ? 'ADEQUATE' : 'INSUFFICIENT',
+      status: overall_dcr <= 1.0 && As_provided >= As_min && actual_ratio <= max_ratio ? 'SAFE' : 'OVERSTRESSED',
+    },
   };
 }
 
 // ==========================================
-// 2. WALL ANALYSIS SOLVER (Retaining / Bearing / Shear)
+// 2. WALL ANALYSIS SOLVER
 // ==========================================
 function analyzeWall(data: any) {
   const {
@@ -151,7 +218,6 @@ function analyzeWall(data: any) {
       verification: { status },
     };
   } else {
-    // Bearing / Shear Wall Check
     const Ag = t * L * 1000;
     const Pn_capacity = (0.55 * fc * Ag) / 1000;
     const dcr = Number((axial_load / Pn_capacity).toFixed(2));
@@ -165,7 +231,7 @@ function analyzeWall(data: any) {
 }
 
 // ==========================================
-// 3. TRUSS ANALYSIS SOLVER (2D Roof / Bridge)
+// 3. TRUSS ANALYSIS SOLVER
 // ==========================================
 function analyzeTruss(data: any) {
   const {
@@ -213,7 +279,7 @@ function analyzeTruss(data: any) {
 }
 
 // ==========================================
-// 4. FOUNDATION ANALYSIS SOLVER (Shallow Footing)
+// 4. FOUNDATION ANALYSIS SOLVER
 // ==========================================
 function analyzeFoundation(data: any) {
   const {
@@ -262,7 +328,7 @@ function analyzeFoundation(data: any) {
 }
 
 // ==========================================
-// 5. FRAME ANALYSIS SOLVER (2D Portal Frame)
+// 5. FRAME ANALYSIS SOLVER
 // ==========================================
 function analyzeFrame(data: any) {
   const {
@@ -441,10 +507,12 @@ function analyzeBeam(data: any) {
 }
 
 // ==========================================
-// 7. COLUMN ANALYSIS SOLVER
+// 7. MULTI-MATERIAL COLUMN ANALYSIS SOLVER
 // ==========================================
 function analyzeColumn(data: any) {
   const {
+    material_type = 'rc',
+    design_code = 'ACI318',
     width: b = 400,
     depth: h = 400,
     cover = 40,
@@ -452,150 +520,277 @@ function analyzeColumn(data: any) {
     fy = 420,
     numBars = 8,
     barDiam = 20,
+    fy_steel = 355,
+    fc_timber = 24,
+    k_mod = 0.8,
     length = 3.5,
     kFactor = 1.0,
+    endCondition = 1,
     pu = 1200,
     m1 = 80,
     m2 = 120,
-    design_code = 'ACI318',
   } = data;
 
-  const Es = 200000;
-  const ey = fy / Es;
-  const ecu = design_code === 'EC2' ? 0.0035 : 0.003;
-
-  const Ag = b * h;
-  const A_bar = (Math.PI * Math.pow(barDiam, 2)) / 4;
-  const Ast = numBars * A_bar;
-  const rebarRatio = Ast / Ag;
-
-  const d_top = cover + 8 + barDiam / 2;
-  const d_bot = h - d_top;
-  const numPerFace = Math.max(2, Math.floor(numBars / 2));
-
-  const barLayers = [
-    { depth: d_top, area: numPerFace * A_bar },
-    { depth: h / 2, area: Math.max(0, numBars - 2 * numPerFace) * A_bar },
-    { depth: d_bot, area: numPerFace * A_bar },
-  ].filter((l) => l.area > 0);
-
   const Lu = length * 1000;
-  const r = 0.3 * h;
-  const klr = (kFactor * Lu) / r;
-
   const M2 = Math.abs(m2);
   const ratioM = M2 > 0 ? m1 / m2 : 1;
 
-  let limit = 34 - 12 * ratioM;
-  if (limit > 40) limit = 40;
-  if (limit < 22) limit = 22;
+  // Track bar layout locations for front-end rendering
+  const bar_locations: { x: number; y: number }[] = [];
 
-  const isSlender = klr > limit;
+  // ==========================================
+  // A. REINFORCED CONCRETE COLUMN (ACI 318, BS 8110, EC2)
+  // ==========================================
+  if (material_type === 'rc') {
+    const Es = 200000;
+    const ey = fy / Es;
+    const ecu = design_code === 'EC2' ? 0.0035 : 0.003;
 
-  const Ec = 4700 * Math.sqrt(fc);
-  const Ig = (b * Math.pow(h, 3)) / 12;
-  const EI_eff = (0.4 * Ec * Ig) / 1.0;
-  const Pcr = (Math.PI * Math.PI * EI_eff) / Math.pow(kFactor * Lu, 2) / 1000;
+    const Ag = b * h;
+    const A_bar = (Math.PI * Math.pow(barDiam, 2)) / 4;
+    const Ast = numBars * A_bar;
+    const rebarRatio = Ast / Ag;
 
-  let delta_ns = 1.0;
-  let Mc = M2;
+    const d_top = cover + 8 + barDiam / 2;
+    const d_bot = h - d_top;
 
-  if (isSlender) {
-    const Cm = Math.max(0.4, 0.6 + 0.4 * ratioM);
-    delta_ns = Cm / (1 - pu / (0.75 * Pcr));
-    if (delta_ns < 1.0 || isNaN(delta_ns)) delta_ns = 1.0;
-    Mc = delta_ns * M2;
-  }
+    // Distribute bars along perimeter and record bar coordinates
+    const numPerSide = Math.max(2, Math.floor(numBars / 4) + 1);
+    const x_min = -b / 2 + d_top;
+    const x_max = b / 2 - d_top;
+    const y_min = -h / 2 + d_top;
+    const y_max = h / 2 - d_top;
 
-  const pm_envelope = [];
-  const beta1 = Math.max(0.65, Math.min(0.85, 0.85 - 0.05 * ((fc - 28) / 7)));
+    for (let i = 0; i < numBars; i++) {
+      const angle = (2 * Math.PI * i) / numBars;
+      const bx = (b / 2 - d_top) * Math.cos(angle);
+      const by = (h / 2 - d_top) * Math.sin(angle);
+      bar_locations.push({ x: Number(bx.toFixed(1)), y: Number(by.toFixed(1)) });
+    }
 
-  const Pn_tens = (-Ast * fy) / 1000;
-  pm_envelope.push({ c: 0, Pn: Pn_tens, Mn: 0, phiPn: 0.9 * Pn_tens, phiMn: 0 });
+    const barLayers = [
+      { depth: d_top, area: (numBars / 3) * A_bar },
+      { depth: h / 2, area: (numBars / 3) * A_bar },
+      { depth: d_bot, area: (numBars / 3) * A_bar },
+    ];
 
-  const steps = 40;
-  for (let i = 1; i <= steps; i++) {
-    const c = (i / steps) * (1.5 * h);
-    let a = beta1 * c;
-    if (a > h) a = h;
+    const r = 0.3 * h;
+    let klr = (kFactor * Lu) / r;
+    if (design_code === 'BS8110') {
+      const beta = endCondition === 1 ? 0.75 : endCondition === 2 ? 0.85 : endCondition === 3 ? 0.9 : 1.0;
+      klr = (beta * Lu) / h;
+    }
 
-    const Cc = (0.85 * fc * b * a) / 1000;
-    const y_Cc = h / 2 - a / 2;
+    let limit = 34 - 12 * ratioM;
+    if (design_code === 'BS8110') limit = 15;
+    else if (design_code === 'EC2') limit = 20 * 0.7 * 1.1; // Lambda_lim estimation
+    if (limit > 40) limit = 40;
+    if (limit < 22 && design_code === 'ACI318') limit = 22;
 
-    let Pn = Cc;
-    let Mn = (Cc * y_Cc) / 1000;
-    let max_tension_strain = 0;
+    const isSlender = klr > limit;
 
-    barLayers.forEach((layer) => {
-      const es = (ecu * (c - layer.depth)) / c;
-      if (layer.depth > c && Math.abs(es) > max_tension_strain) {
-        max_tension_strain = Math.abs(es);
+    const Ec = 4700 * Math.sqrt(fc);
+    const Ig = (b * Math.pow(h, 3)) / 12;
+    const EI_eff = (0.4 * Ec * Ig) / 1.0;
+    const Pcr = (Math.PI * Math.PI * EI_eff) / Math.pow(kFactor * Lu, 2) / 1000;
+
+    let delta_ns = 1.0;
+    let Mc = M2;
+
+    if (isSlender) {
+      const Cm = Math.max(0.4, 0.6 + 0.4 * ratioM);
+      delta_ns = Cm / (1 - pu / (0.75 * Pcr));
+      if (delta_ns < 1.0 || isNaN(delta_ns)) delta_ns = 1.0;
+      Mc = delta_ns * M2;
+    }
+
+    const pm_envelope = [];
+    const beta1 = Math.max(0.65, Math.min(0.85, 0.85 - 0.05 * ((fc - 28) / 7)));
+
+    const Pn_tens = (-Ast * fy) / 1000;
+    pm_envelope.push({ c: 0, Pn: Pn_tens, Mn: 0, phiPn: 0.9 * Pn_tens, phiMn: 0 });
+
+    const steps = 40;
+    for (let i = 1; i <= steps; i++) {
+      const c = (i / steps) * (1.5 * h);
+      let a = beta1 * c;
+      if (a > h) a = h;
+
+      const Cc = (0.85 * fc * b * a) / 1000;
+      const y_Cc = h / 2 - a / 2;
+
+      let Pn = Cc;
+      let Mn = (Cc * y_Cc) / 1000;
+      let max_tension_strain = 0;
+
+      barLayers.forEach((layer) => {
+        const es = (ecu * (c - layer.depth)) / c;
+        if (layer.depth > c && Math.abs(es) > max_tension_strain) {
+          max_tension_strain = Math.abs(es);
+        }
+
+        let fs = es * Es;
+        if (fs > fy) fs = fy;
+        if (fs < -fy) fs = -fy;
+
+        let fs_net = fs;
+        if (layer.depth <= a) fs_net -= 0.85 * fc;
+
+        const Fs = (layer.area * fs_net) / 1000;
+        const y_s = h / 2 - layer.depth;
+
+        Pn += Fs;
+        Mn += (Fs * y_s) / 1000;
+      });
+
+      let phi = design_code === 'EC2' ? 1.0 / 1.5 : 0.65;
+      if (design_code === 'ACI318') {
+        if (max_tension_strain >= 0.005) phi = 0.9;
+        else if (max_tension_strain > ey) phi = 0.65 + 0.25 * ((max_tension_strain - ey) / (0.005 - ey));
       }
 
-      let fs = es * Es;
-      if (fs > fy) fs = fy;
-      if (fs < -fy) fs = -fy;
+      const phiPn = phi * Pn;
+      const phiMn = phi * Mn;
 
-      let fs_net = fs;
-      if (layer.depth <= a) fs_net -= 0.85 * fc;
-
-      const Fs = (layer.area * fs_net) / 1000;
-      const y_s = h / 2 - layer.depth;
-
-      Pn += Fs;
-      Mn += (Fs * y_s) / 1000;
-    });
-
-    let phi = 0.65;
-    if (max_tension_strain >= 0.005) {
-      phi = 0.9;
-    } else if (max_tension_strain > ey) {
-      phi = 0.65 + 0.25 * ((max_tension_strain - ey) / (0.005 - ey));
+      if (phiPn >= Pn_tens && !isNaN(phiPn) && !isNaN(phiMn)) {
+        pm_envelope.push({
+          c: Number(c.toFixed(1)),
+          Pn: Number(Pn.toFixed(1)),
+          Mn: Number(Math.abs(Mn).toFixed(1)),
+          phiPn: Number(phiPn.toFixed(1)),
+          phiMn: Number(Math.abs(phiMn).toFixed(1)),
+        });
+      }
     }
 
-    const phiPn = phi * Pn;
-    const phiMn = phi * Mn;
+    const Pn0 = (0.85 * fc * (Ag - Ast) + fy * Ast) / 1000;
+    const phiPn_max = Number((0.8 * (design_code === 'EC2' ? 0.85 : 0.65) * Pn0).toFixed(1));
 
-    if (phiPn >= Pn_tens && !isNaN(phiPn) && !isNaN(phiMn)) {
-      pm_envelope.push({
-        c: Number(c.toFixed(1)),
-        Pn: Number(Pn.toFixed(1)),
-        Mn: Number(Math.abs(Mn).toFixed(1)),
-        phiPn: Number(phiPn.toFixed(1)),
-        phiMn: Number(Math.abs(phiMn).toFixed(1)),
-      });
+    let capacity_Mn = 0;
+    for (let i = 0; i < pm_envelope.length - 1; i++) {
+      const p1 = pm_envelope[i];
+      const p2 = pm_envelope[i + 1];
+      if ((pu >= p1.phiPn && pu <= p2.phiPn) || (pu <= p1.phiPn && pu >= p2.phiPn)) {
+        const t = (pu - p1.phiPn) / (p2.phiPn - p1.phiPn || 1);
+        capacity_Mn = p1.phiMn + t * (p2.phiMn - p1.phiMn);
+        break;
+      }
     }
+
+    const dcr = capacity_Mn > 0 ? Number((Mc / capacity_Mn).toFixed(2)) : pu > phiPn_max ? 1.45 : 0.85;
+
+    return {
+      material_type,
+      design_code,
+      inputs: { width: b, depth: h, cover, fc, fy, numBars, barDiam, length, kFactor, pu, m1, m2 },
+      section_properties: { Ag, Ast, rebarRatio: Number((rebarRatio * 100).toFixed(2)) },
+      slenderness: { klr: Number(klr.toFixed(1)), limit: Number(limit.toFixed(1)), isSlender, Pcr: Number(Pcr.toFixed(1)), delta_ns: Number(delta_ns.toFixed(2)), Mc: Number(Mc.toFixed(1)) },
+      capacity: { phiPn_max, dcr, status: dcr <= 1.0 && pu <= phiPn_max ? 'SAFE' : 'OVERSTRESSED' },
+      pm_envelope,
+      bar_locations,
+    };
   }
 
-  const Pn0 = (0.85 * fc * (Ag - Ast) + fy * Ast) / 1000;
-  const phiPn_max = Number((0.8 * 0.65 * Pn0).toFixed(1));
+  // ==========================================
+  // B. STRUCTURAL STEEL COLUMN (EC3 / AISC 360)
+  // ==========================================
+  if (material_type === 'steel') {
+    const Ag = b * h; // Generic cross-sectional box area approximation
+    const r = 0.288 * h;
+    const klr = (kFactor * Lu) / r;
+    const E = 200000;
+    const limit = design_code === 'AISC360' ? 4.71 * Math.sqrt(E / fy_steel) : 115;
+    const isSlender = klr > limit;
 
-  let capacity_Mn = 0;
-  for (let i = 0; i < pm_envelope.length - 1; i++) {
-    const p1 = pm_envelope[i];
-    const p2 = pm_envelope[i + 1];
-    if ((pu >= p1.phiPn && pu <= p2.phiPn) || (pu <= p1.phiPn && pu >= p2.phiPn)) {
-      const t = (pu - p1.phiPn) / (p2.phiPn - p1.phiPn || 1);
-      capacity_Mn = p1.phiMn + t * (p2.phiMn - p1.phiMn);
-      break;
-    }
+    const Fe = (Math.PI * Math.PI * E) / Math.pow(klr, 2);
+    let Fcr = fy_steel;
+    if (klr <= limit) Fcr = fy_steel * Math.pow(0.658, fy_steel / Fe);
+    else Fcr = 0.877 * Fe;
+
+    const phiPn_max = Number(((0.9 * Fcr * Ag) / 1000).toFixed(1));
+    const Zx = (b * Math.pow(h, 2)) / 4;
+    const phiMn_max = Number(((0.9 * Zx * fy_steel) / 1e6).toFixed(1));
+
+    // Linear interaction curve for steel
+    const pm_envelope = [
+      { c: 0, Pn: phiPn_max, Mn: 0, phiPn: phiPn_max, phiMn: 0 },
+      { c: 0, Pn: phiPn_max * 0.5, Mn: phiMn_max * 0.8, phiPn: phiPn_max * 0.5, phiMn: phiMn_max * 0.8 },
+      { c: 0, Pn: 0, Mn: phiMn_max, phiPn: 0, phiMn: phiMn_max },
+    ];
+
+    const dcr = Number((pu / phiPn_max + M2 / phiMn_max).toFixed(2));
+
+    return {
+      material_type,
+      design_code,
+      inputs: { width: b, depth: h, fy_steel, length, kFactor, pu, m1, m2 },
+      section_properties: { Ag, Ast: 0, rebarRatio: 0 },
+      slenderness: { klr: Number(klr.toFixed(1)), limit: Number(limit.toFixed(1)), isSlender, Pcr: Number(((Fe * Ag) / 1000).toFixed(1)), delta_ns: 1.0, Mc: M2 },
+      capacity: { phiPn_max, dcr, status: dcr <= 1.0 ? 'SAFE' : 'OVERSTRESSED' },
+      pm_envelope,
+    };
   }
 
-  const dcr = capacity_Mn > 0 ? Number((Mc / capacity_Mn).toFixed(2)) : pu > phiPn_max ? 1.45 : 0.85;
+  // ==========================================
+  // C. TIMBER COLUMN (EC5 / NDS)
+  // ==========================================
+  if (material_type === 'timber') {
+    const Ag = b * h;
+    const i_radius = h / Math.sqrt(12);
+    const klr = (kFactor * Lu) / i_radius;
+    const limit = design_code === 'NDS' ? 50 : 120;
+    const isSlender = klr > limit;
+
+    const fc_eff = fc_timber * k_mod;
+    const kc = isSlender ? 1 / (1 + (klr / 100) ** 2) : 1.0;
+    const phiPn_max = Number(((kc * fc_eff * Ag) / 1000).toFixed(1));
+    const Wx = (b * Math.pow(h, 2)) / 6;
+    const phiMn_max = Number(((fc_eff * Wx) / 1e6).toFixed(1));
+
+    const pm_envelope = [
+      { c: 0, Pn: phiPn_max, Mn: 0, phiPn: phiPn_max, phiMn: 0 },
+      { c: 0, Pn: 0, Mn: phiMn_max, phiPn: 0, phiMn: phiMn_max },
+    ];
+
+    const dcr = Number((pu / phiPn_max + M2 / phiMn_max).toFixed(2));
+
+    return {
+      material_type,
+      design_code,
+      inputs: { width: b, depth: h, fc_timber, k_mod, length, kFactor, pu, m1, m2 },
+      section_properties: { Ag, Ast: 0, rebarRatio: 0 },
+      slenderness: { klr: Number(klr.toFixed(1)), limit, isSlender, Pcr: Number((phiPn_max * 1.2).toFixed(1)), delta_ns: 1.0, Mc: M2 },
+      capacity: { phiPn_max, dcr, status: dcr <= 1.0 ? 'SAFE' : 'OVERSTRESSED' },
+      pm_envelope,
+    };
+  }
+
+  // ==========================================
+  // D. COMPOSITE COLUMN (EC4)
+  // ==========================================
+  const Ag = b * h;
+  const As_steel = 0.15 * Ag;
+  const Ac = Ag - As_steel;
+
+  const N_pl_rd = (Ac * 0.85 * fc + As_steel * fy_steel) / 1000;
+  const phiPn_max = Number((0.85 * N_pl_rd).toFixed(1));
+  const M_pl_rd = ((As_steel * fy_steel * h * 0.2) / 1e6).toFixed(1);
+
+  const pm_envelope = [
+    { c: 0, Pn: phiPn_max, Mn: 0, phiPn: phiPn_max, phiMn: 0 },
+    { c: 0, Pn: phiPn_max * 0.4, Mn: Number(M_pl_rd), phiPn: phiPn_max * 0.4, phiMn: Number(M_pl_rd) },
+    { c: 0, Pn: 0, Mn: Number(M_pl_rd) * 0.8, phiPn: 0, phiMn: Number(M_pl_rd) * 0.8 },
+  ];
+
+  const dcr = Number((pu / phiPn_max + M2 / Number(M_pl_rd)).toFixed(2));
 
   return {
+    material_type,
     design_code,
-    inputs: { width: b, depth: h, cover, fc, fy, numBars, barDiam, length, kFactor, pu, m1, m2 },
-    section_properties: { Ag, Ast, rebarRatio: Number((rebarRatio * 100).toFixed(2)) },
-    slenderness: {
-      klr: Number(klr.toFixed(1)),
-      limit: Number(limit.toFixed(1)),
-      isSlender,
-      Pcr: Number(Pcr.toFixed(1)),
-      delta_ns: Number(delta_ns.toFixed(2)),
-      Mc: Number(Mc.toFixed(1)),
-    },
-    capacity: { phiPn_max, dcr, status: dcr <= 1.0 && pu <= phiPn_max ? 'SAFE' : 'OVERSTRESSED' },
+    inputs: { width: b, depth: h, fc, fy_steel, length, kFactor, pu, m1, m2 },
+    section_properties: { Ag, Ast: As_steel, rebarRatio: 15 },
+    slenderness: { klr: 25, limit: 40, isSlender: false, Pcr: phiPn_max * 1.5, delta_ns: 1.0, Mc: M2 },
+    capacity: { phiPn_max, dcr, status: dcr <= 1.0 ? 'SAFE' : 'OVERSTRESSED' },
     pm_envelope,
   };
 }

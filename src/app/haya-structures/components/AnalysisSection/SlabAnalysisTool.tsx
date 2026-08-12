@@ -5,16 +5,19 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 type DesignCode = 'ACI318' | 'EC2' | 'BS8110';
+type SlabSystem = 'one_way_solid' | 'two_way_solid' | 'flat_plate' | 'flat_slab';
 type SupportCondition = 'simply_supported' | 'continuous' | 'cantilever' | 'restrained_4edges';
 
 interface SlabResult {
   slab_type?: string;
+  slab_system?: SlabSystem;
   design_code?: DesignCode;
   support_condition?: SupportCondition;
   inputs?: {
     lx: number;
     ly: number;
     thickness: number;
+    total_h?: number;
     cover: number;
     fc: number;
     fy: number;
@@ -24,6 +27,8 @@ interface SlabResult {
     bar_spacing: number;
     bar_diam_y: number;
     bar_spacing_y: number;
+    col_w?: number;
+    col_h?: number;
   };
   loads?: {
     self_weight: number;
@@ -34,15 +39,23 @@ interface SlabResult {
     Mu_x: number;
     Mu_y: number;
     Vu: number;
+    Vu_punch?: number;
   };
   capacity?: {
     phiMn: number;
     phiMn_y: number;
     phiVc: number;
+    phiVc_punch?: number;
+    bo?: number;
     As_provided: number;
     As_provided_y: number;
     As_min: number;
-    As_max: number;
+  };
+  dcr?: {
+    flexure_dcr: number;
+    shear_dcr: number;
+    punching_dcr?: number;
+    overall_dcr: number;
   };
   deflection?: {
     actual_ratio: number;
@@ -52,7 +65,9 @@ interface SlabResult {
   verification?: {
     flexure_dcr: number;
     shear_dcr: number;
+    punching_dcr?: number;
     overall_dcr: number;
+    failure_mode?: string;
     rebar_status: string;
     status: 'SAFE' | 'OVERSTRESSED';
   };
@@ -60,13 +75,19 @@ interface SlabResult {
 
 export default function SlabAnalysisTool() {
   const [designCode, setDesignCode] = useState<DesignCode>('ACI318');
+  const [slabSystem, setSlabSystem] = useState<SlabSystem>('flat_plate');
   const [supportCondition, setSupportCondition] = useState<SupportCondition>('simply_supported');
 
   // Geometry
   const [lx, setLx] = useState<number>(4.0);
   const [ly, setLy] = useState<number>(6.0);
-  const [thickness, setThickness] = useState<number>(160);
+  const [thickness, setThickness] = useState<number>(180);
   const [cover, setCover] = useState<number>(25);
+
+  // Column / Drop Panel Geometry (Punching Shear)
+  const [colW, setColW] = useState<number>(400);
+  const [colH, setColH] = useState<number>(400);
+  const [dropPanelT, setDropPanelT] = useState<number>(50);
 
   // Materials
   const [fc, setFc] = useState<number>(30);
@@ -88,12 +109,15 @@ export default function SlabAnalysisTool() {
   const [loading, setLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
+  const isPunchingRelevant = slabSystem === 'flat_plate' || slabSystem === 'flat_slab';
+
   const handleAnalyze = async () => {
     setLoading(true);
     try {
       const payload = {
         element_type: 'slab',
         design_code: designCode,
+        slab_system: slabSystem,
         support_condition: supportCondition,
         lx: Number(lx),
         ly: Number(ly),
@@ -107,6 +131,9 @@ export default function SlabAnalysisTool() {
         bar_spacing: Number(barSpacing),
         bar_diam_y: Number(barDiamY),
         bar_spacing_y: Number(barSpacingY),
+        col_w: Number(colW),
+        col_h: Number(colH),
+        drop_panel_t: Number(dropPanelT),
       };
 
       const res = await fetch('/api/analyze', {
@@ -206,10 +233,13 @@ export default function SlabAnalysisTool() {
         tableWidth: 90,
         head: [['Design Input Parameter', 'Value / Unit']],
         body: [
+          ['Slab System Type', result.slab_type ?? 'Flat Plate'],
           ['Short Span (Lx)', `${lx} m`],
           ['Long Span (Ly)', `${ly} m`],
           ['Aspect Ratio (Ly/Lx)', `${(ly / lx).toFixed(2)}`],
           ['Slab Thickness (h)', `${thickness} mm`],
+          ...(slabSystem === 'flat_slab' ? [['Drop Panel Thickness', `+${dropPanelT} mm`]] : []),
+          ...(isPunchingRelevant ? [['Column Size (c1 x c2)', `${colW} x ${colH} mm`]] : []),
           ['Concrete Cover (c)', `${cover} mm`],
           ['Concrete Strength (f\'c / fck)', `${fc} MPa`],
           ['Steel Yield Strength (fy)', `${fy} MPa`],
@@ -229,18 +259,27 @@ export default function SlabAnalysisTool() {
         tableWidth: 90,
         head: [['Analysis & Structural Verification', 'Result / Status']],
         body: [
-          ['Slab Classification', result.slab_type ?? 'One-Way'],
+          ['Slab Classification', result.slab_type ?? 'Flat Plate'],
           ['Ultimate Load (wu)', `${result.loads?.wu ?? 0} kN/m²`],
           ['Design Moment Short Span (Mu,x)', `${result.moments?.Mu_x ?? 0} kN·m/m`],
           ['Design Moment Long Span (Mu,y)', `${result.moments?.Mu_y ?? 0} kN·m/m`],
-          ['Design Shear Force (Vu)', `${result.moments?.Vu ?? 0} kN/m`],
+          ['One-Way Shear Force (Vu)', `${result.moments?.Vu ?? 0} kN/m`],
+          ...(isPunchingRelevant
+            ? [
+                ['Punching Shear Force (Vu,punch)', `${result.moments?.Vu_punch ?? 0} kN`],
+                ['Punching Capacity (φVc,punch)', `${result.capacity?.phiVc_punch ?? 0} kN`],
+                ['Critical Perimeter (bo)', `${result.capacity?.bo ?? 0} mm`],
+                ['Punching Shear DCR', `${result.verification?.punching_dcr ?? result.dcr?.punching_dcr ?? 0}`],
+              ]
+            : []),
           ['Flexural Capacity (φMn,x)', `${result.capacity?.phiMn ?? 0} kN·m/m`],
           ['One-Way Shear Capacity (φVc)', `${result.capacity?.phiVc ?? 0} kN/m`],
           ['Provided Steel Area (As,x)', `${result.capacity?.As_provided ?? 0} mm²/m`],
           ['Minimum Steel Required (As,min)', `${result.capacity?.As_min ?? 0} mm²/m`],
           ['Span / Depth Ratio (L/d)', `${result.deflection?.actual_ratio} (Max: ${result.deflection?.max_ratio})`],
-          ['Flexural DCR', `${result.verification?.flexure_dcr ?? 0}`],
-          ['Shear DCR', `${result.verification?.shear_dcr ?? 0}`],
+          ['Flexural DCR', `${result.verification?.flexure_dcr ?? result.dcr?.flexure_dcr ?? 0}`],
+          ['Shear DCR', `${result.verification?.shear_dcr ?? result.dcr?.shear_dcr ?? 0}`],
+          ['Governing Failure Mode', result.verification?.failure_mode ?? 'SAFE'],
           ['Overall Compliance', result.verification?.status ?? 'SAFE'],
         ],
         theme: 'grid',
@@ -248,7 +287,7 @@ export default function SlabAnalysisTool() {
         bodyStyles: { fontSize: 6.5, cellPadding: 1 },
       });
 
-      let currentY = 78;
+      let currentY = 88;
 
       const planSvg = document.getElementById('slab-plan-svg') as unknown as SVGSVGElement;
       const secSvg = document.getElementById('slab-section-svg') as unknown as SVGSVGElement;
@@ -290,6 +329,26 @@ export default function SlabAnalysisTool() {
     }
   };
 
+  const getFailureModeBadge = (mode?: string) => {
+    switch (mode) {
+      case 'PUNCHING_SHEAR':
+        return { label: 'CRITICAL: Punching Shear Failure', color: 'bg-rose-500/20 text-rose-400 border-rose-500/40' };
+      case 'FLEXURAL_YIELDING':
+        return { label: 'CRITICAL: Flexural Yielding', color: 'bg-amber-500/20 text-amber-400 border-amber-500/40' };
+      case 'ONE_WAY_SHEAR':
+        return { label: 'CRITICAL: One-Way Beam Shear', color: 'bg-orange-500/20 text-orange-400 border-orange-500/40' };
+      case 'EXCESSIVE_DEFLECTION':
+        return { label: 'WARNING: Excessive Deflection (L/d Exceeded)', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40' };
+      default:
+        return { label: 'OPTIMAL: All Design Checks Passed', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' };
+    }
+  };
+
+  const flexDcr = result?.verification?.flexure_dcr ?? result?.dcr?.flexure_dcr ?? 0;
+  const shearDcr = result?.verification?.shear_dcr ?? result?.dcr?.shear_dcr ?? 0;
+  const punchDcr = result?.verification?.punching_dcr ?? result?.dcr?.punching_dcr ?? 0;
+  const overallDcr = result?.verification?.overall_dcr ?? result?.dcr?.overall_dcr ?? 0;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* Control Input Panel */}
@@ -307,7 +366,22 @@ export default function SlabAnalysisTool() {
           </select>
         </div>
 
-        {/* Support Conditions */}
+        {/* Slab System Selector */}
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">Structural Slab System</label>
+          <select
+            value={slabSystem}
+            onChange={(e) => setSlabSystem(e.target.value as SlabSystem)}
+            className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200 font-medium"
+          >
+            <option value="flat_plate">Flat Plate (Direct Column Support)</option>
+            <option value="flat_slab">Flat Slab (With Drop Panels)</option>
+            <option value="two_way_solid">Two-Way Solid Slab on Beams</option>
+            <option value="one_way_solid">One-Way Solid Slab</option>
+          </select>
+        </div>
+
+        {/* Boundary Support Conditions */}
         <div>
           <label className="block text-xs text-slate-400 mb-1">Boundary Support Condition</label>
           <select
@@ -315,7 +389,7 @@ export default function SlabAnalysisTool() {
             onChange={(e) => setSupportCondition(e.target.value as SupportCondition)}
             className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200"
           >
-            <option value="simply_supported">Simply Supported (4 Edges)</option>
+            <option value="simply_supported">Simply Supported</option>
             <option value="continuous">Continuous / Fixed Ends</option>
             <option value="restrained_4edges">Restrained Exterior Edges (Two-Way)</option>
             <option value="cantilever">Cantilever Slab</option>
@@ -366,6 +440,44 @@ export default function SlabAnalysisTool() {
             />
           </div>
         </div>
+
+        {/* Punching Shear Specific Parameters */}
+        {isPunchingRelevant && (
+          <div className="p-3 bg-cyan-950/30 border border-cyan-800/40 rounded-lg space-y-3">
+            <h4 className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">Punching Shear Parameters</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Column Width c1 (mm)</label>
+                <input
+                  type="number"
+                  value={colW}
+                  onChange={(e) => setColW(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Column Height c2 (mm)</label>
+                <input
+                  type="number"
+                  value={colH}
+                  onChange={(e) => setColH(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200"
+                />
+              </div>
+            </div>
+            {slabSystem === 'flat_slab' && (
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Extra Drop Panel Thickness (mm)</label>
+                <input
+                  type="number"
+                  value={dropPanelT}
+                  onChange={(e) => setDropPanelT(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200"
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Material Specs */}
         <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
@@ -491,11 +603,16 @@ export default function SlabAnalysisTool() {
             <p>
               Short Span Moment (Mu,x): <span className="text-cyan-400 font-mono">{result.moments?.Mu_x} kN·m/m</span>
             </p>
+            {isPunchingRelevant && (
+              <p>
+                Punching Shear (Vu,punch): <span className="text-rose-400 font-mono">{result.moments?.Vu_punch ?? 0} kN</span>
+              </p>
+            )}
             <p>
               Flexural Capacity (φMn): <span className="text-emerald-400 font-mono">{result.capacity?.phiMn} kN·m/m</span>
             </p>
             <p>
-              Overall DCR Ratio: <span className="text-emerald-400 font-mono">{result.verification?.overall_dcr}</span>
+              Overall Governing DCR: <span className="text-emerald-400 font-mono">{overallDcr}</span>
             </p>
 
             <button
@@ -513,28 +630,34 @@ export default function SlabAnalysisTool() {
       <div className="lg:col-span-7 space-y-6">
         {/* Metric Cards Row */}
         {result && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl text-center">
               <span className="text-xs text-slate-400 block mb-1">Flexure DCR</span>
-              <span
-                className={`text-lg font-bold font-mono ${
-                  (result.verification?.flexure_dcr ?? 0) <= 1.0 ? 'text-emerald-400' : 'text-red-400'
-                }`}
-              >
-                {result.verification?.flexure_dcr}
+              <span className={`text-lg font-bold font-mono ${flexDcr <= 1.0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {flexDcr}
               </span>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl text-center">
-              <span className="text-xs text-slate-400 block mb-1">Shear DCR</span>
-              <span
-                className={`text-lg font-bold font-mono ${
-                  (result.verification?.shear_dcr ?? 0) <= 1.0 ? 'text-emerald-400' : 'text-red-400'
-                }`}
-              >
-                {result.verification?.shear_dcr}
+              <span className="text-xs text-slate-400 block mb-1">One-Way Shear</span>
+              <span className={`text-lg font-bold font-mono ${shearDcr <= 1.0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {shearDcr}
               </span>
             </div>
+
+            {isPunchingRelevant ? (
+              <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl text-center">
+                <span className="text-xs text-slate-400 block mb-1">Punching DCR</span>
+                <span className={`text-lg font-bold font-mono ${punchDcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {punchDcr}
+                </span>
+              </div>
+            ) : (
+              <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl text-center opacity-50">
+                <span className="text-xs text-slate-400 block mb-1">Punching DCR</span>
+                <span className="text-xs text-slate-500 block">N/A (Beams Present)</span>
+              </div>
+            )}
 
             <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl text-center">
               <span className="text-xs text-slate-400 block mb-1">Deflection (L/d)</span>
@@ -546,6 +669,19 @@ export default function SlabAnalysisTool() {
                 {result.deflection?.actual_ratio} / {result.deflection?.max_ratio}
               </span>
             </div>
+          </div>
+        )}
+
+        {/* Failure Mode Banner */}
+        {result && (
+          <div className={`p-3 rounded-xl border flex items-center justify-between ${getFailureModeBadge(result.verification?.failure_mode).color}`}>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider block">Governing Structural Behavior</span>
+              <span className="text-sm font-semibold">{getFailureModeBadge(result.verification?.failure_mode).label}</span>
+            </div>
+            <span className="text-xs font-mono font-bold bg-slate-950/60 px-2.5 py-1 rounded border border-slate-800">
+              Max DCR: {overallDcr}
+            </span>
           </div>
         )}
 
@@ -574,10 +710,32 @@ export default function SlabAnalysisTool() {
                   </>
                 )}
 
-                <text x="140" y="90" fill="#fbbf24" fontSize="10" textAnchor="middle" fontWeight="bold">
+                {/* Punching Shear Column & Critical Perimeter Overlay */}
+                {isPunchingRelevant && (
+                  <g>
+                    {/* Punching Perimeter d/2 */}
+                    <rect
+                      x="115"
+                      y="75"
+                      width="50"
+                      height="50"
+                      fill="none"
+                      stroke={punchDcr > 1.0 ? '#f43f5e' : '#f59e0b'}
+                      strokeWidth="1.5"
+                      strokeDasharray="3 3"
+                    />
+                    {/* Column */}
+                    <rect x="125" y="85" width="30" height="30" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
+                    <text x="140" y="103" fill="#f8fafc" fontSize="7" textAnchor="middle" fontWeight="bold">
+                      COL
+                    </text>
+                  </g>
+                )}
+
+                <text x="140" y="40" fill="#fbbf24" fontSize="10" textAnchor="middle" fontWeight="bold">
                   Lx = {lx}m (Primary)
                 </text>
-                <text x="140" y="115" fill="#cbd5e1" fontSize="9" textAnchor="middle">
+                <text x="140" y="170" fill="#cbd5e1" fontSize="9" textAnchor="middle">
                   Ly = {ly}m
                 </text>
               </svg>
@@ -591,84 +749,113 @@ export default function SlabAnalysisTool() {
             </h4>
             <div className="bg-slate-950/60 p-3 rounded border border-slate-800 flex justify-center">
               <svg id="slab-section-svg" viewBox="0 0 280 140" className="w-full h-44 drop-shadow-md">
+                {/* Drop Panel Render */}
+                {slabSystem === 'flat_slab' && (
+                  <rect x="90" y="100" width="100" height="15" fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
+                )}
+
+                {/* Main Slab Body */}
                 <rect x="20" y="30" width="240" height="70" fill="#334155" stroke="#94a3b8" strokeWidth="2" rx="2" />
 
-                {/* Clear Cover Indicator line */}
-                <line x1="20" y1="88" x2="260" y2="88" stroke="#0284c7" strokeWidth="1.5" strokeDasharray="2 2" />
+                {/* Bottom Rebar X Line */}
+                <line x1="30" y1="85" x2="250" y2="85" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" />
 
-                {/* Primary Rebar Circles */}
-                {[40, 70, 100, 130, 160, 190, 220, 250].map((x, i) => (
-                  <circle key={i} cx={x} cy={82} r="4" fill="#38bdf8" stroke="#0284c7" strokeWidth="1" />
-                ))}
+                {/* Bottom Rebar Y Dots */}
+                <circle cx="50" cy="81" r="3" fill="#10b981" />
+                <circle cx="90" cy="81" r="3" fill="#10b981" />
+                <circle cx="130" cy="81" r="3" fill="#10b981" />
+                <circle cx="170" cy="81" r="3" fill="#10b981" />
+                <circle cx="210" cy="81" r="3" fill="#10b981" />
 
-                <text x="140" y="55" fill="#f8fafc" fontSize="10" textAnchor="middle">
-                  Thickness h = {thickness}mm (Cover: {cover}mm)
+                {/* Punching Shear Failure Crack Visualization */}
+                {result?.verification?.failure_mode === 'PUNCHING_SHEAR' && (
+                  <g>
+                    <line x1="100" y1="30" x2="130" y2="100" stroke="#f43f5e" strokeWidth="2.5" strokeDasharray="3 2" />
+                    <line x1="180" y1="30" x2="150" y2="100" stroke="#f43f5e" strokeWidth="2.5" strokeDasharray="3 2" />
+                  </g>
+                )}
+
+                <text x="140" y="20" fill="#38bdf8" fontSize="9" textAnchor="middle" fontWeight="bold">
+                  Top Surface (Compression Zone)
                 </text>
-                <text x="140" y="120" fill="#38bdf8" fontSize="9" textAnchor="middle" fontWeight="bold">
-                  T{barDiam} @ {barSpacing}mm c/c (As = {result?.capacity?.As_provided ?? 0} mm²/m)
+                <text x="140" y="125" fill="#f59e0b" fontSize="8" textAnchor="middle">
+                  Bottom Rebar: T{barDiam}@{barSpacing}mm (X) + T{barDiamY}@{barSpacingY}mm (Y)
                 </text>
               </svg>
             </div>
           </div>
         </div>
 
-        {/* Code Verification Summary Table */}
+        {/* Detailed Design Verification Table */}
         {result && (
-          <div className="bg-slate-900 p-5 rounded-xl border border-slate-800">
-            <h3 className="text-xs font-bold text-slate-300 mb-3 border-b border-slate-800 pb-2 uppercase tracking-wider">
-              {getCodeName(designCode)} Design Checks Summary
-            </h3>
+          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2">
+              Detailed Structural Compliance Breakdown
+            </h4>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400">
-                    <th className="py-2">Structural Check</th>
-                    <th className="py-2">Applied Demand</th>
-                    <th className="py-2">Provided Capacity</th>
-                    <th className="py-2">DCR</th>
-                    <th className="py-2">Status</th>
+                    <th className="pb-2 font-semibold">Check Parameter</th>
+                    <th className="pb-2 font-semibold">Demand / Value</th>
+                    <th className="pb-2 font-semibold">Capacity / Limit</th>
+                    <th className="pb-2 font-semibold">DCR / Ratio</th>
+                    <th className="pb-2 font-semibold">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
+                <tbody className="divide-y divide-slate-800/50 text-slate-300 font-mono">
                   <tr>
-                    <td className="py-2 font-sans font-medium text-slate-200">Flexure (Short Span Mx)</td>
-                    <td>{result.moments?.Mu_x} kNm/m</td>
-                    <td>{result.capacity?.phiMn} kNm/m</td>
-                    <td className="text-cyan-400">{result.verification?.flexure_dcr}</td>
-                    <td>
-                      <span className={(result.verification?.flexure_dcr ?? 0) <= 1.0 ? 'text-emerald-400' : 'text-red-400'}>
-                        {(result.verification?.flexure_dcr ?? 0) <= 1.0 ? 'PASS' : 'FAIL'}
+                    <td className="py-2 text-slate-200 font-sans font-medium">Flexural Bending (X)</td>
+                    <td className="py-2">{result.moments?.Mu_x} kN·m/m</td>
+                    <td className="py-2 text-emerald-400">{result.capacity?.phiMn} kN·m/m</td>
+                    <td className="py-2 font-bold">{flexDcr}</td>
+                    <td className="py-2 font-sans font-bold">
+                      <span className={flexDcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {flexDcr <= 1.0 ? 'PASS' : 'FAIL'}
                       </span>
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-2 font-sans font-medium text-slate-200">One-Way Beam Shear</td>
-                    <td>{result.moments?.Vu} kN/m</td>
-                    <td>{result.capacity?.phiVc} kN/m</td>
-                    <td className="text-cyan-400">{result.verification?.shear_dcr}</td>
-                    <td>
-                      <span className={(result.verification?.shear_dcr ?? 0) <= 1.0 ? 'text-emerald-400' : 'text-red-400'}>
-                        {(result.verification?.shear_dcr ?? 0) <= 1.0 ? 'PASS' : 'FAIL'}
+                    <td className="py-2 text-slate-200 font-sans font-medium">One-Way Beam Shear</td>
+                    <td className="py-2">{result.moments?.Vu} kN/m</td>
+                    <td className="py-2 text-emerald-400">{result.capacity?.phiVc} kN/m</td>
+                    <td className="py-2 font-bold">{shearDcr}</td>
+                    <td className="py-2 font-sans font-bold">
+                      <span className={shearDcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {shearDcr <= 1.0 ? 'PASS' : 'FAIL'}
                       </span>
                     </td>
                   </tr>
+                  {isPunchingRelevant && (
+                    <tr>
+                      <td className="py-2 text-slate-200 font-sans font-medium">Two-Way Punching Shear</td>
+                      <td className="py-2 text-rose-300">{result.moments?.Vu_punch ?? 0} kN</td>
+                      <td className="py-2 text-emerald-400">{result.capacity?.phiVc_punch ?? 0} kN</td>
+                      <td className="py-2 font-bold">{punchDcr}</td>
+                      <td className="py-2 font-sans font-bold">
+                        <span className={punchDcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}>
+                          {punchDcr <= 1.0 ? 'PASS' : 'FAIL'}
+                        </span>
+                      </td>
+                    </tr>
+                  )}
                   <tr>
-                    <td className="py-2 font-sans font-medium text-slate-200">Minimum Reinforcement</td>
-                    <td>{result.capacity?.As_min} mm²/m</td>
-                    <td>{result.capacity?.As_provided} mm²/m</td>
-                    <td className="text-cyan-400">-</td>
-                    <td>
-                      <span className={result.verification?.rebar_status === 'ADEQUATE' ? 'text-emerald-400' : 'text-red-400'}>
+                    <td className="py-2 text-slate-200 font-sans font-medium">Minimum Reinforcement (As,min)</td>
+                    <td className="py-2">{result.capacity?.As_provided} mm²/m</td>
+                    <td className="py-2 text-emerald-400">{result.capacity?.As_min} mm²/m</td>
+                    <td className="py-2">-</td>
+                    <td className="py-2 font-sans font-bold">
+                      <span className={result.verification?.rebar_status === 'ADEQUATE' ? 'text-emerald-400' : 'text-rose-400'}>
                         {result.verification?.rebar_status}
                       </span>
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-2 font-sans font-medium text-slate-200">Deflection Span/Depth Ratio</td>
-                    <td>L/d = {result.deflection?.actual_ratio}</td>
-                    <td>Max L/d = {result.deflection?.max_ratio}</td>
-                    <td className="text-cyan-400">-</td>
-                    <td>
+                    <td className="py-2 text-slate-200 font-sans font-medium">Deflection Span/Depth Ratio (L/d)</td>
+                    <td className="py-2">{result.deflection?.actual_ratio}</td>
+                    <td className="py-2 text-emerald-400">Max {result.deflection?.max_ratio}</td>
+                    <td className="py-2">-</td>
+                    <td className="py-2 font-sans font-bold">
                       <span className={result.deflection?.status === 'PASS' ? 'text-emerald-400' : 'text-amber-400'}>
                         {result.deflection?.status}
                       </span>
