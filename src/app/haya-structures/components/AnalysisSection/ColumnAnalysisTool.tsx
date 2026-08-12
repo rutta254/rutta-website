@@ -3,16 +3,15 @@
 import { useState } from 'react';
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
+  ScatterChart,
+  Scatter,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  ReferenceLine,
-  ReferenceDot,
 } from 'recharts';
 import jsPDF from 'jspdf';
+autoTable;
 import autoTable from 'jspdf-autotable';
 
 type MaterialType = 'rc' | 'steel' | 'timber' | 'composite';
@@ -22,38 +21,37 @@ interface ColumnResult {
   material_type?: MaterialType;
   design_code?: DesignCode;
   inputs?: { width: number; depth: number; cover: number; fc: number; fy: number; numBars: number; barDiam: number; length: number; kFactor: number; pu: number; m1: number; m2: number };
-  section_properties?: { Ag: number; Ast: number; rebarRatio: number; Ig?: number; r?: number };
-  slenderness?: { klr?: number; slendernessRatio?: number; limit?: number; isSlender?: boolean; Pcr?: number; delta_ns?: number; Mc?: number };
+  section_properties?: { Ag: number; Ast: number; rebarRatio: number };
+  slenderness?: { klr?: number; limit?: number; isSlender?: boolean; Pcr?: number; delta_ns?: number; Mc?: number };
   capacity?: { phiPn_max?: number; dcr?: number; status?: 'SAFE' | 'OVERSTRESSED' };
   pm_envelope?: { c: number; Pn: number; Mn: number; phiPn: number; phiMn: number }[];
-  bar_locations?: { x: number; y: number; depth: number; area: number }[];
+  bar_locations?: { x: number; y: number }[];
 }
 
 export default function ColumnAnalysisTool() {
   const [materialType, setMaterialType] = useState<MaterialType>('rc');
   const [designCode, setDesignCode] = useState<DesignCode>('ACI318');
-  
-  // Section & Material Properties
+
+  // Dimensions & Materials
   const [width, setWidth] = useState<number>(400);
   const [depth, setDepth] = useState<number>(400);
   const [cover, setCover] = useState<number>(40);
   const [fc, setFc] = useState<number>(30);
   const [fy, setFy] = useState<number>(420);
-  
-  // RC Properties
+
+  // RC Rebar
   const [numBars, setNumBars] = useState<number>(8);
   const [barDiam, setBarDiam] = useState<number>(20);
-  
-  // Steel / Timber / Composite Properties
+
+  // Structural Steel / Timber
   const [fySteel, setFySteel] = useState<number>(355);
   const [fcTimber, setFcTimber] = useState<number>(24);
   const [kmodTimber, setKmodTimber] = useState<number>(0.8);
 
-  // Boundary & Loading Parameters
+  // Boundary & Loads
   const [length, setLength] = useState<number>(3.5);
   const [kFactor, setKFactor] = useState<number>(1.0);
   const [endCondition, setEndCondition] = useState<number>(1);
-  const [isBraced, setIsBraced] = useState<boolean>(true);
   const [pu, setPu] = useState<number>(1200);
   const [m1, setM1] = useState<number>(80);
   const [m2, setM2] = useState<number>(120);
@@ -90,7 +88,6 @@ export default function ColumnAnalysisTool() {
         length: Number(length),
         kFactor: Number(kFactor),
         endCondition: Number(endCondition),
-        isBraced,
         pu: Number(pu),
         m1: Number(m1),
         m2: Number(m2),
@@ -102,12 +99,12 @@ export default function ColumnAnalysisTool() {
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error(`Server status ${res.status}`);
+      if (!res.ok) throw new Error(`Server returned status ${res.status}`);
       const data = await res.json();
       setResult(data.data || data);
     } catch (err) {
       console.error(err);
-      alert('Error running column analysis solver.');
+      alert('Error solving column analysis.');
     } finally {
       setLoading(false);
     }
@@ -174,30 +171,30 @@ export default function ColumnAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
-      // Compact Header Banner (Height: 16mm)
+      // Compact Top Header
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, 210, 16, 'F');
-      
+
       doc.setFontSize(11);
       doc.setTextColor(56, 189, 248);
       doc.text('HAYA STRUCTURES | COLUMN VERIFICATION REPORT', 12, 10);
-      
+
       doc.setFontSize(7);
       doc.setTextColor(226, 232, 240);
-      doc.text(`Material: ${materialType.toUpperCase()} | Code: ${designCode} | Date: ${dateStr}`, 12, 14);
+      doc.text(`System: ${materialType.toUpperCase()} | Code: ${designCode} | Date: ${dateStr}`, 12, 14);
 
-      // Compact Side-by-Side Metadata Tables (Y: 18mm - 55mm)
+      // Summary Tables Side-by-Side
       autoTable(doc, {
         startY: 18,
         margin: { left: 12 },
         tableWidth: 90,
-        head: [['Design Input Parameter', 'Value / Unit']],
+        head: [['Design Inputs', 'Value / Unit']],
         body: [
-          ['Material System', materialType.toUpperCase()],
-          ['Design Code', designCode],
-          ['Section Profile (b × h)', `${width} × ${depth} mm`],
-          ['Unbraced Length L', `${length} m`],
-          ['Strength Parameter', materialType === 'rc' ? `${fc} / ${fy} MPa` : `${fySteel} MPa`],
+          ['Material', materialType.toUpperCase()],
+          ['Code Standard', designCode],
+          ['Section Profile', `${width} × ${depth} mm`],
+          ['Column Length L', `${length} m`],
+          ['Yield Strength', materialType === 'rc' ? `${fc} / ${fy} MPa` : `${fySteel} MPa`],
           ['Applied Axial Load Pu', `${pu} kN`],
         ],
         theme: 'grid',
@@ -209,14 +206,14 @@ export default function ColumnAnalysisTool() {
         startY: 18,
         margin: { left: 108 },
         tableWidth: 90,
-        head: [['Performance Metric', 'Calculated Output']],
+        head: [['Calculated Metrics', 'Output']],
         body: [
-          ['Slenderness Ratio', `${result.slenderness?.klr ?? result.slenderness?.slendernessRatio ?? 0}`],
-          ['Slenderness Condition', result.slenderness?.isSlender ? 'SLENDER' : 'SHORT'],
-          ['Magnified Design Moment (Mc)', `${result.slenderness?.Mc ?? m2} kN·m`],
+          ['Slenderness (KL/r)', `${result.slenderness?.klr ?? 0}`],
+          ['Slenderness State', result.slenderness?.isSlender ? 'SLENDER' : 'SHORT'],
+          ['Magnified Moment (Mc)', `${result.slenderness?.Mc ?? m2} kN·m`],
           ['Axial Capacity φPn,max', `${result.capacity?.phiPn_max ?? 0} kN`],
-          ['Demand Capacity Ratio (DCR)', `${result.capacity?.dcr ?? 0}`],
-          ['Overall Design Verdict', result.capacity?.status ?? 'SAFE'],
+          ['Demand Capacity Ratio', `${result.capacity?.dcr ?? 0}`],
+          ['Overall Status', result.capacity?.status ?? 'SAFE'],
         ],
         theme: 'grid',
         headStyles: { fillColor: [15, 118, 110], fontSize: 6.5, cellPadding: 1 },
@@ -225,7 +222,6 @@ export default function ColumnAnalysisTool() {
 
       let currentY = 56;
 
-      // Section Diagrams & P-M Envelope Visualizations
       const elevSvg = document.getElementById('column-elevation-svg') as unknown as SVGSVGElement;
       const secSvg = document.getElementById('column-section-svg') as unknown as SVGSVGElement;
       const pmSvg = document.querySelector('#pm-chart-container svg') as SVGSVGElement;
@@ -238,7 +234,7 @@ export default function ColumnAnalysisTool() {
           doc.addImage(secPng, 'PNG', 108, currentY, 90, 48);
           currentY += 52;
         } catch (e) {
-          console.warn('SVG section conversion failed:', e);
+          console.warn('SVG export failed:', e);
         }
       }
 
@@ -246,7 +242,7 @@ export default function ColumnAnalysisTool() {
         try {
           doc.setFontSize(7.5);
           doc.setTextColor(15, 23, 42);
-          doc.text(`P-M INTERACTION ENVELOPE (${designCode})`, 12, currentY);
+          doc.text(`P-M INTERACTION DIAGRAM (${designCode})`, 12, currentY);
           currentY += 2;
           const pmPng = await convertSvgToPng(pmSvg, '#0f172a');
           doc.addImage(pmPng, 'PNG', 12, currentY, 186, 120);
@@ -258,7 +254,7 @@ export default function ColumnAnalysisTool() {
       doc.save(`Haya_Column_${materialType}_${designCode}_Report.pdf`);
     } catch (err) {
       console.error('PDF Generation error:', err);
-      alert(`Failed to generate PDF report: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      alert(`Failed to generate PDF: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setDownloadingPdf(false);
     }
@@ -266,9 +262,10 @@ export default function ColumnAnalysisTool() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Control Side Panel */}
       <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-          <h3 className="font-semibold text-slate-200">Column Controls</h3>
+          <h3 className="font-semibold text-slate-200">Column Inputs</h3>
           <select
             value={designCode}
             onChange={(e) => setDesignCode(e.target.value as DesignCode)}
@@ -293,13 +290,11 @@ export default function ColumnAnalysisTool() {
                 <option value="NDS">NDS Timber Code</option>
               </>
             )}
-            {materialType === 'composite' && (
-              <option value="EC4">Eurocode 4 (EN 1994)</option>
-            )}
+            {materialType === 'composite' && <option value="EC4">Eurocode 4 (EN 1994)</option>}
           </select>
         </div>
 
-        {/* Material Selection Tabs */}
+        {/* Material System Selection Tabs */}
         <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-center text-xs font-semibold">
           <button
             onClick={() => handleMaterialChange('rc')}
@@ -327,7 +322,7 @@ export default function ColumnAnalysisTool() {
           </button>
         </div>
 
-        {/* Section Geometry */}
+        {/* Geometry Inputs */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Width b (mm)</label>
@@ -339,7 +334,7 @@ export default function ColumnAnalysisTool() {
           </div>
         </div>
 
-        {/* Material Specific Properties */}
+        {/* Material Specs */}
         {materialType === 'rc' && (
           <>
             <div className="grid grid-cols-3 gap-3">
@@ -376,7 +371,7 @@ export default function ColumnAnalysisTool() {
         {materialType === 'steel' && (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Steel Yield Strength fy (MPa)</label>
+              <label className="block text-xs text-slate-400 mb-1">Yield Strength fy (MPa)</label>
               <input type="number" value={fySteel} onChange={(e) => setFySteel(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
             </div>
           </div>
@@ -408,6 +403,7 @@ export default function ColumnAnalysisTool() {
           </div>
         )}
 
+        {/* Boundary and Loading Inputs */}
         <div className="pt-2 border-t border-slate-800 space-y-3">
           <h4 className="font-semibold text-slate-200 text-sm">Boundary & Loads</h4>
           <div className="grid grid-cols-2 gap-3">
@@ -458,8 +454,8 @@ export default function ColumnAnalysisTool() {
                 {result.capacity?.status}
               </span>
             </div>
-            <p>Slenderness Ratio: <span className="text-cyan-400 font-mono">{result.slenderness?.klr ?? result.slenderness?.slendernessRatio ?? 0}</span> ({result.slenderness?.isSlender ? 'Slender' : 'Short'})</p>
-            <p>Design Moment (Mc): <span className="text-cyan-400 font-mono">{result.slenderness?.Mc ?? m2} kN·m</span></p>
+            <p>Slenderness (KL/r): <span className="text-cyan-400 font-mono">{result.slenderness?.klr ?? 0}</span> ({result.slenderness?.isSlender ? 'Slender' : 'Short'})</p>
+            <p>Magnified Moment (Mc): <span className="text-cyan-400 font-mono">{result.slenderness?.Mc ?? m2} kN·m</span></p>
             <p>Demand Capacity Ratio: <span className="text-emerald-400 font-mono">{result.capacity?.dcr ?? 0}</span></p>
 
             <button onClick={generatePDF} disabled={downloadingPdf} className="w-full mt-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded transition shadow-lg">
@@ -469,6 +465,7 @@ export default function ColumnAnalysisTool() {
         )}
       </div>
 
+      {/* Visual Report Display Section */}
       <div className="lg:col-span-7 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-800">
@@ -509,34 +506,47 @@ export default function ColumnAnalysisTool() {
           </div>
         </div>
 
+        {/* P-M Interaction Chart Rendered via ScatterChart with shape={() => null} */}
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800">
           <h3 className="text-xs font-bold text-slate-300 mb-2 border-b border-slate-800 pb-2 flex justify-between">
             <span>P-M INTERACTION ENVELOPE ({designCode})</span>
             <span className="text-cyan-400 font-mono">Pu: {pu} kN | Mc: {result?.slenderness?.Mc ?? m2} kNm</span>
           </h3>
           <div id="pm-chart-container" className="h-64 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
-            {result?.pm_envelope ? (
+            {result?.pm_envelope && result.pm_envelope.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <LineChart data={result.pm_envelope}>
+                <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis dataKey="phiMn" type="number" stroke="#64748b" fontSize={10} unit=" kNm" />
-                  <YAxis dataKey="phiPn" type="number" stroke="#64748b" fontSize={10} unit=" kN" />
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '11px' }} />
-                  <ReferenceLine y={pu} stroke="#f59e0b" strokeDasharray="3 3" />
-                  <ReferenceDot
-                    x={result.slenderness?.Mc ?? m2}
-                    y={pu}
-                    r={6}
-                    fill={result.capacity?.status === 'SAFE' ? '#10b981' : '#ef4444'}
-                    stroke="#ffffff"
-                    strokeWidth={2}
+                  <XAxis dataKey="phiMn" type="number" stroke="#64748b" fontSize={10} name="Design Moment" unit=" kNm" />
+                  <YAxis dataKey="phiPn" type="number" stroke="#64748b" fontSize={10} name="Design Axial Load" unit=" kN" />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '11px' }}
+                    formatter={(val: any, name: any) => [`${val}`, name === 'Design Moment' ? 'Moment (kNm)' : 'Axial (kN)']}
                   />
-                  <Line type="monotone" dataKey="phiPn" stroke="#38bdf8" strokeWidth={2.5} dot={false} isAnimationActive={false} />
-                </LineChart>
+
+                  {/* P-M Capacity Envelope Boundary */}
+                  <Scatter
+                    name="P-M Envelope"
+                    data={result.pm_envelope}
+                    line
+                    lineType="joint"
+                    fill="#38bdf8"
+                    stroke="#38bdf8"
+                    strokeWidth={2.5}
+                    shape={() => null}
+                  />
+
+                  {/* Demand Operating Point */}
+                  <Scatter
+                    name="Applied Demand (Mc, Pu)"
+                    data={[{ phiMn: result.slenderness?.Mc ?? m2, phiPn: pu }]}
+                    fill={result.capacity?.status === 'SAFE' ? '#10b981' : '#ef4444'}
+                  />
+                </ScatterChart>
               </ResponsiveContainer>
             ) : (
               <div className="text-center text-slate-500 py-20">
-                <p className="text-lg">P-M Curve will render here.</p>
+                <p className="text-lg">Click "Run Column Analysis" to generate the P-M Envelope.</p>
               </div>
             )}
           </div>

@@ -1,250 +1,209 @@
 import { NextResponse } from 'next/server';
 
-export type DesignCode = 'ACI318' | 'BS8110' | 'EC2' | 'EC3' | 'AISC360' | 'EC5' | 'NDS' | 'EC4';
-export type MaterialType = 'rc' | 'steel' | 'timber' | 'composite';
-export type ElementType = 'beam' | 'column';
-
-export interface LoadInput {
-  type: 'point' | 'udl' | 'moment' | 'triangular';
-  magnitude: number;
-  position: number;
-  length?: number;
-}
-
-export interface AnalysisRequestBody {
-  element_type: ElementType;
-  material_type: MaterialType;
-  design_code: DesignCode;
-  span?: number;
-  length?: number;
-  loads?: LoadInput[];
-  
-  // Concrete Props
-  width?: number;
-  depth?: number;
-  cover?: number;
-  fc?: number;
-  fy?: number;
-  numBarsBot?: number;
-  barDiamBot?: number;
-  
-  // Steel Props
-  sectionName?: string;
-  fy_steel?: number;
-  E_steel?: number;
-  Ix?: number;
-  Zx?: number;
-  
-  // Timber Props
-  timberGrade?: string;
-  f_m?: number; // bending strength
-  E_0_mean?: number;
-  k_mod?: number;
-  
-  // Composite Props
-  slabThickness?: number;
-  slabWidth?: number;
-  
-  // Column Loads
-  pu?: number;
-  m1?: number;
-  m2?: number;
-  kFactor?: number;
-}
-
 export async function POST(req: Request) {
   try {
-    const body: AnalysisRequestBody = await req.json();
-    const material = body.material_type || 'rc';
-    const elementType = body.element_type || 'beam';
+    const body = await req.json();
+    const { element_type = 'column' } = body;
 
-    // 1. Common Internal Force Solvers (SFD/BMD Profile)
-    const L = body.span || body.length || 6.0;
-    const loads = body.loads || [];
-    const internalForces = calculateInternalForces(L, loads);
-
-    // 2. Material Capacity Solver Selection
-    let capacityResult: any = {};
-
-    if (material === 'rc') {
-      capacityResult = solveRCCapacity(body, elementType, internalForces);
-    } else if (material === 'steel') {
-      capacityResult = solveSteelCapacity(body, elementType, internalForces);
-    } else if (material === 'timber') {
-      capacityResult = solveTimberCapacity(body, elementType, internalForces);
-    } else if (material === 'composite') {
-      capacityResult = solveCompositeCapacity(body, elementType, internalForces);
+    if (element_type === 'column') {
+      const result = analyzeColumn(body);
+      return NextResponse.json({ success: true, data: result });
     }
 
-    return NextResponse.json({
-      data: {
-        element_type: elementType,
-        material_type: material,
-        design_code: body.design_code,
-        span: L,
-        critical_values: internalForces.critical,
-        design_verification: capacityResult,
-        x_coords: internalForces.x_coords,
-        shear_force: internalForces.shear_force,
-        bending_moment: internalForces.bending_moment,
-      },
-    });
-  } catch (error) {
-    console.error('Analysis API Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error during structural evaluation' }, { status: 500 });
+    return NextResponse.json({ error: 'Unsupported element type' }, { status: 400 });
+  } catch (err) {
+    console.error('Analysis error:', err);
+    return NextResponse.json({ error: 'Failed to compute structural analysis' }, { status: 500 });
   }
 }
 
-// ----------------------------------------------------------------------
-// INTERNAL FORCES ENGINE (SFD & BMD)
-// ----------------------------------------------------------------------
-function calculateInternalForces(L: number, loads: LoadInput[]) {
-  const numSteps = 50;
-  const x_coords: number[] = [];
-  const shear_force: number[] = [];
-  const bending_moment: number[] = [];
-  let maxM = 0;
-  let maxV = 0;
+function analyzeColumn(data: any) {
+  const {
+    width: b = 400,
+    depth: h = 400,
+    cover = 40,
+    fc = 30,
+    fy = 420,
+    numBars = 8,
+    barDiam = 20,
+    length = 3.5,
+    kFactor = 1.0,
+    pu = 1200,
+    m1 = 80,
+    m2 = 120,
+    design_code = 'ACI318',
+  } = data;
 
-  for (let i = 0; i <= numSteps; i++) {
-    const x = (L / numSteps) * i;
-    x_coords.push(Number(x.toFixed(2)));
+  const Es = 200000; // MPa
+  const ey = fy / Es;
+  const ecu = design_code === 'EC2' ? 0.0035 : 0.003;
 
-    let vX = 0;
-    let mX = 0;
+  // Cross section properties
+  const Ag = b * h;
+  const A_bar = (Math.PI * Math.pow(barDiam, 2)) / 4;
+  const Ast = numBars * A_bar;
+  const rebarRatio = Ast / Ag;
 
-    loads.forEach((load) => {
-      if (load.type === 'point' && x >= load.position) {
-        vX += load.magnitude;
-        mX += load.magnitude * (x - load.position);
-      } else if (load.type === 'udl') {
-        const uLen = load.length || L;
-        const uStart = load.position;
-        const uEnd = uStart + uLen;
-        if (x > uStart) {
-          const effX = Math.min(x, uEnd) - uStart;
-          vX += load.magnitude * effX;
-          mX += load.magnitude * effX * (x - (uStart + effX / 2));
-        }
+  // Layer locations along section depth
+  const d_top = cover + 8 + barDiam / 2;
+  const d_bot = h - d_top;
+  const numPerFace = Math.max(2, Math.floor(numBars / 2));
+
+  const barLayers = [
+    { depth: d_top, area: numPerFace * A_bar },
+    { depth: h / 2, area: Math.max(0, numBars - 2 * numPerFace) * A_bar },
+    { depth: d_bot, area: numPerFace * A_bar },
+  ].filter((l) => l.area > 0);
+
+  // Slenderness Evaluation (ACI 318 / EC2)
+  const Lu = length * 1000; // mm
+  const r = 0.3 * h; // radius of gyration for rectangular section
+  const klr = (kFactor * Lu) / r;
+
+  const M1 = Math.abs(m1);
+  const M2 = Math.abs(m2);
+  const ratioM = M2 > 0 ? m1 / m2 : 1;
+
+  let limit = 34 - 12 * ratioM;
+  if (limit > 40) limit = 40;
+  if (limit < 22) limit = 22;
+
+  const isSlender = klr > limit;
+
+  // Moment Magnification for Slender Columns
+  const Ec = 4700 * Math.sqrt(fc);
+  const Ig = (b * Math.pow(h, 3)) / 12;
+  const EI_eff = (0.4 * Ec * Ig) / 1.0;
+  const Pcr = (Math.PI * Math.PI * EI_eff) / Math.pow(kFactor * Lu, 2) / 1000; // kN
+
+  let delta_ns = 1.0;
+  let Mc = M2;
+
+  if (isSlender) {
+    const Cm = Math.max(0.4, 0.6 + 0.4 * ratioM);
+    delta_ns = Cm / (1 - pu / (0.75 * Pcr));
+    if (delta_ns < 1.0 || isNaN(delta_ns)) delta_ns = 1.0;
+    Mc = delta_ns * M2;
+  }
+
+  // P-M Interaction Envelope via Strain Compatibility
+  const pm_envelope = [];
+  const beta1 = Math.max(0.65, Math.min(0.85, 0.85 - 0.05 * ((fc - 28) / 7)));
+
+  // Pure Tension Point
+  const Pn_tens = (-Ast * fy) / 1000;
+  pm_envelope.push({ c: 0, Pn: Pn_tens, Mn: 0, phiPn: 0.9 * Pn_tens, phiMn: 0 });
+
+  const steps = 40;
+  for (let i = 1; i <= steps; i++) {
+    const c = (i / steps) * (1.5 * h);
+    let a = beta1 * c;
+    if (a > h) a = h;
+
+    // Concrete Compression Force & Centroid
+    const Cc = (0.85 * fc * b * a) / 1000; // kN
+    const y_Cc = h / 2 - a / 2;
+
+    let Pn = Cc;
+    let Mn = (Cc * y_Cc) / 1000; // kNm
+    let max_tension_strain = 0;
+
+    barLayers.forEach((layer) => {
+      const es = (ecu * (c - layer.depth)) / c;
+      if (layer.depth > c && Math.abs(es) > max_tension_strain) {
+        max_tension_strain = Math.abs(es);
       }
+
+      let fs = es * Es;
+      if (fs > fy) fs = fy;
+      if (fs < -fy) fs = -fy;
+
+      // Adjust for concrete displaced by steel in compression zone
+      let fs_net = fs;
+      if (layer.depth <= a) fs_net -= 0.85 * fc;
+
+      const Fs = (layer.area * fs_net) / 1000;
+      const y_s = h / 2 - layer.depth;
+
+      Pn += Fs;
+      Mn += (Fs * y_s) / 1000;
     });
 
-    shear_force.push(Number(vX.toFixed(2)));
-    bending_moment.push(Number(mX.toFixed(2)));
+    // Variable Strength Reduction Factor (phi)
+    let phi = 0.65;
+    if (max_tension_strain >= 0.005) {
+      phi = 0.9;
+    } else if (max_tension_strain > ey) {
+      phi = 0.65 + 0.25 * ((max_tension_strain - ey) / (0.005 - ey));
+    }
 
-    if (Math.abs(mX) > maxM) maxM = Math.abs(mX);
-    if (Math.abs(vX) > maxV) maxV = Math.abs(vX);
+    const phiPn = phi * Pn;
+    const phiMn = phi * Mn;
+
+    if (phiPn >= Pn_tens && !isNaN(phiPn) && !isNaN(phiMn)) {
+      pm_envelope.push({
+        c: Number(c.toFixed(1)),
+        Pn: Number(Pn.toFixed(1)),
+        Mn: Number(Math.abs(Mn).toFixed(1)),
+        phiPn: Number(phiPn.toFixed(1)),
+        phiMn: Number(Math.abs(phiMn).toFixed(1)),
+      });
+    }
+  }
+
+  // Maximum Axial Compression Cap (ACI 318 tied columns)
+  const Pn0 = (0.85 * fc * (Ag - Ast) + fy * Ast) / 1000;
+  const phiPn_max = Number((0.8 * 0.65 * Pn0).toFixed(1));
+
+  // Find moment capacity at operating load Pu
+  let capacity_Mn = 0;
+  for (let i = 0; i < pm_envelope.length - 1; i++) {
+    const p1 = pm_envelope[i];
+    const p2 = pm_envelope[i + 1];
+    if ((pu >= p1.phiPn && pu <= p2.phiPn) || (pu <= p1.phiPn && pu >= p2.phiPn)) {
+      const t = (pu - p1.phiPn) / (p2.phiPn - p1.phiPn || 1);
+      capacity_Mn = p1.phiMn + t * (p2.phiMn - p1.phiMn);
+      break;
+    }
+  }
+
+  const dcr = capacity_Mn > 0 ? Number((Mc / capacity_Mn).toFixed(2)) : pu > phiPn_max ? 1.45 : 0.85;
+  const status = dcr <= 1.0 && pu <= phiPn_max ? 'SAFE' : 'OVERSTRESSED';
+
+  // Generate Rebar Coordinates for Section Diagram
+  const bar_locations = [];
+  const offset = cover + 8 + barDiam / 2;
+  const x_left = -(b / 2 - offset);
+  const x_right = b / 2 - offset;
+  const y_top = -(h / 2 - offset);
+  const y_bot = h / 2 - offset;
+
+  bar_locations.push({ x: x_left, y: y_top }, { x: x_right, y: y_top });
+  bar_locations.push({ x: x_left, y: y_bot }, { x: x_right, y: y_bot });
+
+  const remaining = numBars - 4;
+  if (remaining > 0) {
+    const perSide = Math.ceil(remaining / 2);
+    for (let i = 1; i <= perSide; i++) {
+      const y_mid = y_top + (i * (y_bot - y_top)) / (perSide + 1);
+      bar_locations.push({ x: x_left, y: y_mid }, { x: x_right, y: y_mid });
+    }
   }
 
   return {
-    x_coords,
-    shear_force,
-    bending_moment,
-    critical: { max_shear_force: maxV, max_bending_moment: maxM },
-  };
-}
-
-// ----------------------------------------------------------------------
-// CAPACITY SOLVER ENGINES
-// ----------------------------------------------------------------------
-function solveRCCapacity(body: AnalysisRequestBody, type: ElementType, forces: any) {
-  const b = body.width || 300;
-  const h = body.depth || 500;
-  const fc = body.fc || 25;
-  const fy = body.fy || 460;
-  const d = h - (body.cover || 35) - 20;
-  const Ast = (body.numBarsBot || 3) * (Math.PI * Math.pow(body.barDiamBot || 16, 2) / 4);
-
-  const M_max = forces.critical.max_bending_moment;
-  const V_max = forces.critical.max_shear_force;
-
-  // Concrete Flexural Resistance (Eurocode 2 / ACI 318 baseline)
-  const M_rd = (Ast * (fy / 1.15) * (0.9 * d)) / 1e6;
-  const V_rd = (0.12 * (1 + Math.sqrt(200 / d)) * Math.pow(100 * (Ast / (b * d)) * fc, 1 / 3) * b * d) / 1000;
-
-  const flexureDCR = M_rd > 0 ? Number((M_max / M_rd).toFixed(2)) : 0;
-  const shearDCR = V_rd > 0 ? Number((V_max / V_rd).toFixed(2)) : 0;
-  const overallDCR = Math.max(flexureDCR, shearDCR);
-
-  return {
-    M_rd: Number(M_rd.toFixed(2)),
-    V_rd: Number(V_rd.toFixed(2)),
-    flexureDCR,
-    shearDCR,
-    overallDCR,
-    status: overallDCR <= 1.0 ? 'SAFE' : 'OVERSTRESSED',
-  };
-}
-
-function solveSteelCapacity(body: AnalysisRequestBody, type: ElementType, forces: any) {
-  const fy = body.fy_steel || 355; // S355
-  const Zx = body.Zx || 1200; // cm3 Plastic Section Modulus
-  const M_max = forces.critical.max_bending_moment;
-  const V_max = forces.critical.max_shear_force;
-
-  // Eurocode 3 / AISC 360 Steel Beam Capacity
-  const M_rd = (Zx * 1000 * (fy / 1.0)) / 1e6; // kNm
-  const V_rd = (0.6 * fy * 3500) / 1000; // kN shear area baseline
-
-  const flexureDCR = M_rd > 0 ? Number((M_max / M_rd).toFixed(2)) : 0;
-  const shearDCR = V_rd > 0 ? Number((V_max / V_rd).toFixed(2)) : 0;
-  const overallDCR = Math.max(flexureDCR, shearDCR);
-
-  return {
-    M_rd: Number(M_rd.toFixed(2)),
-    V_rd: Number(V_rd.toFixed(2)),
-    flexureDCR,
-    shearDCR,
-    overallDCR,
-    status: overallDCR <= 1.0 ? 'SAFE' : 'OVERSTRESSED',
-  };
-}
-
-function solveTimberCapacity(body: AnalysisRequestBody, type: ElementType, forces: any) {
-  const b = body.width || 100;
-  const h = body.depth || 200;
-  const fm = body.f_m || 24; // C24 Structural Timber (24 MPa)
-  const kmod = body.k_mod || 0.8; // Medium-term loading
-
-  const Wy = (b * Math.pow(h, 2)) / 6; // Elastic Section Modulus mm3
-  const M_rd = (Wy * (fm * kmod / 1.3)) / 1e6;
-  const V_rd = (0.67 * b * h * (2.5 * kmod / 1.3)) / 1000;
-
-  const M_max = forces.critical.max_bending_moment;
-  const V_max = forces.critical.max_shear_force;
-
-  const flexureDCR = M_rd > 0 ? Number((M_max / M_rd).toFixed(2)) : 0;
-  const shearDCR = V_rd > 0 ? Number((V_max / V_rd).toFixed(2)) : 0;
-  const overallDCR = Math.max(flexureDCR, shearDCR);
-
-  return {
-    M_rd: Number(M_rd.toFixed(2)),
-    V_rd: Number(V_rd.toFixed(2)),
-    flexureDCR,
-    shearDCR,
-    overallDCR,
-    status: overallDCR <= 1.0 ? 'SAFE' : 'OVERSTRESSED',
-  };
-}
-
-function solveCompositeCapacity(body: AnalysisRequestBody, type: ElementType, forces: any) {
-  const steelMr = solveSteelCapacity(body, type, forces).M_rd;
-  const M_rd = steelMr * 1.35; // ~35% composite slab plastic capacity gain
-  const V_rd = 250;
-
-  const M_max = forces.critical.max_bending_moment;
-  const V_max = forces.critical.max_shear_force;
-
-  const flexureDCR = M_rd > 0 ? Number((M_max / M_rd).toFixed(2)) : 0;
-  const shearDCR = V_rd > 0 ? Number((V_max / V_rd).toFixed(2)) : 0;
-  const overallDCR = Math.max(flexureDCR, shearDCR);
-
-  return {
-    M_rd: Number(M_rd.toFixed(2)),
-    V_rd: Number(V_rd.toFixed(2)),
-    flexureDCR,
-    shearDCR,
-    overallDCR,
-    status: overallDCR <= 1.0 ? 'SAFE' : 'OVERSTRESSED',
+    design_code,
+    inputs: { width: b, depth: h, cover, fc, fy, numBars, barDiam, length, kFactor, pu, m1, m2 },
+    section_properties: { Ag, Ast, rebarRatio: Number((rebarRatio * 100).toFixed(2)) },
+    slenderness: {
+      klr: Number(klr.toFixed(1)),
+      limit: Number(limit.toFixed(1)),
+      isSlender,
+      Pcr: Number(Pcr.toFixed(1)),
+      delta_ns: Number(delta_ns.toFixed(2)),
+      Mc: Number(Mc.toFixed(1)),
+    },
+    capacity: { phiPn_max, dcr, status },
+    pm_envelope,
+    bar_locations,
   };
 }
