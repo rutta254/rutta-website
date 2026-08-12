@@ -103,6 +103,7 @@ export default function BeamAnalysisTool() {
   const generatePDF = async () => {
     if (!result) return;
     setDownloadingPdf(true);
+
     try {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
@@ -136,7 +137,10 @@ export default function BeamAnalysisTool() {
       });
 
       // Section 1b: Applied Loads Table
-      let lastY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+      const getFinalY = (pdfDoc: jsPDF) =>
+        (pdfDoc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 60;
+
+      let lastY = getFinalY(doc) + 6;
       doc.text('Applied Loading Schedule', 14, lastY);
 
       const loadRows = loads.map((l, index) => [
@@ -156,7 +160,7 @@ export default function BeamAnalysisTool() {
       });
 
       // Section 2: Statics & Extremes
-      lastY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+      lastY = getFinalY(doc) + 8;
       doc.text('2. Computed Support Reactions & Critical Extremes', 14, lastY);
 
       autoTable(doc, {
@@ -173,21 +177,33 @@ export default function BeamAnalysisTool() {
         headStyles: { fillColor: [15, 118, 110] },
       });
 
-      // Section 3: Captured Visuals (SVG Beam + SFD/BMD Charts)
+      // Section 3: Captured Visuals (Safely Isolated)
       if (reportCaptureRef.current) {
-        const canvas = await html2canvas(reportCaptureRef.current, { scale: 2, useCORS: true });
-        const imgData = canvas.toDataURL('image/png');
+        try {
+          const canvas = await html2canvas(reportCaptureRef.current, {
+            scale: 1.5,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#0f172a',
+            logging: false,
+          });
 
-        doc.addPage();
-        doc.setFontSize(11);
-        doc.text('3. Structural Visualization, SFD & BMD Diagrams', 14, 18);
-        doc.addImage(imgData, 'PNG', 14, 24, 182, 240);
+          const imgData = canvas.toDataURL('image/png');
+
+          doc.addPage();
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42);
+          doc.text('3. Structural Visualization, SFD & BMD Diagrams', 14, 18);
+          doc.addImage(imgData, 'PNG', 14, 24, 182, 240);
+        } catch (canvasErr) {
+          console.warn('DOM diagram capture failed, generating numerical PDF report only:', canvasErr);
+        }
       }
 
       doc.save(`Haya_Structures_Beam_${length}m_Report.pdf`);
     } catch (err) {
-      console.error(err);
-      alert('Failed to generate PDF report.');
+      console.error('PDF Generation error:', err);
+      alert(`Failed to generate PDF report: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setDownloadingPdf(false);
     }
