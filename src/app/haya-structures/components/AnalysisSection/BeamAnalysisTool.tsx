@@ -14,7 +14,8 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-type DesignCode = 'ACI318' | 'BS8110' | 'EC2';
+type MaterialType = 'rc' | 'steel' | 'timber' | 'composite';
+type DesignCode = 'ACI318' | 'BS8110' | 'EC2' | 'EC3' | 'AISC360' | 'EC5' | 'NDS' | 'EC4';
 type SupportType = 'simply_supported' | 'cantilever' | 'fixed_fixed' | 'propped_cantilever';
 
 interface LoadItem {
@@ -27,6 +28,7 @@ interface LoadItem {
 }
 
 interface AnalysisResult {
+  material_type?: MaterialType;
   design_code?: DesignCode;
   span?: number;
   reactions?: { R_A?: number; R_B?: number };
@@ -49,11 +51,12 @@ interface AnalysisResult {
 }
 
 export default function BeamAnalysisTool() {
+  const [materialType, setMaterialType] = useState<MaterialType>('rc');
   const [designCode, setDesignCode] = useState<DesignCode>('ACI318');
   const [length, setLength] = useState<number>(6);
   const [support, setSupport] = useState<SupportType>('simply_supported');
 
-  // Section & Material Properties
+  // RC Section & Material Properties
   const [width, setWidth] = useState<number>(300);
   const [depth, setDepth] = useState<number>(500);
   const [cover, setCover] = useState<number>(35);
@@ -64,13 +67,31 @@ export default function BeamAnalysisTool() {
   const [stirrupDiam, setStirrupDiam] = useState<number>(8);
   const [stirrupSpacing, setStirrupSpacing] = useState<number>(150);
 
+  // Steel Properties
+  const [fySteel, setFySteel] = useState<number>(355);
+  const [zxSteel, setZxSteel] = useState<number>(1200);
+
+  // Timber Properties
+  const [fmTimber, setFmTimber] = useState<number>(24);
+  const [kmodTimber, setKmodTimber] = useState<number>(0.8);
+
+  // Loads & Results
   const [loads, setLoads] = useState<LoadItem[]>([
     { id: '1', type: 'point', magnitude: 15, position: 3 },
+    { id: '2', type: 'udl', magnitude: 10, position: 0, length: 6 },
   ]);
 
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const handleMaterialChange = (newMat: MaterialType) => {
+    setMaterialType(newMat);
+    if (newMat === 'rc') setDesignCode('ACI318');
+    else if (newMat === 'steel') setDesignCode('EC3');
+    else if (newMat === 'timber') setDesignCode('EC5');
+    else if (newMat === 'composite') setDesignCode('EC4');
+  };
 
   const addLoad = () => {
     setLoads([
@@ -92,6 +113,7 @@ export default function BeamAnalysisTool() {
     try {
       const payload = {
         element_type: 'beam',
+        material_type: materialType,
         design_code: designCode,
         span: Number(length),
         support,
@@ -104,6 +126,10 @@ export default function BeamAnalysisTool() {
         barDiamBot: Number(barDiamBot),
         stirrupDiam: Number(stirrupDiam),
         stirrupSpacing: Number(stirrupSpacing),
+        fy_steel: Number(fySteel),
+        Zx: Number(zxSteel),
+        f_m: Number(fmTimber),
+        k_mod: Number(kmodTimber),
         loads: loads.map((l) => ({
           type: l.type,
           magnitude: Number(l.magnitude),
@@ -191,65 +217,56 @@ export default function BeamAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
-      doc.setFontSize(14);
-      doc.setTextColor(15, 23, 42);
-      doc.text('HAYA STRUCTURES LLC', 14, 12);
-      doc.setFontSize(8);
-      doc.setTextColor(100);
-      doc.text(`Beam Multi-Code Verification Report (${designCode}) | Date: ${dateStr}`, 14, 16);
-      doc.line(14, 19, 196, 19);
+      // Compact Header (Height: 16mm)
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, 210, 16, 'F');
+      
+      doc.setFontSize(11);
+      doc.setTextColor(56, 189, 248);
+      doc.text('HAYA STRUCTURES | STRUCTURAL BEAM VERIFICATION REPORT', 12, 10);
+      
+      doc.setFontSize(7);
+      doc.setTextColor(226, 232, 240);
+      doc.text(`Material: ${materialType.toUpperCase()} | Code: ${designCode} | Date: ${dateStr}`, 12, 14);
 
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text('1. Design Inputs & Structural Capacity Summary', 14, 24);
-
+      // Compact Side-by-Side Tables (Y: 18mm - 55mm)
       autoTable(doc, {
-        startY: 27,
-        margin: { left: 14 },
-        tableWidth: 88,
-        head: [['Parameter', 'Value', 'Unit']],
-        body: [
-          ['Design Code', `${designCode}`, '-'],
-          ['Span Length (L)', `${result.span ?? length}`, 'm'],
-          ['Section (b × h)', `${width} × ${depth}`, 'mm'],
-          ['Concrete / Steel Grade', `${fc} / ${fy}`, 'MPa'],
-          ['Main Rebar', `${numBarsBot} - Ø${barDiamBot}`, '-'],
-        ],
-        theme: 'striped',
-        headStyles: { fillColor: [14, 116, 144], fontSize: 7, cellPadding: 1 },
-        bodyStyles: { fontSize: 7, cellPadding: 1 },
-      });
-
-      const getFinalY = (pdfDoc: jsPDF) =>
-        (pdfDoc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 45;
-
-      const leftYTotal = getFinalY(doc);
-
-      autoTable(doc, {
-        startY: 27,
-        margin: { left: 106 },
+        startY: 18,
+        margin: { left: 12 },
         tableWidth: 90,
-        head: [['Metric Description', 'Value', 'Status / Unit']],
+        head: [['Design Input Parameter', 'Value / Unit']],
         body: [
-          ['Max Applied Moment |M_max|', `${result.critical_values?.max_bending_moment ?? 0}`, 'kN·m'],
-          ['Design Moment Capacity', `${result.design_verification?.M_rd ?? 0}`, 'kN·m'],
-          ['Max Applied Shear |V_max|', `${result.critical_values?.max_shear_force ?? 0}`, 'kN'],
-          ['Design Shear Capacity', `${result.design_verification?.V_rd ?? 0}`, 'kN'],
-          ['Overall DCR Status', `${result.design_verification?.overallDCR ?? 0}`, result.design_verification?.status ?? 'N/A'],
+          ['Material Class', materialType.toUpperCase()],
+          ['Design Code', designCode],
+          ['Span Length (L)', `${result.span ?? length} m`],
+          ['Section Profile', `${width} × ${depth} mm`],
+          ['Material Yield Strength', materialType === 'rc' ? `${fy} MPa` : `${fySteel} MPa`],
         ],
-        theme: 'striped',
-        headStyles: { fillColor: [15, 118, 110], fontSize: 7, cellPadding: 1 },
-        bodyStyles: { fontSize: 7, cellPadding: 1 },
+        theme: 'grid',
+        headStyles: { fillColor: [14, 116, 144], fontSize: 6.5, cellPadding: 1 },
+        bodyStyles: { fontSize: 6.5, cellPadding: 1 },
       });
 
-      const rightYTotal = getFinalY(doc);
-      let currentY = Math.max(leftYTotal, rightYTotal) + 5;
+      autoTable(doc, {
+        startY: 18,
+        margin: { left: 108 },
+        tableWidth: 90,
+        head: [['Verification Metric', 'Calculated Output']],
+        body: [
+          ['Max Applied Moment |M_max|', `${result.critical_values?.max_bending_moment ?? 0} kN·m`],
+          ['Design Moment Capacity (M_rd)', `${result.design_verification?.M_rd ?? 0} kN·m`],
+          ['Max Applied Shear |V_max|', `${result.critical_values?.max_shear_force ?? 0} kN`],
+          ['Design Shear Capacity (V_rd)', `${result.design_verification?.V_rd ?? 0} kN`],
+          ['Overall DCR Status', `${result.design_verification?.overallDCR ?? 0} [${result.design_verification?.status}]`],
+        ],
+        theme: 'grid',
+        headStyles: { fillColor: [15, 118, 110], fontSize: 6.5, cellPadding: 1 },
+        bodyStyles: { fontSize: 6.5, cellPadding: 1 },
+      });
 
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text('2. Structural Visualizations (SFD & BMD)', 14, currentY);
-      currentY += 3;
+      let currentY = 56;
 
+      // Render Visualizations with Tight Vertical Offsets
       const beamSvg = document.getElementById('live-beam-svg') as unknown as SVGSVGElement;
       const sfdSvg = document.querySelector('#sfd-chart-container svg') as SVGSVGElement;
       const bmdSvg = document.querySelector('#bmd-chart-container svg') as SVGSVGElement;
@@ -257,8 +274,8 @@ export default function BeamAnalysisTool() {
       if (beamSvg) {
         try {
           const beamPng = await convertSvgToPng(beamSvg, '#0f172a');
-          doc.addImage(beamPng, 'PNG', 14, currentY, 182, 36);
-          currentY += 39;
+          doc.addImage(beamPng, 'PNG', 12, currentY, 186, 42);
+          currentY += 45;
         } catch (e) {
           console.warn('Beam SVG export failed:', e);
         }
@@ -266,9 +283,13 @@ export default function BeamAnalysisTool() {
 
       if (sfdSvg) {
         try {
+          doc.setFontSize(7.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text('SHEAR FORCE DIAGRAM (SFD) [kN]', 12, currentY);
+          currentY += 2;
           const sfdPng = await convertSvgToPng(sfdSvg, '#0f172a');
-          doc.addImage(sfdPng, 'PNG', 14, currentY, 182, 46);
-          currentY += 49;
+          doc.addImage(sfdPng, 'PNG', 12, currentY, 186, 85);
+          currentY += 88;
         } catch (e) {
           console.warn('SFD SVG export failed:', e);
         }
@@ -276,14 +297,18 @@ export default function BeamAnalysisTool() {
 
       if (bmdSvg) {
         try {
+          doc.setFontSize(7.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text('BENDING MOMENT DIAGRAM (BMD) [kN·m]', 12, currentY);
+          currentY += 2;
           const bmdPng = await convertSvgToPng(bmdSvg, '#0f172a');
-          doc.addImage(bmdPng, 'PNG', 14, currentY, 182, 46);
+          doc.addImage(bmdPng, 'PNG', 12, currentY, 186, 85);
         } catch (e) {
           console.warn('BMD SVG export failed:', e);
         }
       }
 
-      doc.save(`Haya_Structures_Beam_${designCode}_Report.pdf`);
+      doc.save(`Haya_Beam_${materialType}_${designCode}_Report.pdf`);
     } catch (err) {
       console.error('PDF Generation error:', err);
       alert(`Failed to generate PDF report: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -304,21 +329,21 @@ export default function BeamAnalysisTool() {
   const marginX = 100;
   const beamWidth = svgWidth - 2 * marginX;
   const scaleX = length > 0 ? beamWidth / length : 0;
-  const beamY = 120;
+  const beamY = 130;
   const beamThickness = 12;
-  const getX = (val: number) => marginX + val * scaleX;
+  const getX = (val: number) => marginX + Math.min(Math.max(val, 0), length) * scaleX;
 
   const drawPin = (x: number) => (
     <g key={`pin-${x}`}>
-      <polygon points={`${x},${beamY + beamThickness} ${x - 15},${beamY + beamThickness + 25} ${x + 15},${beamY + beamThickness + 25}`} fill="#64748b" />
-      <line x1={x - 20} y1={beamY + beamThickness + 25} x2={x + 20} y2={beamY + beamThickness + 25} stroke="#64748b" strokeWidth="4" />
+      <polygon points={`${x},${beamY + beamThickness} ${x - 12},${beamY + beamThickness + 20} ${x + 12},${beamY + beamThickness + 20}`} fill="#64748b" />
+      <line x1={x - 16} y1={beamY + beamThickness + 20} x2={x + 16} y2={beamY + beamThickness + 20} stroke="#64748b" strokeWidth="3" />
     </g>
   );
 
   const drawFixed = (x: number, isLeft: boolean) => (
     <g key={`fixed-${x}`}>
-      <rect x={isLeft ? x - 15 : x} y={beamY - 30} width="15" height={60 + beamThickness} fill="#475569" />
-      <line x1={isLeft ? x - 15 : x + 15} y1={beamY - 30} x2={isLeft ? x - 15 : x + 15} y2={beamY + 30 + beamThickness} stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 4" />
+      <rect x={isLeft ? x - 12 : x} y={beamY - 25} width="12" height={50 + beamThickness} fill="#475569" />
+      <line x1={isLeft ? x - 12 : x + 12} y1={beamY - 25} x2={isLeft ? x - 12 : x + 12} y2={beamY + 25 + beamThickness} stroke="#94a3b8" strokeWidth="2" strokeDasharray="3 3" />
     </g>
   );
 
@@ -333,10 +358,57 @@ export default function BeamAnalysisTool() {
             onChange={(e) => setDesignCode(e.target.value as DesignCode)}
             className="bg-cyan-500/20 text-cyan-400 font-bold border border-cyan-500/30 rounded px-2 py-1 text-xs"
           >
-            <option value="ACI318">ACI 318-19</option>
-            <option value="BS8110">BS 8110:1997</option>
-            <option value="EC2">Eurocode 2 (EN 1992)</option>
+            {materialType === 'rc' && (
+              <>
+                <option value="ACI318">ACI 318-19</option>
+                <option value="BS8110">BS 8110:1997</option>
+                <option value="EC2">Eurocode 2 (EN 1992)</option>
+              </>
+            )}
+            {materialType === 'steel' && (
+              <>
+                <option value="EC3">Eurocode 3 (EN 1993)</option>
+                <option value="AISC360">AISC 360-16</option>
+              </>
+            )}
+            {materialType === 'timber' && (
+              <>
+                <option value="EC5">Eurocode 5 (EN 1995)</option>
+                <option value="NDS">NDS Timber Code</option>
+              </>
+            )}
+            {materialType === 'composite' && (
+              <option value="EC4">Eurocode 4 (EN 1994)</option>
+            )}
           </select>
+        </div>
+
+        {/* Material Selection Tabs */}
+        <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-center text-xs font-semibold">
+          <button
+            onClick={() => handleMaterialChange('rc')}
+            className={`py-1.5 rounded transition ${materialType === 'rc' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            RC
+          </button>
+          <button
+            onClick={() => handleMaterialChange('steel')}
+            className={`py-1.5 rounded transition ${materialType === 'steel' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Steel
+          </button>
+          <button
+            onClick={() => handleMaterialChange('timber')}
+            className={`py-1.5 rounded transition ${materialType === 'timber' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Timber
+          </button>
+          <button
+            onClick={() => handleMaterialChange('composite')}
+            className={`py-1.5 rounded transition ${materialType === 'composite' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Composite
+          </button>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -364,39 +436,85 @@ export default function BeamAnalysisTool() {
           </div>
         </div>
 
-        {/* Cross Section Properties */}
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <label className="block text-[10px] text-slate-400">Width b (mm)</label>
-            <input type="number" value={width} onChange={(e) => setWidth(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
-          </div>
-          <div>
-            <label className="block text-[10px] text-slate-400">Depth h (mm)</label>
-            <input type="number" value={depth} onChange={(e) => setDepth(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
-          </div>
-          <div>
-            <label className="block text-[10px] text-slate-400">{designCode === 'BS8110' ? 'fcu' : 'f\'c / fck'} (MPa)</label>
-            <input type="number" value={fc} onChange={(e) => setFc(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
-          </div>
-        </div>
+        {/* Dynamic Material Specific Inputs */}
+        {materialType === 'rc' && (
+          <>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block text-[10px] text-slate-400">Width b (mm)</label>
+                <input type="number" value={width} onChange={(e) => setWidth(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400">Depth h (mm)</label>
+                <input type="number" value={depth} onChange={(e) => setDepth(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400">f'c / fck (MPa)</label>
+                <input type="number" value={fc} onChange={(e) => setFc(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
+              </div>
+            </div>
 
-        {/* Reinforcement Details */}
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="block text-[10px] text-slate-400">Tensile Rebar (N - Ø)</label>
-            <div className="flex space-x-1">
-              <input type="number" placeholder="N" value={numBarsBot} onChange={(e) => setNumBarsBot(Number(e.target.value))} className="w-1/2 bg-slate-950 border border-slate-800 rounded p-1 text-xs text-slate-200" />
-              <input type="number" placeholder="Ø" value={barDiamBot} onChange={(e) => setBarDiamBot(Number(e.target.value))} className="w-1/2 bg-slate-950 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] text-slate-400">Tensile Rebar (N - Ø)</label>
+                <div className="flex space-x-1">
+                  <input type="number" placeholder="N" value={numBarsBot} onChange={(e) => setNumBarsBot(Number(e.target.value))} className="w-1/2 bg-slate-950 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+                  <input type="number" placeholder="Ø" value={barDiamBot} onChange={(e) => setBarDiamBot(Number(e.target.value))} className="w-1/2 bg-slate-950 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400">Stirrups (Ø / Pitch)</label>
+                <div className="flex space-x-1">
+                  <input type="number" placeholder="Ø" value={stirrupDiam} onChange={(e) => setStirrupDiam(Number(e.target.value))} className="w-1/2 bg-slate-950 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+                  <input type="number" placeholder="s" value={stirrupSpacing} onChange={(e) => setStirrupSpacing(Number(e.target.value))} className="w-1/2 bg-slate-950 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {materialType === 'steel' && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] text-slate-400">Yield Strength fy (MPa)</label>
+              <input type="number" value={fySteel} onChange={(e) => setFySteel(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
+            </div>
+            <div>
+              <label className="block text-[10px] text-slate-400">Plastic Modulus Zx (cm³)</label>
+              <input type="number" value={zxSteel} onChange={(e) => setZxSteel(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
             </div>
           </div>
-          <div>
-            <label className="block text-[10px] text-slate-400">Stirrups (Ø / Pitch)</label>
-            <div className="flex space-x-1">
-              <input type="number" placeholder="Ø" value={stirrupDiam} onChange={(e) => setStirrupDiam(Number(e.target.value))} className="w-1/2 bg-slate-950 border border-slate-800 rounded p-1 text-xs text-slate-200" />
-              <input type="number" placeholder="s" value={stirrupSpacing} onChange={(e) => setStirrupSpacing(Number(e.target.value))} className="w-1/2 bg-slate-950 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+        )}
+
+        {materialType === 'timber' && (
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="block text-[10px] text-slate-400">Width b (mm)</label>
+              <input type="number" value={width} onChange={(e) => setWidth(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
+            </div>
+            <div>
+              <label className="block text-[10px] text-slate-400">Depth h (mm)</label>
+              <input type="number" value={depth} onChange={(e) => setDepth(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
+            </div>
+            <div>
+              <label className="block text-[10px] text-slate-400">Bending fm (MPa)</label>
+              <input type="number" value={fmTimber} onChange={(e) => setFmTimber(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
             </div>
           </div>
-        </div>
+        )}
+
+        {materialType === 'composite' && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] text-slate-400">Steel Zx (cm³)</label>
+              <input type="number" value={zxSteel} onChange={(e) => setZxSteel(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
+            </div>
+            <div>
+              <label className="block text-[10px] text-slate-400">Concrete f'c (MPa)</label>
+              <input type="number" value={fc} onChange={(e) => setFc(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200" />
+            </div>
+          </div>
+        )}
 
         <div className="pt-2 border-t border-slate-800 space-y-3">
           <div className="flex justify-between items-center">
@@ -406,7 +524,7 @@ export default function BeamAnalysisTool() {
             </button>
           </div>
 
-          <div className="space-y-3 max-h-40 overflow-y-auto pr-1">
+          <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
             {loads.map((loadItem, index) => (
               <div key={loadItem.id} className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 space-y-2">
                 <div className="flex justify-between items-center">
@@ -420,17 +538,31 @@ export default function BeamAnalysisTool() {
                     <option value="point">Point (kN)</option>
                     <option value="udl">UDL (kN/m)</option>
                     <option value="moment">Moment (kNm)</option>
+                    <option value="triangular">Triangular (kN/m)</option>
                   </select>
-                  <input type="number" value={loadItem.magnitude} onChange={(e) => updateLoad(loadItem.id, 'magnitude', Number(e.target.value))} className="bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200" />
-                  <input type="number" value={loadItem.position} onChange={(e) => updateLoad(loadItem.id, 'position', Number(e.target.value))} className="bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+                  <div>
+                    <label className="block text-[9px] text-slate-500">Mag</label>
+                    <input type="number" value={loadItem.magnitude} onChange={(e) => updateLoad(loadItem.id, 'magnitude', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] text-slate-500">Pos (m)</label>
+                    <input type="number" value={loadItem.position} onChange={(e) => updateLoad(loadItem.id, 'position', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+                  </div>
                 </div>
+
+                {(loadItem.type === 'udl' || loadItem.type === 'triangular') && (
+                  <div>
+                    <label className="block text-[9px] text-slate-500">Loaded Span Length (m)</label>
+                    <input type="number" placeholder="Length" value={loadItem.length ?? length - loadItem.position} onChange={(e) => updateLoad(loadItem.id, 'length', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+                  </div>
+                )}
               </div>
             ))}
           </div>
         </div>
 
         <button onClick={handleAnalyze} disabled={loading} className="w-full bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold py-2.5 rounded transition disabled:opacity-50 mt-4">
-          {loading ? 'Solving Response...' : `Run Beam Analysis (${designCode})`}
+          {loading ? 'Solving Response...' : `Run ${materialType.toUpperCase()} Beam Analysis (${designCode})`}
         </button>
 
         {result && (
@@ -454,12 +586,104 @@ export default function BeamAnalysisTool() {
       {/* Visual Report Display Section */}
       <div className="lg:col-span-7 space-y-6">
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
-          <h3 className="text-xs font-bold text-slate-300 mb-4 border-b border-slate-800 pb-2">LIVE BEAM VISUALIZATION</h3>
+          <h3 className="text-xs font-bold text-slate-300 mb-4 border-b border-slate-800 pb-2">LIVE BEAM VISUALIZATION ({materialType.toUpperCase()})</h3>
           <div className="w-full overflow-hidden bg-slate-950/50 rounded-lg border border-slate-800 mb-2 flex justify-center p-4">
-            <svg id="live-beam-svg" viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-48 drop-shadow-md">
-              <line x1={marginX} y1={beamY + 60} x2={marginX + beamWidth} y2={beamY + 60} stroke="#475569" strokeWidth="1" />
-              <text x={marginX + beamWidth / 2} y={beamY + 80} fill="#94a3b8" fontSize="14" textAnchor="middle" fontWeight="bold">Span (L) = {length}m</text>
+            <svg id="live-beam-svg" viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-56 drop-shadow-md">
+              {/* Span Centerline */}
+              <line x1={marginX} y1={beamY + 50} x2={marginX + beamWidth} y2={beamY + 50} stroke="#475569" strokeWidth="1" />
+              <text x={marginX + beamWidth / 2} y={beamY + 68} fill="#94a3b8" fontSize="13" textAnchor="middle" fontWeight="bold">
+                Span (L) = {length}m
+              </text>
+
+              {/* Solid Beam Element */}
               <rect x={marginX} y={beamY} width={beamWidth} height={beamThickness} fill="#94a3b8" rx="2" />
+
+              {/* Render Applied Loads Dynamic Overlay */}
+              {loads.map((load, idx) => {
+                const xStart = getX(load.position);
+
+                if (load.type === 'point') {
+                  return (
+                    <g key={load.id || idx}>
+                      <line x1={xStart} y1={55} x2={xStart} y2={beamY - 2} stroke="#ef4444" strokeWidth="3" />
+                      <polygon points={`${xStart},${beamY} ${xStart - 5},${beamY - 10} ${xStart + 5},${beamY - 10}`} fill="#ef4444" />
+                      <text x={xStart} y={46} fill="#f87171" fontSize="11" textAnchor="middle" fontWeight="bold">
+                        P{idx + 1}: {load.magnitude} kN
+                      </text>
+                    </g>
+                  );
+                }
+
+                if (load.type === 'udl') {
+                  const uLen = load.length && load.length > 0 ? load.length : length - load.position;
+                  const xEnd = getX(load.position + uLen);
+                  const widthPx = Math.max(xEnd - xStart, 10);
+                  const arrowCount = Math.max(3, Math.floor(widthPx / 25));
+                  const step = widthPx / (arrowCount - 1);
+
+                  return (
+                    <g key={load.id || idx}>
+                      <line x1={xStart} y1={85} x2={xEnd} y2={85} stroke="#38bdf8" strokeWidth="2" />
+                      {Array.from({ length: arrowCount }).map((_, aIdx) => {
+                        const ax = xStart + aIdx * step;
+                        return (
+                          <g key={aIdx}>
+                            <line x1={ax} y1={85} x2={ax} y2={beamY - 2} stroke="#38bdf8" strokeWidth="1.5" />
+                            <polygon points={`${ax},${beamY} ${ax - 3},${beamY - 6} ${ax + 3},${beamY - 6}`} fill="#38bdf8" />
+                          </g>
+                        );
+                      })}
+                      <text x={xStart + widthPx / 2} y={77} fill="#38bdf8" fontSize="10" textAnchor="middle" fontWeight="bold">
+                        w{idx + 1}: {load.magnitude} kN/m
+                      </text>
+                    </g>
+                  );
+                }
+
+                if (load.type === 'moment') {
+                  return (
+                    <g key={load.id || idx}>
+                      <path d={`M ${xStart - 16} ${beamY - 10} A 18 18 0 1 1 ${xStart + 16} ${beamY - 10}`} fill="none" stroke="#f59e0b" strokeWidth="2.5" />
+                      <polygon points={`${xStart + 16},${beamY - 10} ${xStart + 22},${beamY - 16} ${xStart + 10},${beamY - 16}`} fill="#f59e0b" />
+                      <text x={xStart} y={beamY - 34} fill="#fbbf24" fontSize="11" textAnchor="middle" fontWeight="bold">
+                        M{idx + 1}: {load.magnitude} kNm
+                      </text>
+                    </g>
+                  );
+                }
+
+                if (load.type === 'triangular') {
+                  const tLen = load.length && load.length > 0 ? load.length : length - load.position;
+                  const xEnd = getX(load.position + tLen);
+                  const widthPx = Math.max(xEnd - xStart, 10);
+                  const arrowCount = Math.max(3, Math.floor(widthPx / 22));
+                  const step = widthPx / (arrowCount - 1);
+
+                  return (
+                    <g key={load.id || idx}>
+                      <line x1={xStart} y1={beamY} x2={xEnd} y2={75} stroke="#a855f7" strokeWidth="2" />
+                      {Array.from({ length: arrowCount }).map((_, aIdx) => {
+                        const ax = xStart + aIdx * step;
+                        const topY = beamY - (aIdx / (arrowCount - 1)) * (beamY - 75);
+                        if (topY >= beamY - 4) return null;
+                        return (
+                          <g key={aIdx}>
+                            <line x1={ax} y1={topY} x2={ax} y2={beamY - 2} stroke="#a855f7" strokeWidth="1.5" />
+                            <polygon points={`${ax},${beamY} ${ax - 3},${beamY - 6} ${ax + 3},${beamY - 6}`} fill="#a855f7" />
+                          </g>
+                        );
+                      })}
+                      <text x={xEnd} y={67} fill="#c084fc" fontSize="10" textAnchor="middle" fontWeight="bold">
+                        {load.magnitude} kN/m
+                      </text>
+                    </g>
+                  );
+                }
+
+                return null;
+              })}
+
+              {/* Render Structural Boundary Supports */}
               {support === 'simply_supported' && (<>{drawPin(marginX)}{drawPin(marginX + beamWidth)}</>)}
               {support === 'cantilever' && drawFixed(marginX, true)}
               {support === 'fixed_fixed' && (<>{drawFixed(marginX, true)}{drawFixed(marginX + beamWidth, false)}</>)}

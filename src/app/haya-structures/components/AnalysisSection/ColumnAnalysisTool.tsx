@@ -15,9 +15,11 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-type DesignCode = 'ACI318' | 'BS8110' | 'EC2';
+type MaterialType = 'rc' | 'steel' | 'timber' | 'composite';
+type DesignCode = 'ACI318' | 'BS8110' | 'EC2' | 'EC3' | 'AISC360' | 'EC5' | 'NDS' | 'EC4';
 
 interface ColumnResult {
+  material_type?: MaterialType;
   design_code?: DesignCode;
   inputs?: { width: number; depth: number; cover: number; fc: number; fy: number; numBars: number; barDiam: number; length: number; kFactor: number; pu: number; m1: number; m2: number };
   section_properties?: { Ag: number; Ast: number; rebarRatio: number; Ig?: number; r?: number };
@@ -28,14 +30,26 @@ interface ColumnResult {
 }
 
 export default function ColumnAnalysisTool() {
+  const [materialType, setMaterialType] = useState<MaterialType>('rc');
   const [designCode, setDesignCode] = useState<DesignCode>('ACI318');
+  
+  // Section & Material Properties
   const [width, setWidth] = useState<number>(400);
   const [depth, setDepth] = useState<number>(400);
   const [cover, setCover] = useState<number>(40);
   const [fc, setFc] = useState<number>(30);
   const [fy, setFy] = useState<number>(420);
+  
+  // RC Properties
   const [numBars, setNumBars] = useState<number>(8);
   const [barDiam, setBarDiam] = useState<number>(20);
+  
+  // Steel / Timber / Composite Properties
+  const [fySteel, setFySteel] = useState<number>(355);
+  const [fcTimber, setFcTimber] = useState<number>(24);
+  const [kmodTimber, setKmodTimber] = useState<number>(0.8);
+
+  // Boundary & Loading Parameters
   const [length, setLength] = useState<number>(3.5);
   const [kFactor, setKFactor] = useState<number>(1.0);
   const [endCondition, setEndCondition] = useState<number>(1);
@@ -48,35 +62,49 @@ export default function ColumnAnalysisTool() {
   const [loading, setLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
+  const handleMaterialChange = (newMat: MaterialType) => {
+    setMaterialType(newMat);
+    if (newMat === 'rc') setDesignCode('ACI318');
+    else if (newMat === 'steel') setDesignCode('EC3');
+    else if (newMat === 'timber') setDesignCode('EC5');
+    else if (newMat === 'composite') setDesignCode('EC4');
+  };
+
   const handleAnalyze = async () => {
     setLoading(true);
     try {
+      const payload = {
+        element_type: 'column',
+        material_type: materialType,
+        design_code: designCode,
+        width: Number(width),
+        depth: Number(depth),
+        cover: Number(cover),
+        fc: Number(fc),
+        fy: Number(fy),
+        numBars: Number(numBars),
+        barDiam: Number(barDiam),
+        fy_steel: Number(fySteel),
+        fc_timber: Number(fcTimber),
+        k_mod: Number(kmodTimber),
+        length: Number(length),
+        kFactor: Number(kFactor),
+        endCondition: Number(endCondition),
+        isBraced,
+        pu: Number(pu),
+        m1: Number(m1),
+        m2: Number(m2),
+      };
+
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          element_type: 'column',
-          design_code: designCode,
-          width: Number(width),
-          depth: Number(depth),
-          cover: Number(cover),
-          fc: Number(fc),
-          fy: Number(fy),
-          numBars: Number(numBars),
-          barDiam: Number(barDiam),
-          length: Number(length),
-          kFactor: Number(kFactor),
-          endCondition: Number(endCondition),
-          isBraced,
-          pu: Number(pu),
-          m1: Number(m1),
-          m2: Number(m2),
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) throw new Error(`Server status ${res.status}`);
       const data = await res.json();
-      setResult(data);
+      setResult(data.data || data);
     } catch (err) {
       console.error(err);
       alert('Error running column analysis solver.');
@@ -146,66 +174,58 @@ export default function ColumnAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
-      doc.setFontSize(14);
-      doc.setTextColor(15, 23, 42);
-      doc.text('HAYA STRUCTURES LLC', 14, 12);
-      doc.setFontSize(8);
-      doc.setTextColor(100);
-      doc.text(`Column Multi-Code Report (${designCode}) | Date: ${dateStr}`, 14, 16);
-      doc.line(14, 19, 196, 19);
+      // Compact Header Banner (Height: 16mm)
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, 210, 16, 'F');
+      
+      doc.setFontSize(11);
+      doc.setTextColor(56, 189, 248);
+      doc.text('HAYA STRUCTURES | COLUMN VERIFICATION REPORT', 12, 10);
+      
+      doc.setFontSize(7);
+      doc.setTextColor(226, 232, 240);
+      doc.text(`Material: ${materialType.toUpperCase()} | Code: ${designCode} | Date: ${dateStr}`, 12, 14);
 
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text('1. Design Inputs & Slenderness Summary', 14, 24);
-
+      // Compact Side-by-Side Metadata Tables (Y: 18mm - 55mm)
       autoTable(doc, {
-        startY: 27,
-        margin: { left: 14 },
-        tableWidth: 88,
-        head: [['Parameter', 'Value', 'Unit']],
-        body: [
-          ['Design Code', `${designCode}`, '-'],
-          ['Section (b × h)', `${width} × ${depth}`, 'mm'],
-          ['Concrete Cover', `${cover}`, 'mm'],
-          ['Concrete / Steel Grade', `${fc} / ${fy}`, 'MPa'],
-          ['Rebar Reinforcement', `${numBars} - Ø${barDiam}`, '-'],
-          ['Unbraced Length L', `${length}m`, '-'],
-        ],
-        theme: 'striped',
-        headStyles: { fillColor: [14, 116, 144], fontSize: 7, cellPadding: 1 },
-        bodyStyles: { fontSize: 7, cellPadding: 1 },
-      });
-
-      const getFinalY = (pdfDoc: jsPDF) =>
-        (pdfDoc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 50;
-
-      const leftYTotal = getFinalY(doc);
-
-      autoTable(doc, {
-        startY: 27,
-        margin: { left: 106 },
+        startY: 18,
+        margin: { left: 12 },
         tableWidth: 90,
-        head: [['Metric Description', 'Computed Value', 'Status / Unit']],
+        head: [['Design Input Parameter', 'Value / Unit']],
         body: [
-          ['Slenderness Ratio', `${result.slenderness?.klr ?? result.slenderness?.slendernessRatio ?? 0}`, `Limit: ${result.slenderness?.limit ?? 0}`],
-          ['Slenderness Status', result.slenderness?.isSlender ? 'SLENDER' : 'SHORT', '-'],
-          ['Design Moment (Mc)', `${result.slenderness?.Mc ?? 0}`, 'kN·m'],
-          ['Max Axial Capacity φPn,max', `${result.capacity?.phiPn_max ?? 0}`, 'kN'],
-          ['Demand Capacity Ratio (DCR)', `${result.capacity?.dcr ?? 0}`, result.capacity?.status ?? 'N/A'],
+          ['Material System', materialType.toUpperCase()],
+          ['Design Code', designCode],
+          ['Section Profile (b × h)', `${width} × ${depth} mm`],
+          ['Unbraced Length L', `${length} m`],
+          ['Strength Parameter', materialType === 'rc' ? `${fc} / ${fy} MPa` : `${fySteel} MPa`],
+          ['Applied Axial Load Pu', `${pu} kN`],
         ],
-        theme: 'striped',
-        headStyles: { fillColor: [15, 118, 110], fontSize: 7, cellPadding: 1 },
-        bodyStyles: { fontSize: 7, cellPadding: 1 },
+        theme: 'grid',
+        headStyles: { fillColor: [14, 116, 144], fontSize: 6.5, cellPadding: 1 },
+        bodyStyles: { fontSize: 6.5, cellPadding: 1 },
       });
 
-      const rightYTotal = getFinalY(doc);
-      let currentY = Math.max(leftYTotal, rightYTotal) + 5;
+      autoTable(doc, {
+        startY: 18,
+        margin: { left: 108 },
+        tableWidth: 90,
+        head: [['Performance Metric', 'Calculated Output']],
+        body: [
+          ['Slenderness Ratio', `${result.slenderness?.klr ?? result.slenderness?.slendernessRatio ?? 0}`],
+          ['Slenderness Condition', result.slenderness?.isSlender ? 'SLENDER' : 'SHORT'],
+          ['Magnified Design Moment (Mc)', `${result.slenderness?.Mc ?? m2} kN·m`],
+          ['Axial Capacity φPn,max', `${result.capacity?.phiPn_max ?? 0} kN`],
+          ['Demand Capacity Ratio (DCR)', `${result.capacity?.dcr ?? 0}`],
+          ['Overall Design Verdict', result.capacity?.status ?? 'SAFE'],
+        ],
+        theme: 'grid',
+        headStyles: { fillColor: [15, 118, 110], fontSize: 6.5, cellPadding: 1 },
+        bodyStyles: { fontSize: 6.5, cellPadding: 1 },
+      });
 
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text('2. Visualizations & P-M Interaction Envelope', 14, currentY);
-      currentY += 3;
+      let currentY = 56;
 
+      // Section Diagrams & P-M Envelope Visualizations
       const elevSvg = document.getElementById('column-elevation-svg') as unknown as SVGSVGElement;
       const secSvg = document.getElementById('column-section-svg') as unknown as SVGSVGElement;
       const pmSvg = document.querySelector('#pm-chart-container svg') as SVGSVGElement;
@@ -214,24 +234,28 @@ export default function ColumnAnalysisTool() {
         try {
           const elevPng = await convertSvgToPng(elevSvg, '#0f172a');
           const secPng = await convertSvgToPng(secSvg, '#0f172a');
-          doc.addImage(elevPng, 'PNG', 14, currentY, 88, 52);
-          doc.addImage(secPng, 'PNG', 106, currentY, 90, 52);
-          currentY += 56;
+          doc.addImage(elevPng, 'PNG', 12, currentY, 90, 48);
+          doc.addImage(secPng, 'PNG', 108, currentY, 90, 48);
+          currentY += 52;
         } catch (e) {
-          console.warn('SVG conversion failed:', e);
+          console.warn('SVG section conversion failed:', e);
         }
       }
 
       if (pmSvg) {
         try {
+          doc.setFontSize(7.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text(`P-M INTERACTION ENVELOPE (${designCode})`, 12, currentY);
+          currentY += 2;
           const pmPng = await convertSvgToPng(pmSvg, '#0f172a');
-          doc.addImage(pmPng, 'PNG', 14, currentY, 182, 65);
+          doc.addImage(pmPng, 'PNG', 12, currentY, 186, 120);
         } catch (e) {
           console.warn('P-M Chart export failed:', e);
         }
       }
 
-      doc.save(`Haya_Structures_Column_${designCode}_Report.pdf`);
+      doc.save(`Haya_Column_${materialType}_${designCode}_Report.pdf`);
     } catch (err) {
       console.error('PDF Generation error:', err);
       alert(`Failed to generate PDF report: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -244,18 +268,66 @@ export default function ColumnAnalysisTool() {
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-          <h3 className="font-semibold text-slate-200">Column Inputs</h3>
+          <h3 className="font-semibold text-slate-200">Column Controls</h3>
           <select
             value={designCode}
             onChange={(e) => setDesignCode(e.target.value as DesignCode)}
             className="bg-cyan-500/20 text-cyan-400 font-bold border border-cyan-500/30 rounded px-2 py-1 text-xs"
           >
-            <option value="ACI318">ACI 318-19</option>
-            <option value="BS8110">BS 8110:1997</option>
-            <option value="EC2">Eurocode 2 (EN 1992)</option>
+            {materialType === 'rc' && (
+              <>
+                <option value="ACI318">ACI 318-19</option>
+                <option value="BS8110">BS 8110:1997</option>
+                <option value="EC2">Eurocode 2 (EN 1992)</option>
+              </>
+            )}
+            {materialType === 'steel' && (
+              <>
+                <option value="EC3">Eurocode 3 (EN 1993)</option>
+                <option value="AISC360">AISC 360-16</option>
+              </>
+            )}
+            {materialType === 'timber' && (
+              <>
+                <option value="EC5">Eurocode 5 (EN 1995)</option>
+                <option value="NDS">NDS Timber Code</option>
+              </>
+            )}
+            {materialType === 'composite' && (
+              <option value="EC4">Eurocode 4 (EN 1994)</option>
+            )}
           </select>
         </div>
 
+        {/* Material Selection Tabs */}
+        <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-center text-xs font-semibold">
+          <button
+            onClick={() => handleMaterialChange('rc')}
+            className={`py-1.5 rounded transition ${materialType === 'rc' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            RC
+          </button>
+          <button
+            onClick={() => handleMaterialChange('steel')}
+            className={`py-1.5 rounded transition ${materialType === 'steel' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Steel
+          </button>
+          <button
+            onClick={() => handleMaterialChange('timber')}
+            className={`py-1.5 rounded transition ${materialType === 'timber' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Timber
+          </button>
+          <button
+            onClick={() => handleMaterialChange('composite')}
+            className={`py-1.5 rounded transition ${materialType === 'composite' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Composite
+          </button>
+        </div>
+
+        {/* Section Geometry */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Width b (mm)</label>
@@ -267,34 +339,74 @@ export default function ColumnAnalysisTool() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Cover (mm)</label>
-            <input type="number" value={cover} onChange={(e) => setCover(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">{designCode === 'BS8110' ? 'fcu' : 'f\'c / fck'} (MPa)</label>
-            <input type="number" value={fc} onChange={(e) => setFc(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">fy (MPa)</label>
-            <input type="number" value={fy} onChange={(e) => setFy(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
-          </div>
-        </div>
+        {/* Material Specific Properties */}
+        {materialType === 'rc' && (
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Cover (mm)</label>
+                <input type="number" value={cover} onChange={(e) => setCover(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">f'c / fck (MPa)</label>
+                <input type="number" value={fc} onChange={(e) => setFc(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">fy (MPa)</label>
+                <input type="number" value={fy} onChange={(e) => setFy(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
+              </div>
+            </div>
 
-        <div className="pt-2 border-t border-slate-800 space-y-3">
-          <h4 className="font-semibold text-slate-200 text-sm">Longitudinal Rebar</h4>
+            <div className="pt-2 border-t border-slate-800 space-y-3">
+              <h4 className="font-semibold text-slate-200 text-sm">Longitudinal Rebar</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Bar Count (N)</label>
+                  <input type="number" value={numBars} onChange={(e) => setNumBars(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Bar Diam Ø (mm)</label>
+                  <input type="number" value={barDiam} onChange={(e) => setBarDiam(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {materialType === 'steel' && (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Bar Count (N)</label>
-              <input type="number" value={numBars} onChange={(e) => setNumBars(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Bar Diam Ø (mm)</label>
-              <input type="number" value={barDiam} onChange={(e) => setBarDiam(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
+              <label className="block text-xs text-slate-400 mb-1">Steel Yield Strength fy (MPa)</label>
+              <input type="number" value={fySteel} onChange={(e) => setFySteel(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
             </div>
           </div>
-        </div>
+        )}
+
+        {materialType === 'timber' && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Compression fc,0 (MPa)</label>
+              <input type="number" value={fcTimber} onChange={(e) => setFcTimber(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">kmod Factor</label>
+              <input type="number" step="0.05" value={kmodTimber} onChange={(e) => setKmodTimber(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
+            </div>
+          </div>
+        )}
+
+        {materialType === 'composite' && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Steel fy (MPa)</label>
+              <input type="number" value={fySteel} onChange={(e) => setFySteel(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Concrete f'c (MPa)</label>
+              <input type="number" value={fc} onChange={(e) => setFc(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm text-slate-200" />
+            </div>
+          </div>
+        )}
 
         <div className="pt-2 border-t border-slate-800 space-y-3">
           <h4 className="font-semibold text-slate-200 text-sm">Boundary & Loads</h4>
@@ -335,7 +447,7 @@ export default function ColumnAnalysisTool() {
         </div>
 
         <button onClick={handleAnalyze} disabled={loading} className="w-full bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold py-2.5 rounded transition disabled:opacity-50 mt-4">
-          {loading ? 'Calculating P-M Envelope...' : `Run Column Analysis (${designCode})`}
+          {loading ? 'Calculating P-M Envelope...' : `Run ${materialType.toUpperCase()} Column Analysis (${designCode})`}
         </button>
 
         {result && (
@@ -347,7 +459,7 @@ export default function ColumnAnalysisTool() {
               </span>
             </div>
             <p>Slenderness Ratio: <span className="text-cyan-400 font-mono">{result.slenderness?.klr ?? result.slenderness?.slendernessRatio ?? 0}</span> ({result.slenderness?.isSlender ? 'Slender' : 'Short'})</p>
-            <p>Design Moment (Mc): <span className="text-cyan-400 font-mono">{result.slenderness?.Mc ?? 0} kN·m</span></p>
+            <p>Design Moment (Mc): <span className="text-cyan-400 font-mono">{result.slenderness?.Mc ?? m2} kN·m</span></p>
             <p>Demand Capacity Ratio: <span className="text-emerald-400 font-mono">{result.capacity?.dcr ?? 0}</span></p>
 
             <button onClick={generatePDF} disabled={downloadingPdf} className="w-full mt-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded transition shadow-lg">
@@ -360,7 +472,7 @@ export default function ColumnAnalysisTool() {
       <div className="lg:col-span-7 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-800">
-            <h4 className="text-xs font-bold text-slate-300 mb-2 border-b border-slate-800 pb-1">ELEVATION VIEW</h4>
+            <h4 className="text-xs font-bold text-slate-300 mb-2 border-b border-slate-800 pb-1">ELEVATION VIEW ({materialType.toUpperCase()})</h4>
             <div className="bg-slate-950/60 p-2 rounded border border-slate-800 flex justify-center">
               <svg id="column-elevation-svg" viewBox="0 0 200 240" className="w-full h-44 drop-shadow-md">
                 <line x1="100" y1="10" x2="100" y2="38" stroke="#ef4444" strokeWidth="3" />
@@ -379,12 +491,19 @@ export default function ColumnAnalysisTool() {
             <div className="bg-slate-950/60 p-2 rounded border border-slate-800 flex justify-center">
               <svg id="column-section-svg" viewBox="0 0 200 240" className="w-full h-44 drop-shadow-md">
                 <rect x="40" y="40" width="120" height="120" fill="#1e293b" stroke="#94a3b8" strokeWidth="2" rx="4" />
-                <rect x="52" y="52" width="96" height="96" fill="none" stroke="#0284c7" strokeWidth="1.5" rx="2" />
-                {result?.bar_locations?.map((bar, idx) => {
-                  const cx = 100 + (bar.x / (width / 2)) * 44;
-                  const cy = 100 + (bar.y / (depth / 2)) * 44;
-                  return <circle key={idx} cx={cx} cy={cy} r="5" fill="#38bdf8" stroke="#0284c7" strokeWidth="1" />;
-                })}
+                {materialType === 'rc' && (
+                  <>
+                    <rect x="52" y="52" width="96" height="96" fill="none" stroke="#0284c7" strokeWidth="1.5" rx="2" />
+                    {result?.bar_locations?.map((bar, idx) => {
+                      const cx = 100 + (bar.x / (width / 2)) * 44;
+                      const cy = 100 + (bar.y / (depth / 2)) * 44;
+                      return <circle key={idx} cx={cx} cy={cy} r="5" fill="#38bdf8" stroke="#0284c7" strokeWidth="1" />;
+                    })}
+                  </>
+                )}
+                {materialType === 'steel' && (
+                  <path d="M 55 50 H 145 V 65 H 108 V 175 H 145 V 190 H 55 V 175 H 92 V 65 H 55 Z" fill="#38bdf8" fillOpacity="0.8" stroke="#0284c7" />
+                )}
               </svg>
             </div>
           </div>
