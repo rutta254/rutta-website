@@ -7,27 +7,34 @@ import autoTable from 'jspdf-autotable';
 
 type DimensionMode = '2D' | '3D';
 type DesignCode = 'AISC360' | 'EC3' | 'BS5950';
-
-type Topology2D = 'pratt' | 'howe' | 'warren' | 'fink' | 'scissors' | 'portal_frame';
+type Topology2D = 'pratt' | 'howe' | 'warren' | 'fink' | 'scissors' | 'king_post' | 'ktruss';
 type Topology3D = 'space_grid' | 'space_tower' | 'triangular_prism';
+type SectionType = 'RHS' | 'CHS' | 'IBEAM' | 'ANGLE' | 'RECT_SOLID';
+type SupportType = 'PINNED' | 'ROLLER_X' | 'ROLLER_Y' | 'FREE';
 
 interface NodeStruct {
   id: number;
   x: number;
   y: number;
   z: number;
-  fixX: boolean;
-  fixY: boolean;
-  fixZ: boolean;
-  fx: number;
-  fy: number;
-  fz: number;
+  support: SupportType;
+  fx: number; // kN
+  fy: number; // kN
+  fz: number; // kN
 }
 
 interface MemberStruct {
   id: number;
   startNode: number;
   endNode: number;
+}
+
+interface SectionProps {
+  type: SectionType;
+  b: number; // mm
+  h: number; // mm
+  t: number; // mm
+  tw: number; // mm (for I-beam)
   area: number; // mm²
   ry: number; // mm
 }
@@ -62,34 +69,87 @@ export default function UnifiedTrussTool() {
   const [topology2D, setTopology2D] = useState<Topology2D>('pratt');
   const [topology3D, setTopology3D] = useState<Topology3D>('space_grid');
 
-  // Spatial / Planar Geometry Dimensions
+  // Dimensions & Counts
   const [spanX, setSpanX] = useState<number>(12); // m
-  const [spanY, setSpanY] = useState<number>(6);  // m (used in 3D)
+  const [spanY, setSpanY] = useState<number>(6);  // m
   const [trussHeight, setTrussHeight] = useState<number>(2.5); // m
   const [baysX, setBaysX] = useState<number>(4);
   const [baysY, setBaysY] = useState<number>(2);
   const [towerLevels, setTowerLevels] = useState<number>(4);
 
-  // Section & Material Properties
-  const [sectionArea, setSectionArea] = useState<number>(1850); // mm²
-  const [radiusGyration, setRadiusGyration] = useState<number>(35.2); // mm
-  const [fy, setFy] = useState<number>(355); // MPa
+  // Section Geometry Inputs
+  const [secType, setSecType] = useState<SectionType>('RHS');
+  const [dimB, setDimB] = useState<number>(100); // mm
+  const [dimH, setDimH] = useState<number>(100); // mm
+  const [dimT, setDimT] = useState<number>(5);   // mm
+  const [dimTw, setDimTw] = useState<number>(5); // mm
+  const [fy, setFy] = useState<number>(355);     // MPa
   const [modulusE, setModulusE] = useState<number>(210000); // MPa
 
-  // Applied Loads
-  const [pointLoadY, setPointLoadY] = useState<number>(-25); // kN (2D vertical load)
-  const [pointLoadZ, setPointLoadZ] = useState<number>(-20); // kN (3D vertical load)
+  // Computed Section Properties
+  const [sectionProps, setSectionProps] = useState<SectionProps>({
+    type: 'RHS', b: 100, h: 100, t: 5, tw: 5, area: 1800, ry: 38.7
+  });
 
-  // Structural Model State
+  // Global Loading Defaults
+  const [globalLoadY, setGlobalLoadY] = useState<number>(-25); // kN
+  const [globalLoadZ, setGlobalLoadZ] = useState<number>(-20); // kN
+
+  // Selected Node for Custom Loads/Supports
+  const [selectedNodeId, setSelectedNodeId] = useState<number>(1);
+
+  // Structural State
   const [nodes, setNodes] = useState<NodeStruct[]>([]);
   const [members, setMembers] = useState<MemberStruct[]>([]);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [analyzing, setAnalyzing] = useState<boolean>(false);
 
-  // Canvas Viewport Reference
   const mountRef = useRef<HTMLDivElement>(null);
 
-  // --- UNIFIED PARAMETRIC GEOMETRY GENERATOR ---
+  // --- AUTOMATIC SECTION PROPERTY CALCULATOR ---
+  useEffect(() => {
+    let area = 0;
+    let ry = 1;
+
+    if (secType === 'RHS') {
+      const b = dimB; const h = dimH; const t = dimT;
+      const bi = b - 2 * t; const hi = h - 2 * t;
+      area = b * h - (bi > 0 && hi > 0 ? bi * hi : 0);
+      const Ix = (b * Math.pow(h, 3) - (bi > 0 && hi > 0 ? bi * Math.pow(hi, 3) : 0)) / 12;
+      ry = Math.sqrt(Math.max(Ix / area, 0.1));
+    } else if (secType === 'CHS') {
+      const D = dimH; const t = dimT; const d = D - 2 * t;
+      area = (Math.PI / 4) * (D * D - (d > 0 ? d * d : 0));
+      const Ix = (Math.PI / 64) * (Math.pow(D, 4) - (d > 0 ? Math.pow(d, 4) : 0));
+      ry = Math.sqrt(Math.max(Ix / area, 0.1));
+    } else if (secType === 'IBEAM') {
+      const b = dimB; const h = dimH; const tf = dimT; const tw = dimTw;
+      area = 2 * b * tf + (h - 2 * tf) * tw;
+      const Ix = (b * Math.pow(h, 3) - (b - tw) * Math.pow(h - 2 * tf, 3)) / 12;
+      ry = Math.sqrt(Math.max(Ix / area, 0.1));
+    } else if (secType === 'ANGLE') {
+      const b = dimB; const h = dimH; const t = dimT;
+      area = t * (b + h - t);
+      ry = Math.min(b, h) * 0.28;
+    } else {
+      // Solid Rectangle
+      area = dimB * dimH;
+      const Ix = (dimB * Math.pow(dimH, 3)) / 12;
+      ry = Math.sqrt(Math.max(Ix / area, 0.1));
+    }
+
+    setSectionProps({
+      type: secType,
+      b: dimB,
+      h: dimH,
+      t: dimT,
+      tw: dimTw,
+      area: Math.round(area),
+      ry: Number(ry.toFixed(2)),
+    });
+  }, [secType, dimB, dimH, dimT, dimTw]);
+
+  // --- PARAMETRIC GEOMETRY & NODE/MEMBER GENERATOR ---
   useEffect(() => {
     const newNodes: NodeStruct[] = [];
     const newMembers: MemberStruct[] = [];
@@ -102,31 +162,28 @@ export default function UnifiedTrussTool() {
     const Levels = Math.max(towerLevels, 1);
 
     if (dimMode === '2D') {
-      // ---------------- 2D PLANAR TOPOLOGIES (Z = 0) ----------------
       const stepX = Lx / Nx;
 
-      // Bottom Chord Nodes
+      // Bottom Chord
       for (let i = 0; i <= Nx; i++) {
+        let supp: SupportType = 'FREE';
+        if (i === 0) supp = 'PINNED';
+        if (i === Nx) supp = 'ROLLER_X';
+
         newNodes.push({
           id: i + 1,
           x: Number((i * stepX).toFixed(2)),
           y: 0,
           z: 0,
-          fixX: i === 0, // Pin left
-          fixY: i === 0 || i === Nx, // Pin/Roller supports
-          fixZ: true, // Always constrain Z in 2D mode
-          fx: 0,
-          fy: 0,
-          fz: 0,
+          support: supp,
+          fx: 0, fy: 0, fz: 0,
         });
       }
 
-      // Top Chord Nodes
+      // Top Chord
       for (let i = 0; i <= Nx; i++) {
         let nodeY = H;
-        if (topology2D === 'pratt' || topology2D === 'howe' || topology2D === 'warren') {
-          nodeY = H;
-        } else if (topology2D === 'fink' || topology2D === 'scissors') {
+        if (topology2D === 'fink' || topology2D === 'scissors' || topology2D === 'king_post') {
           nodeY = (1 - Math.abs((i - Nx / 2) / (Nx / 2))) * H;
         }
 
@@ -136,51 +193,50 @@ export default function UnifiedTrussTool() {
           x: Number((i * stepX).toFixed(2)),
           y: Number(nodeY.toFixed(2)),
           z: 0,
-          fixX: false,
-          fixY: false,
-          fixZ: true, // Constrain Z
+          support: 'FREE',
           fx: 0,
-          fy: isJointLoad ? pointLoadY : 0,
+          fy: isJointLoad ? globalLoadY : 0,
           fz: 0,
         });
       }
 
       let mId = 0;
-      // Bottom & Top Chords
+      // Chords
       for (let i = 0; i < Nx; i++) {
-        newMembers.push({ id: ++mId, startNode: i + 1, endNode: i + 2, area: sectionArea, ry: radiusGyration });
-        newMembers.push({ id: ++mId, startNode: Nx + 2 + i, endNode: Nx + 3 + i, area: sectionArea, ry: radiusGyration });
+        newMembers.push({ id: ++mId, startNode: i + 1, endNode: i + 2 });
+        newMembers.push({ id: ++mId, startNode: Nx + 2 + i, endNode: Nx + 3 + i });
       }
 
-      // Vertical & Diagonal Web Members
+      // Web Members
       for (let i = 0; i <= Nx; i++) {
         const bNode = i + 1;
         const tNode = Nx + 2 + i;
-        newMembers.push({ id: ++mId, startNode: bNode, endNode: tNode, area: sectionArea, ry: radiusGyration });
+        newMembers.push({ id: ++mId, startNode: bNode, endNode: tNode });
 
         if (i < Nx) {
           if (topology2D === 'pratt') {
-            // Diagonals slant towards center
-            if (i < Nx / 2) newMembers.push({ id: ++mId, startNode: bNode, endNode: tNode + 1, area: sectionArea, ry: radiusGyration });
-            else newMembers.push({ id: ++mId, startNode: bNode + 1, endNode: tNode, area: sectionArea, ry: radiusGyration });
+            if (i < Nx / 2) newMembers.push({ id: ++mId, startNode: bNode, endNode: tNode + 1 });
+            else newMembers.push({ id: ++mId, startNode: bNode + 1, endNode: tNode });
           } else if (topology2D === 'howe') {
-            // Diagonals slant away from center
-            if (i < Nx / 2) newMembers.push({ id: ++mId, startNode: bNode + 1, endNode: tNode, area: sectionArea, ry: radiusGyration });
-            else newMembers.push({ id: ++mId, startNode: bNode, endNode: tNode + 1, area: sectionArea, ry: radiusGyration });
+            if (i < Nx / 2) newMembers.push({ id: ++mId, startNode: bNode + 1, endNode: tNode });
+            else newMembers.push({ id: ++mId, startNode: bNode, endNode: tNode + 1 });
+          } else if (topology2D === 'ktruss') {
+            newMembers.push({ id: ++mId, startNode: bNode, endNode: tNode + 1 });
+            newMembers.push({ id: ++mId, startNode: bNode + 1, endNode: tNode });
           } else {
-            // Warren / Default Diagonals
-            newMembers.push({ id: ++mId, startNode: bNode, endNode: tNode + 1, area: sectionArea, ry: radiusGyration });
+            // Warren / Fink / Default
+            newMembers.push({ id: ++mId, startNode: bNode, endNode: tNode + 1 });
           }
         }
       }
     } else {
-      // ---------------- 3D SPATIAL TOPOLOGIES ----------------
+      // 3D Mode
       if (topology3D === 'space_grid') {
         const stepX = Lx / Nx;
         const stepY = Ly / Ny;
-
         let nId = 0;
-        // Bottom Layer Nodes (Z = 0)
+
+        // Bottom Nodes
         for (let i = 0; i <= Nx; i++) {
           for (let j = 0; j <= Ny; j++) {
             const isCorner = (i === 0 || i === Nx) && (j === 0 || j === Ny);
@@ -189,18 +245,14 @@ export default function UnifiedTrussTool() {
               x: Number((i * stepX).toFixed(2)),
               y: Number((j * stepY).toFixed(2)),
               z: 0,
-              fixX: isCorner,
-              fixY: isCorner,
-              fixZ: isCorner,
-              fx: 0,
-              fy: 0,
-              fz: 0,
+              support: isCorner ? 'PINNED' : 'FREE',
+              fx: 0, fy: 0, fz: 0,
             });
           }
         }
         const numBottomNodes = newNodes.length;
 
-        // Top Layer Nodes (Z = H)
+        // Top Nodes
         for (let i = 0; i < Nx; i++) {
           for (let j = 0; j < Ny; j++) {
             newNodes.push({
@@ -208,12 +260,8 @@ export default function UnifiedTrussTool() {
               x: Number(((i + 0.5) * stepX).toFixed(2)),
               y: Number(((j + 0.5) * stepY).toFixed(2)),
               z: H,
-              fixX: false,
-              fixY: false,
-              fixZ: false,
-              fx: 0,
-              fy: 0,
-              fz: pointLoadZ,
+              support: 'FREE',
+              fx: 0, fy: 0, fz: globalLoadZ,
             });
           }
         }
@@ -221,15 +269,13 @@ export default function UnifiedTrussTool() {
         let mId = 0;
         const getNodeIdx = (i: number, j: number) => i * (Ny + 1) + j + 1;
 
-        // Bottom Chord Members
         for (let i = 0; i <= Nx; i++) {
           for (let j = 0; j <= Ny; j++) {
-            if (i < Nx) newMembers.push({ id: ++mId, startNode: getNodeIdx(i, j), endNode: getNodeIdx(i + 1, j), area: sectionArea, ry: radiusGyration });
-            if (j < Ny) newMembers.push({ id: ++mId, startNode: getNodeIdx(i, j), endNode: getNodeIdx(i, j + 1), area: sectionArea, ry: radiusGyration });
+            if (i < Nx) newMembers.push({ id: ++mId, startNode: getNodeIdx(i, j), endNode: getNodeIdx(i + 1, j) });
+            if (j < Ny) newMembers.push({ id: ++mId, startNode: getNodeIdx(i, j), endNode: getNodeIdx(i, j + 1) });
           }
         }
 
-        // Web Diagonals
         let topStartId = numBottomNodes + 1;
         for (let i = 0; i < Nx; i++) {
           for (let j = 0; j < Ny; j++) {
@@ -239,14 +285,14 @@ export default function UnifiedTrussTool() {
             const b3 = getNodeIdx(i + 1, j + 1);
             const b4 = getNodeIdx(i, j + 1);
 
-            newMembers.push({ id: ++mId, startNode: b1, endNode: topId, area: sectionArea, ry: radiusGyration });
-            newMembers.push({ id: ++mId, startNode: b2, endNode: topId, area: sectionArea, ry: radiusGyration });
-            newMembers.push({ id: ++mId, startNode: b3, endNode: topId, area: sectionArea, ry: radiusGyration });
-            newMembers.push({ id: ++mId, startNode: b4, endNode: topId, area: sectionArea, ry: radiusGyration });
+            newMembers.push({ id: ++mId, startNode: b1, endNode: topId });
+            newMembers.push({ id: ++mId, startNode: b2, endNode: topId });
+            newMembers.push({ id: ++mId, startNode: b3, endNode: topId });
+            newMembers.push({ id: ++mId, startNode: b4, endNode: topId });
           }
         }
       } else {
-        // 3D Spatial Transmission Tower
+        // Transmission Tower
         let nId = 0;
         const dz = H / Levels;
 
@@ -256,35 +302,45 @@ export default function UnifiedTrussTool() {
           const h = (Ly / 2) * factor;
           const z = Number((k * dz).toFixed(2));
 
-          newNodes.push({ id: ++nId, x: -w, y: -h, z, fixX: k === 0, fixY: k === 0, fixZ: k === 0, fx: 0, fy: 0, fz: k === Levels ? pointLoadZ : 0 });
-          newNodes.push({ id: ++nId, x: w, y: -h, z, fixX: k === 0, fixY: k === 0, fixZ: k === 0, fx: 0, fy: 0, fz: k === Levels ? pointLoadZ : 0 });
-          newNodes.push({ id: ++nId, x: w, y: h, z, fixX: k === 0, fixY: k === 0, fixZ: k === 0, fx: 0, fy: 0, fz: k === Levels ? pointLoadZ : 0 });
-          newNodes.push({ id: ++nId, x: -w, y: h, z, fixX: k === 0, fixY: k === 0, fixZ: k === 0, fx: 0, fy: 0, fz: k === Levels ? pointLoadZ : 0 });
+          newNodes.push({ id: ++nId, x: -w, y: -h, z, support: k === 0 ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: k === Levels ? globalLoadZ : 0 });
+          newNodes.push({ id: ++nId, x: w, y: -h, z, support: k === 0 ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: k === Levels ? globalLoadZ : 0 });
+          newNodes.push({ id: ++nId, x: w, y: h, z, support: k === 0 ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: k === Levels ? globalLoadZ : 0 });
+          newNodes.push({ id: ++nId, x: -w, y: h, z, support: k === 0 ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: k === Levels ? globalLoadZ : 0 });
         }
 
         let mId = 0;
         for (let k = 0; k < Levels; k++) {
           const base = k * 4;
           for (let i = 0; i < 4; i++) {
-            newMembers.push({ id: ++mId, startNode: base + i + 1, endNode: base + i + 5, area: sectionArea, ry: radiusGyration });
-            newMembers.push({ id: ++mId, startNode: base + i + 1, endNode: base + ((i + 1) % 4) + 1, area: sectionArea, ry: radiusGyration });
+            newMembers.push({ id: ++mId, startNode: base + i + 1, endNode: base + i + 5 });
+            newMembers.push({ id: ++mId, startNode: base + i + 1, endNode: base + ((i + 1) % 4) + 1 });
           }
-          newMembers.push({ id: ++mId, startNode: base + 1, endNode: base + 6, area: sectionArea, ry: radiusGyration });
-          newMembers.push({ id: ++mId, startNode: base + 2, endNode: base + 5, area: sectionArea, ry: radiusGyration });
+          newMembers.push({ id: ++mId, startNode: base + 1, endNode: base + 6 });
+          newMembers.push({ id: ++mId, startNode: base + 2, endNode: base + 5 });
         }
       }
     }
 
     setNodes(newNodes);
     setMembers(newMembers);
-  }, [dimMode, topology2D, topology3D, spanX, spanY, trussHeight, baysX, baysY, towerLevels, sectionArea, radiusGyration, pointLoadY, pointLoadZ]);
+    if (newNodes.length > 0) setSelectedNodeId(newNodes[0].id);
+  }, [dimMode, topology2D, topology3D, spanX, spanY, trussHeight, baysX, baysY, towerLevels, globalLoadY, globalLoadZ]);
 
-  // --- ADAPTIVE THREE.JS CANVAS RENDERER ---
+  // --- MANUAL OVERRIDES FOR SELECTED NODE ---
+  const updateNodeSupport = (supp: SupportType) => {
+    setNodes(prev => prev.map(n => n.id === selectedNodeId ? { ...n, support: supp } : n));
+  };
+
+  const updateNodeLoad = (fx: number, fy: number, fz: number) => {
+    setNodes(prev => prev.map(n => n.id === selectedNodeId ? { ...n, fx, fy, fz } : n));
+  };
+
+  // --- THREE.JS CANVAS RENDERER WITH ARROWS & SUPPORTS ---
   useEffect(() => {
     if (!mountRef.current || nodes.length === 0) return;
 
     const width = mountRef.current.clientWidth || 450;
-    const height = 280;
+    const height = 300;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#0f172a');
@@ -306,25 +362,48 @@ export default function UnifiedTrussTool() {
     const cz = nodes.reduce((s, n) => s + n.z, 0) / nodes.length;
 
     if (dimMode === '2D') {
-      // Orthographic Front Elevation Locking for 2D Mode
       camera.position.set(cx, cy + 0.5, spanX * 1.6);
       camera.lookAt(cx, cy, 0);
     } else {
-      // Perspective Spatial View for 3D Mode
       camera.position.set(cx + spanX * 1.5, cy + spanY * 1.5, cz + trussHeight * 2);
       camera.lookAt(cx, cy, cz);
     }
 
-    // Node Spheres
-    const nodeGeo = new THREE.SphereGeometry(0.16, 16, 16);
-    const nodeMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b });
+    // Render Nodes & Support Indicators
     nodes.forEach((n) => {
+      const isSelected = n.id === selectedNodeId;
+      const nodeGeo = new THREE.SphereGeometry(isSelected ? 0.25 : 0.16, 16, 16);
+      const nodeMat = new THREE.MeshStandardMaterial({ color: isSelected ? 0x38bdf8 : 0xf59e0b });
       const sphere = new THREE.Mesh(nodeGeo, nodeMat);
       sphere.position.set(n.x, n.y, n.z);
       scene.add(sphere);
+
+      // Support Geometry Icons
+      if (n.support === 'PINNED') {
+        const coneGeo = new THREE.ConeGeometry(0.2, 0.4, 8);
+        const coneMat = new THREE.MeshStandardMaterial({ color: 0x10b981 }); // Green
+        const cone = new THREE.Mesh(coneGeo, coneMat);
+        cone.position.set(n.x, n.y - 0.2, n.z);
+        scene.add(cone);
+      } else if (n.support === 'ROLLER_X' || n.support === 'ROLLER_Y') {
+        const rollerGeo = new THREE.SphereGeometry(0.15, 8, 8);
+        const rollerMat = new THREE.MeshStandardMaterial({ color: 0xfacc15 }); // Yellow
+        const roller = new THREE.Mesh(rollerGeo, rollerMat);
+        roller.position.set(n.x, n.y - 0.15, n.z);
+        scene.add(roller);
+      }
+
+      // Load Arrows Rendering
+      const loadVec = new THREE.Vector3(n.fx, n.fy, n.fz);
+      const loadMag = loadVec.length();
+      if (loadMag > 0) {
+        const dir = loadVec.clone().normalize();
+        const arrow = new THREE.ArrowHelper(dir, new THREE.Vector3(n.x, n.y, n.z), Math.min(loadMag * 0.05, 1.5), 0xef4444, 0.3, 0.2);
+        scene.add(arrow);
+      }
     });
 
-    // Member Cylinders with Force Color Coding
+    // Render Members
     members.forEach((mem) => {
       const n1 = nodes.find((n) => n.id === mem.startNode);
       const n2 = nodes.find((n) => n.id === mem.endNode);
@@ -336,7 +415,11 @@ export default function UnifiedTrussTool() {
 
       const res = result?.memberResults.find((m) => m.id === mem.id);
       let color = 0x64748b;
-      if (res) color = res.state === 'TENSION' ? 0x38bdf8 : res.state === 'COMPRESSION' ? 0xef4444 : 0x94a3b8;
+      if (res) {
+        if (res.dcr > 1.0) color = 0xef4444; // Fail (Red)
+        else if (res.dcr > 0.7) color = 0xfacc15; // Warning (Yellow)
+        else color = res.state === 'TENSION' ? 0x38bdf8 : 0x10b981; // Safe (Cyan/Green)
+      }
 
       const cylinderGeo = new THREE.CylinderGeometry(0.04, 0.04, dist, 8);
       const cylinderMat = new THREE.MeshStandardMaterial({ color });
@@ -351,7 +434,7 @@ export default function UnifiedTrussTool() {
     let animId: number;
     const animate = () => {
       animId = requestAnimationFrame(animate);
-      if (dimMode === '3D') scene.rotation.z += 0.003; // Rotate scene only in 3D mode
+      if (dimMode === '3D') scene.rotation.z += 0.002;
       renderer.render(scene, camera);
     };
     animate();
@@ -360,9 +443,9 @@ export default function UnifiedTrussTool() {
       cancelAnimationFrame(animId);
       renderer.dispose();
     };
-  }, [nodes, members, result, dimMode, spanX, spanY, trussHeight]);
+  }, [nodes, members, result, dimMode, spanX, spanY, trussHeight, selectedNodeId]);
 
-  // --- UNIFIED ADAPTIVE STIFFNESS MATRIX SOLVER ---
+  // --- SOLVER ENGINE ---
   const handleRunAnalysis = () => {
     setAnalyzing(true);
     try {
@@ -370,30 +453,24 @@ export default function UnifiedTrussTool() {
       const K_global = Array.from({ length: totalDof }, () => new Array(totalDof).fill(0));
       const F_global = new Array(totalDof).fill(0);
 
-      // Assemble Nodal Loads
       nodes.forEach((node, idx) => {
         F_global[3 * idx] = node.fx;
         F_global[3 * idx + 1] = node.fy;
         F_global[3 * idx + 2] = node.fz;
       });
 
-      // Assemble Global Stiffness Matrix
       members.forEach((mem) => {
         const n1 = nodes.find((n) => n.id === mem.startNode)!;
         const n2 = nodes.find((n) => n.id === mem.endNode)!;
         const idx1 = nodes.findIndex((n) => n.id === mem.startNode);
         const idx2 = nodes.findIndex((n) => n.id === mem.endNode);
 
-        const dx = n2.x - n1.x;
-        const dy = n2.y - n1.y;
-        const dz = n2.z - n1.z;
+        const dx = n2.x - n1.x; const dy = n2.y - n1.y; const dz = n2.z - n1.z;
         const L = Math.max(Math.sqrt(dx * dx + dy * dy + dz * dz), 0.001);
 
-        const Cx = dx / L;
-        const Cy = dy / L;
-        const Cz = dz / L;
+        const Cx = dx / L; const Cy = dy / L; const Cz = dz / L;
+        const k_axial = (modulusE * sectionProps.area) / (L * 1000);
 
-        const k_axial = (modulusE * mem.area) / (L * 1000);
         const C = [Cx, Cy, Cz, -Cx, -Cy, -Cz];
         const dofs = [3 * idx1, 3 * idx1 + 1, 3 * idx1 + 2, 3 * idx2, 3 * idx2 + 1, 3 * idx2 + 2];
 
@@ -402,49 +479,47 @@ export default function UnifiedTrussTool() {
         }
       });
 
-      // Apply Boundary Penalties (Enforcing fixZ = true in 2D prevents Z singularity)
       const K_bounded = K_global.map((row) => [...row]);
       const F_bounded = [...F_global];
 
       nodes.forEach((node, idx) => {
-        if (node.fixX) { K_bounded[3 * idx][3 * idx] += 1e12; F_bounded[3 * idx] = 0; }
-        if (node.fixY) { K_bounded[3 * idx + 1][3 * idx + 1] += 1e12; F_bounded[3 * idx + 1] = 0; }
-        if (node.fixZ || dimMode === '2D') { K_bounded[3 * idx + 2][3 * idx + 2] += 1e12; F_bounded[3 * idx + 2] = 0; }
+        const fixX = node.support === 'PINNED' || node.support === 'ROLLER_Y';
+        const fixY = node.support === 'PINNED' || node.support === 'ROLLER_X';
+        const fixZ = node.support === 'PINNED' || dimMode === '2D';
+
+        if (fixX) { K_bounded[3 * idx][3 * idx] += 1e12; F_bounded[3 * idx] = 0; }
+        if (fixY) { K_bounded[3 * idx + 1][3 * idx + 1] += 1e12; F_bounded[3 * idx + 1] = 0; }
+        if (fixZ) { K_bounded[3 * idx + 2][3 * idx + 2] += 1e12; F_bounded[3 * idx + 2] = 0; }
       });
 
       const U = solveMatrix(K_bounded, F_bounded);
 
-      // Compute Member Results & Capacities
       const memberResults: MemberResult[] = members.map((mem) => {
         const n1 = nodes.find((n) => n.id === mem.startNode)!;
         const n2 = nodes.find((n) => n.id === mem.endNode)!;
         const idx1 = nodes.findIndex((n) => n.id === mem.startNode);
         const idx2 = nodes.findIndex((n) => n.id === mem.endNode);
 
-        const dx = n2.x - n1.x;
-        const dy = n2.y - n1.y;
-        const dz = n2.z - n1.z;
+        const dx = n2.x - n1.x; const dy = n2.y - n1.y; const dz = n2.z - n1.z;
         const L = Math.max(Math.sqrt(dx * dx + dy * dy + dz * dz), 0.001);
 
-        const Cx = dx / L;
-        const Cy = dy / L;
-        const Cz = dz / L;
+        const Cx = dx / L; const Cy = dy / L; const Cz = dz / L;
 
         const u1 = U[3 * idx1]; const v1 = U[3 * idx1 + 1]; const w1 = U[3 * idx1 + 2];
         const u2 = U[3 * idx2]; const v2 = U[3 * idx2 + 1]; const w2 = U[3 * idx2 + 2];
 
-        const axial = ((modulusE * mem.area) / (L * 1000)) * ((u2 - u1) * Cx + (v2 - v1) * Cy + (w2 - w1) * Cz);
+        const axial = ((modulusE * sectionProps.area) / (L * 1000)) * ((u2 - u1) * Cx + (v2 - v1) * Cy + (w2 - w1) * Cz);
         const state = Math.abs(axial) < 0.01 ? 'ZERO' : axial > 0 ? 'TENSION' : 'COMPRESSION';
-        const slenderness = (1.0 * L * 1000) / mem.ry;
+        const slenderness = (1.0 * L * 1000) / sectionProps.ry;
 
         const f_y_kN = fy / 1000;
         let capacity = 0;
 
         if (state === 'TENSION') {
-          capacity = designCode === 'AISC360' ? 0.9 * mem.area * f_y_kN : mem.area * f_y_kN;
+          capacity = designCode === 'AISC360' ? 0.9 * sectionProps.area * f_y_kN : sectionProps.area * f_y_kN;
         } else {
-          const P_euler = (Math.PI * Math.PI * modulusE * (mem.area * mem.ry * mem.ry)) / Math.pow(L * 1000, 2) / 1000;
-          capacity = Math.min(P_euler, mem.area * f_y_kN) * 0.85;
+          const P_euler = (Math.PI * Math.PI * modulusE * (sectionProps.area * sectionProps.ry * sectionProps.ry)) / Math.pow(L * 1000, 2) / 1000;
+          capacity = Math.min(P_euler, sectionProps.area * f_y_kN) * 0.85;
         }
 
         const demand = Math.abs(axial);
@@ -474,9 +549,9 @@ export default function UnifiedTrussTool() {
 
       const reactArray = nodes.map((n, idx) => ({
         node: n.id,
-        rx: n.fixX ? Number((-1 * F_bounded[3 * idx]).toFixed(1)) : 0,
-        ry: n.fixY ? Number((-1 * F_bounded[3 * idx + 1]).toFixed(1)) : 0,
-        rz: n.fixZ ? Number((-1 * F_bounded[3 * idx + 2]).toFixed(1)) : 0,
+        rx: Number((-1 * F_bounded[3 * idx]).toFixed(1)),
+        ry: Number((-1 * F_bounded[3 * idx + 1]).toFixed(1)),
+        rz: Number((-1 * F_bounded[3 * idx + 2]).toFixed(1)),
       }));
 
       setResult({
@@ -490,7 +565,7 @@ export default function UnifiedTrussTool() {
         governingMember: govMem,
       });
     } catch (e) {
-      console.error('Unified matrix calculation error:', e);
+      console.error('Solver error:', e);
       alert('Error calculating matrix system.');
     } finally {
       setAnalyzing(false);
@@ -525,52 +600,83 @@ export default function UnifiedTrussTool() {
     return x;
   };
 
-  // PDF Export Tool
+  // --- PERFECT FIT PDF EXPORTER ---
   const handleExportPDF = () => {
     if (!result) return;
-    const doc = new jsPDF();
-    doc.setFontSize(14);
-    doc.text(`Structural Analysis Report (${result.dimMode} Mode)`, 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Design Code: ${result.code} | Status: ${result.overallStatus} | Max DCR: ${result.maxDcr}`, 14, 22);
+    const doc = new jsPDF('portrait', 'mm', 'a4');
 
-    const tableData = result.memberResults.map((m) => [
+    // Header Title
+    doc.setFillColor(15, 23, 42); // slate-900
+    doc.rect(0, 0, 210, 25, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.text('Structural Truss Analysis Report', 14, 15);
+
+    // Metadata Block
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(9);
+    doc.text(`Dimension Mode: ${result.dimMode}`, 14, 32);
+    doc.text(`Design Standard: ${result.code}`, 14, 37);
+    doc.text(`Section Profile: ${sectionProps.type} (${sectionProps.b}x${sectionProps.h}x${sectionProps.t} mm)`, 14, 42);
+    doc.text(`Section Area: ${sectionProps.area} mm² | Radius of Gyration: ${sectionProps.ry} mm`, 14, 47);
+
+    doc.setFontSize(10);
+    doc.text(`Overall Status: ${result.overallStatus}`, 130, 32);
+    doc.text(`Max Demand-Capacity Ratio (DCR): ${result.maxDcr}`, 130, 37);
+    doc.text(`Governing Member: Member ${result.governingMember}`, 130, 42);
+
+    // Table 1: Member Analysis Results
+    const memberRows = result.memberResults.map((m) => [
       `M${m.id}`,
       `${m.length} m`,
       `${m.axialForce} kN`,
       m.state,
       `${m.capacity} kN`,
-      m.dcr,
+      `${m.slenderness}`,
+      `${m.dcr}`,
       m.status,
     ]);
 
     autoTable(doc, {
-      startY: 28,
-      head: [['Member', 'Length', 'Axial Force', 'State', 'Capacity', 'DCR', 'Status']],
-      body: tableData,
+      startY: 52,
+      margin: { left: 14, right: 14 },
+      head: [['Member', 'Length', 'Axial Force', 'State', 'Capacity', 'KL/r', 'DCR', 'Status']],
+      body: memberRows,
+      styles: { fontSize: 8, cellPadding: 2.5 },
+      headStyles: { fillColor: [15, 23, 42] },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      didDrawPage: (data) => {
+        // Footer Page Numbering
+        const pageCount = (doc as any).internal.getNumberOfPages();
+        doc.setFontSize(8);
+        doc.setTextColor(100);
+        doc.text(`Page ${data.pageNumber} of ${pageCount}`, 180, 287);
+      },
     });
 
-    doc.save(`Truss_Report_${result.dimMode}.pdf`);
+    doc.save(`Truss_Analysis_Report_${result.dimMode}.pdf`);
   };
 
+  const activeNode = nodes.find(n => n.id === selectedNodeId);
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 font-sans">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 font-sans text-slate-200">
       {/* Control Configuration Panel */}
       <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-xl">
-        {/* Dimension Mode & Code Selection */}
+        {/* Mode Switcher */}
         <div className="flex justify-between items-center border-b border-slate-800 pb-3">
           <div className="flex space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
             <button
               onClick={() => setDimMode('2D')}
               className={`px-3 py-1 rounded-md text-xs font-bold transition ${dimMode === '2D' ? 'bg-cyan-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'}`}
             >
-              2D Planar Mode
+              2D Planar
             </button>
             <button
               onClick={() => setDimMode('3D')}
               className={`px-3 py-1 rounded-md text-xs font-bold transition ${dimMode === '3D' ? 'bg-cyan-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'}`}
             >
-              3D Spatial Mode
+              3D Spatial
             </button>
           </div>
 
@@ -585,7 +691,7 @@ export default function UnifiedTrussTool() {
           </select>
         </div>
 
-        {/* Dynamic Topology Selection */}
+        {/* Topologies */}
         <div>
           <label className="block text-xs text-slate-400 mb-1">
             {dimMode === '2D' ? '2D Truss Topology' : '3D Spatial Topology'}
@@ -594,113 +700,104 @@ export default function UnifiedTrussTool() {
             <select
               value={topology2D}
               onChange={(e) => setTopology2D(e.target.value as Topology2D)}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-medium"
+              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-medium"
             >
               <option value="pratt">Pratt Roof Truss</option>
               <option value="howe">Howe Roof Truss</option>
               <option value="warren">Warren Parallel Truss</option>
               <option value="fink">Fink Gable Truss</option>
               <option value="scissors">Scissors Vaulted Truss</option>
+              <option value="king_post">King Post Truss</option>
+              <option value="ktruss">K-Truss Topology</option>
             </select>
           ) : (
             <select
               value={topology3D}
               onChange={(e) => setTopology3D(e.target.value as Topology3D)}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-medium"
+              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-medium"
             >
-              <option value="space_grid">Double-Layer Roof Space Grid</option>
+              <option value="space_grid">Double-Layer Space Grid Roof</option>
               <option value="space_tower">4-Legged Spatial Transmission Tower</option>
             </select>
           )}
         </div>
 
-        {/* Dynamic Spatial Dimensions */}
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Span X (m)</label>
-            <input
-              type="number"
-              value={spanX}
-              onChange={(e) => setSpanX(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono"
-            />
+        {/* Section Profile Calculator Inputs */}
+        <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-xs font-bold text-cyan-400">Section Profile Calculator</span>
+            <select
+              value={secType}
+              onChange={(e) => setSecType(e.target.value as SectionType)}
+              className="bg-slate-900 border border-slate-800 text-xs rounded px-2 py-0.5"
+            >
+              <option value="RHS">RHS / SHS Box</option>
+              <option value="CHS">CHS Pipe</option>
+              <option value="IBEAM">I-Beam / Wide Flange</option>
+              <option value="ANGLE">Angle / V-Section</option>
+              <option value="RECT_SOLID">Solid Rectangle</option>
+            </select>
           </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Span Y (m)</label>
-            <input
-              type="number"
-              disabled={dimMode === '2D'}
-              value={spanY}
-              onChange={(e) => setSpanY(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono disabled:opacity-30"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Height (m)</label>
-            <input
-              type="number"
-              value={trussHeight}
-              onChange={(e) => setTrussHeight(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono"
-            />
+
+          <div className="grid grid-cols-4 gap-2 text-xs font-mono">
+            <div>
+              <span className="text-slate-400 block text-[10px]">b (mm)</span>
+              <input type="number" value={dimB} onChange={e => setDimB(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px]">h (mm)</span>
+              <input type="number" value={dimH} onChange={e => setDimH(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px]">t (mm)</span>
+              <input type="number" value={dimT} onChange={e => setDimT(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px]">Area (mm²)</span>
+              <div className="p-1 bg-slate-900 rounded font-bold text-emerald-400">{sectionProps.area}</div>
+            </div>
           </div>
         </div>
 
-        {/* Member Counts & Divisions */}
-        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800">
-          <div>
-            <label className="block text-xs text-cyan-400 mb-1">Bays in X (Nx)</label>
-            <input
-              type="number"
-              value={baysX}
-              onChange={(e) => setBaysX(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono"
-            />
+        {/* Selected Node Supports & Load Customization */}
+        <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-xs font-bold text-amber-400">Node Customization</span>
+            <select
+              value={selectedNodeId}
+              onChange={(e) => setSelectedNodeId(Number(e.target.value))}
+              className="bg-slate-900 border border-slate-800 text-xs rounded px-2 py-0.5 font-mono"
+            >
+              {nodes.map(n => <option key={`node-opt-${n.id}`} value={n.id}>Node {n.id}</option>)}
+            </select>
           </div>
-          <div>
-            <label className="block text-xs text-cyan-400 mb-1">Bays in Y (Ny)</label>
-            <input
-              type="number"
-              disabled={dimMode === '2D' || topology3D === 'space_tower'}
-              value={baysY}
-              onChange={(e) => setBaysY(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono disabled:opacity-30"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-cyan-400 mb-1">Tower Levels</label>
-            <input
-              type="number"
-              disabled={dimMode === '2D' || topology3D === 'space_grid'}
-              value={towerLevels}
-              onChange={(e) => setTowerLevels(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono disabled:opacity-30"
-            />
-          </div>
-        </div>
 
-        {/* Cross-Section & Load Controls */}
-        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Section Area (mm²)</label>
-            <input
-              type="number"
-              value={sectionArea}
-              onChange={(e) => setSectionArea(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">
-              {dimMode === '2D' ? 'Joint Load Fy (kN)' : 'Top Joint Load Fz (kN)'}
-            </label>
-            <input
-              type="number"
-              value={dimMode === '2D' ? pointLoadY : pointLoadZ}
-              onChange={(e) => dimMode === '2D' ? setPointLoadY(Number(e.target.value)) : setPointLoadZ(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono"
-            />
-          </div>
+          {activeNode && (
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div>
+                <span className="text-slate-400 block text-[10px]">Support Condition</span>
+                <select
+                  value={activeNode.support}
+                  onChange={(e) => updateNodeSupport(e.target.value as SupportType)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs"
+                >
+                  <option value="FREE">Free Node</option>
+                  <option value="PINNED">Pinned (Restrain X,Y,Z)</option>
+                  <option value="ROLLER_X">Roller X (Restrain Y,Z)</option>
+                  <option value="ROLLER_Y">Roller Y (Restrain X,Z)</option>
+                </select>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">Applied Fy Load (kN)</span>
+                <input
+                  type="number"
+                  value={activeNode.fy}
+                  onChange={(e) => updateNodeLoad(activeNode.fx, Number(e.target.value), activeNode.fz)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <button
@@ -712,22 +809,21 @@ export default function UnifiedTrussTool() {
         </button>
       </div>
 
-      {/* Three.js Adaptive Viewport & Results Output */}
+      {/* Canvas Viewport & Dynamic Output Table */}
       <div className="lg:col-span-7 space-y-6">
         <div className="bg-slate-900 p-4 rounded-xl border border-slate-800">
           <h4 className="text-xs font-bold text-slate-300 mb-2 border-b border-slate-800 pb-1 flex justify-between">
-            <span>THREE.JS CANVAS ({dimMode} VIEWPORT)</span>
+            <span>THREE.JS CANVAS VIEWPORT</span>
             <span className="text-cyan-400">Nodes: {nodes.length} | Members: {members.length}</span>
           </h4>
           <div ref={mountRef} className="bg-slate-950 rounded border border-slate-800 overflow-hidden flex justify-center" />
         </div>
 
-        {/* Results Output Matrix */}
         {result && (
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
             <div className="flex justify-between items-center border-b border-slate-800 pb-2">
               <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                {dimMode} Axial Forces & Capacity Matrix
+                Member Capacity Results
               </h4>
               <div className="flex items-center space-x-2">
                 <span className={`text-xs px-2 py-0.5 rounded font-bold ${result.overallStatus === 'SAFE' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
@@ -735,7 +831,7 @@ export default function UnifiedTrussTool() {
                 </span>
                 <button
                   onClick={handleExportPDF}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-2.5 py-1 rounded border border-slate-700 font-medium"
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-2.5 py-1 rounded border border-slate-700 font-medium"
                 >
                   Export PDF
                 </button>
@@ -756,7 +852,7 @@ export default function UnifiedTrussTool() {
                 </thead>
                 <tbody className="divide-y divide-slate-800/50 text-slate-300">
                   {result.memberResults.map((m) => (
-                    <tr key={`res-unif-${m.id}`}>
+                    <tr key={`res-row-${m.id}`}>
                       <td className="py-1.5 font-bold">M{m.id}</td>
                       <td className="py-1.5">{m.length} m</td>
                       <td className={`py-1.5 font-bold ${m.state === 'TENSION' ? 'text-cyan-400' : m.state === 'COMPRESSION' ? 'text-rose-400' : 'text-slate-400'}`}>
