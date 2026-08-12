@@ -5,17 +5,24 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { element_type = 'column' } = body;
 
-    if (element_type === 'beam') {
-      const result = analyzeBeam(body);
-      return NextResponse.json({ success: true, data: result });
+    switch (element_type) {
+      case 'slab':
+        return NextResponse.json({ success: true, data: analyzeSlab(body) });
+      case 'wall':
+        return NextResponse.json({ success: true, data: analyzeWall(body) });
+      case 'truss':
+        return NextResponse.json({ success: true, data: analyzeTruss(body) });
+      case 'foundation':
+        return NextResponse.json({ success: true, data: analyzeFoundation(body) });
+      case 'frame':
+        return NextResponse.json({ success: true, data: analyzeFrame(body) });
+      case 'beam':
+        return NextResponse.json({ success: true, data: analyzeBeam(body) });
+      case 'column':
+        return NextResponse.json({ success: true, data: analyzeColumn(body) });
+      default:
+        return NextResponse.json({ error: `Unsupported element type: ${element_type}` }, { status: 400 });
     }
-
-    if (element_type === 'column') {
-      const result = analyzeColumn(body);
-      return NextResponse.json({ success: true, data: result });
-    }
-
-    return NextResponse.json({ error: 'Unsupported element type' }, { status: 400 });
   } catch (err) {
     console.error('Analysis error:', err);
     return NextResponse.json({ error: 'Failed to compute structural response' }, { status: 500 });
@@ -23,7 +30,269 @@ export async function POST(req: Request) {
 }
 
 // ==========================================
-// 1. BEAM ANALYSIS SOLVER
+// 1. SLAB ANALYSIS SOLVER
+// ==========================================
+function analyzeSlab(data: any) {
+  const {
+    design_code = 'ACI318',
+    lx = 4.0,
+    ly = 6.0,
+    thickness = 150,
+    cover = 25,
+    fc = 30,
+    fy = 420,
+    dead_load = 1.5,
+    live_load = 3.0,
+    bar_diam = 12,
+    bar_spacing = 150,
+    support_condition = 'simply_supported',
+  } = data;
+
+  const self_weight = 24 * (thickness / 1000);
+  const total_dead = dead_load + self_weight;
+  const wu = design_code === 'ACI318' ? 1.2 * total_dead + 1.6 * live_load : 1.35 * total_dead + 1.5 * live_load;
+
+  const aspect_ratio = ly / lx;
+  const is_one_way = aspect_ratio > 2.0 || support_condition === 'cantilever';
+  const slab_type = is_one_way ? 'One-Way Slab' : 'Two-Way Slab';
+
+  let Cm = support_condition === 'continuous' ? 0.0833 : support_condition === 'cantilever' ? 0.5 : 0.125;
+
+  let Mu_x = 0;
+  let Mu_y = 0;
+  let Vu = 0;
+
+  if (is_one_way) {
+    Mu_x = Cm * wu * Math.pow(lx, 2);
+    Mu_y = 0.2 * Mu_x;
+    Vu = 0.5 * wu * lx;
+  } else {
+    const alpha_x = Math.pow(ly, 4) / (Math.pow(lx, 4) + Math.pow(ly, 4));
+    const alpha_y = Math.pow(lx, 4) / (Math.pow(lx, 4) + Math.pow(ly, 4));
+    Mu_x = Cm * alpha_x * wu * Math.pow(lx, 2);
+    Mu_y = Cm * alpha_y * wu * Math.pow(lx, 2);
+    Vu = 0.5 * wu * lx;
+  }
+
+  const b = 1000;
+  const d = thickness - cover - bar_diam / 2;
+  const As_provided = (1000 / bar_spacing) * ((Math.PI * Math.pow(bar_diam, 2)) / 4);
+  const a = (As_provided * fy) / (0.85 * fc * b);
+  const phiMn = (0.9 * As_provided * fy * (d - a / 2)) / 1e6;
+  const As_min = 0.0018 * b * thickness;
+
+  const phiVc = (0.75 * 0.17 * Math.sqrt(fc) * b * d) / 1000;
+  const actual_ratio = (lx * 1000) / d;
+  const max_ratio = support_condition === 'cantilever' ? 7 : support_condition === 'continuous' ? 26 : 20;
+
+  const flexure_dcr = phiMn > 0 ? Number((Mu_x / phiMn).toFixed(2)) : 1.5;
+  const shear_dcr = phiVc > 0 ? Number((Vu / phiVc).toFixed(2)) : 1.5;
+  const overall_dcr = Math.max(flexure_dcr, shear_dcr);
+
+  return {
+    slab_type,
+    design_code,
+    inputs: { lx, ly, thickness, cover, fc, fy, dead_load, live_load, bar_diam, bar_spacing },
+    loads: { self_weight: Number(self_weight.toFixed(2)), total_dead: Number(total_dead.toFixed(2)), wu: Number(wu.toFixed(2)) },
+    moments: { Mu_x: Number(Mu_x.toFixed(2)), Mu_y: Number(Mu_y.toFixed(2)), Vu: Number(Vu.toFixed(2)) },
+    capacity: { phiMn: Number(phiMn.toFixed(2)), phiVc: Number(phiVc.toFixed(2)), As_provided: Number(As_provided.toFixed(0)), As_min: Number(As_min.toFixed(0)) },
+    deflection: { actual_ratio: Number(actual_ratio.toFixed(1)), max_ratio, status: actual_ratio <= max_ratio ? 'PASS' : 'EXCEEDED' },
+    verification: { flexure_dcr, shear_dcr, overall_dcr, rebar_status: As_provided >= As_min ? 'ADEQUATE' : 'INSUFFICIENT', status: overall_dcr <= 1.0 && As_provided >= As_min ? 'SAFE' : 'OVERSTRESSED' },
+  };
+}
+
+// ==========================================
+// 2. WALL ANALYSIS SOLVER (Retaining / Bearing / Shear)
+// ==========================================
+function analyzeWall(data: any) {
+  const {
+    wall_type = 'retaining',
+    height: H = 3.5,
+    thickness: t = 300,
+    length: L = 1.0,
+    soil_phi = 30,
+    gamma_soil = 18,
+    surcharge = 10,
+    axial_load = 500,
+    fc = 25,
+    fy = 420,
+    base_width: B = 2.2,
+    base_thickness: t_base = 400,
+    mu = 0.45,
+  } = data;
+
+  if (wall_type === 'retaining') {
+    const phi_rad = (soil_phi * Math.PI) / 180;
+    const Ka = (1 - Math.sin(phi_rad)) / (1 + Math.sin(phi_rad));
+
+    const Total_H = H + t_base / 1000;
+    const Pa_soil = 0.5 * Ka * gamma_soil * Math.pow(Total_H, 2);
+    const Pa_surcharge = Ka * surcharge * Total_H;
+    const Total_Pa = Pa_soil + Pa_surcharge;
+
+    const M_overturning = Pa_soil * (Total_H / 3) + Pa_surcharge * (Total_H / 2);
+
+    const W_stem = (t / 1000) * H * 24;
+    const W_base = B * (t_base / 1000) * 24;
+    const W_soil = (B - t / 1000) * H * gamma_soil;
+    const Total_Weight = W_stem + W_base + W_soil;
+
+    const M_resisting = W_stem * (B / 2) + W_soil * ((B + t / 1000) / 2) + W_base * (B / 2);
+
+    const FOS_overturning = M_overturning > 0 ? Number((M_resisting / M_overturning).toFixed(2)) : 99;
+    const FOS_sliding = Total_Pa > 0 ? Number(((Total_Weight * mu) / Total_Pa).toFixed(2)) : 99;
+
+    const status = FOS_overturning >= 1.5 && FOS_sliding >= 1.5 ? 'SAFE' : 'UNSTABLE';
+
+    return {
+      wall_type: 'Cantilever Retaining Wall',
+      forces: { Total_Pa: Number(Total_Pa.toFixed(1)), Total_Weight: Number(Total_Weight.toFixed(1)), M_overturning: Number(M_overturning.toFixed(1)), M_resisting: Number(M_resisting.toFixed(1)) },
+      safety_factors: { FOS_overturning, FOS_sliding, min_required: 1.5 },
+      verification: { status },
+    };
+  } else {
+    // Bearing / Shear Wall Check
+    const Ag = t * L * 1000;
+    const Pn_capacity = (0.55 * fc * Ag) / 1000;
+    const dcr = Number((axial_load / Pn_capacity).toFixed(2));
+
+    return {
+      wall_type: wall_type === 'shear' ? 'RC Shear Wall' : 'RC Bearing Wall',
+      capacity: { Pn_capacity: Number(Pn_capacity.toFixed(1)), axial_load },
+      verification: { dcr, status: dcr <= 1.0 ? 'SAFE' : 'OVERSTRESSED' },
+    };
+  }
+}
+
+// ==========================================
+// 3. TRUSS ANALYSIS SOLVER (2D Roof / Bridge)
+// ==========================================
+function analyzeTruss(data: any) {
+  const {
+    truss_type = 'pratt',
+    span: L = 12,
+    height: H = 2.5,
+    panels = 6,
+    node_load = 20,
+    area_chord = 1500,
+    area_web = 1000,
+    fy = 355,
+  } = data;
+
+  const dx = L / panels;
+  const num_internal_nodes = panels - 1;
+  const total_load = num_internal_nodes * node_load;
+  const R_A = total_load / 2;
+  const R_B = total_load / 2;
+
+  const M_max = (R_A * L) / 4 - (node_load * Math.pow(dx, 2) * (panels / 2)) / 4;
+  const Force_top_chord_max = M_max / H;
+  const Force_bot_chord_max = M_max / H;
+
+  const theta = Math.atan(H / dx);
+  const Force_web_max = (R_A - node_load) / Math.sin(theta);
+
+  const Pn_chord = (0.9 * area_chord * fy) / 1000;
+  const Pn_web = (0.9 * area_web * fy) / 1000;
+
+  const dcr_chord = Number((Force_top_chord_max / Pn_chord).toFixed(2));
+  const dcr_web = Number((Force_web_max / Pn_web).toFixed(2));
+  const overall_dcr = Math.max(dcr_chord, dcr_web);
+
+  return {
+    truss_type: `${truss_type.toUpperCase()} Truss (${panels} Panels)`,
+    reactions: { R_A: Number(R_A.toFixed(1)), R_B: Number(R_B.toFixed(1)) },
+    member_forces: {
+      max_top_chord_compression: Number(Force_top_chord_max.toFixed(1)),
+      max_bot_chord_tension: Number(Force_bot_chord_max.toFixed(1)),
+      max_web_diagonal: Number(Force_web_max.toFixed(1)),
+    },
+    capacities: { Pn_chord: Number(Pn_chord.toFixed(1)), Pn_web: Number(Pn_web.toFixed(1)) },
+    verification: { dcr_chord, dcr_web, overall_dcr, status: overall_dcr <= 1.0 ? 'SAFE' : 'OVERSTRESSED' },
+  };
+}
+
+// ==========================================
+// 4. FOUNDATION ANALYSIS SOLVER (Shallow Footing)
+// ==========================================
+function analyzeFoundation(data: any) {
+  const {
+    length_x: B = 2.0,
+    width_y: L = 2.0,
+    thickness: H = 500,
+    depth_df: Df = 1.5,
+    pu = 1200,
+    mx = 50,
+    allowable_q = 200,
+    fc = 25,
+    fy = 420,
+    cover = 75,
+    col_w = 400,
+    col_h = 400,
+  } = data;
+
+  const self_weight = B * L * (H / 1000) * 24;
+  const Total_P = pu + self_weight;
+
+  const Area = B * L;
+  const Zx = (L * Math.pow(B, 2)) / 6;
+
+  const q_max = Total_P / Area + mx / Zx;
+  const q_min = Total_P / Area - mx / Zx;
+
+  const d = H - cover - 12;
+  const cantilever_proj = (B - col_w / 1000) / 2;
+  const qu_net = pu / Area;
+  const Mu = (qu_net * Math.pow(cantilever_proj, 2)) / 2;
+
+  const bo = 2 * (col_w + d) + 2 * (col_h + d);
+  const Vu_punch = pu - qu_net * ((col_w + d) / 1000) * ((col_h + d) / 1000);
+  const phiVc_punch = (0.75 * 0.33 * Math.sqrt(fc) * bo * d) / 1000;
+
+  const bearing_dcr = Number((q_max / allowable_q).toFixed(2));
+  const punching_dcr = phiVc_punch > 0 ? Number((Vu_punch / phiVc_punch).toFixed(2)) : 1.5;
+  const overall_dcr = Math.max(bearing_dcr, punching_dcr);
+
+  return {
+    footing_type: 'Isolated Pad Footing',
+    geotechnical: { q_max: Number(q_max.toFixed(1)), q_min: Number(q_min.toFixed(1)), allowable_q, bearing_dcr },
+    structural: { Mu_design: Number(Mu.toFixed(1)), Vu_punch: Number(Vu_punch.toFixed(1)), phiVc_punch: Number(phiVc_punch.toFixed(1)), punching_dcr },
+    verification: { overall_dcr, status: overall_dcr <= 1.0 && q_min >= 0 ? 'SAFE' : 'OVERSTRESSED / UNSTABLE' },
+  };
+}
+
+// ==========================================
+// 5. FRAME ANALYSIS SOLVER (2D Portal Frame)
+// ==========================================
+function analyzeFrame(data: any) {
+  const {
+    span: L = 12,
+    height: H = 5,
+    roof_w = 15,
+    wind_h = 8,
+    fc = 30,
+    fy = 420,
+  } = data;
+
+  const total_roof_load = roof_w * L;
+  const Ry1 = total_roof_load / 2 + (wind_h * H) / L;
+  const Ry2 = total_roof_load / 2 - (wind_h * H) / L;
+  const Rx1 = wind_h / 2;
+  const Rx2 = wind_h / 2;
+
+  const M_corner = (roof_w * Math.pow(L, 2)) / 16 + (wind_h * H) / 4;
+  const M_span = (roof_w * Math.pow(L, 2)) / 8 - M_corner / 2;
+
+  return {
+    frame_type: 'Single-Bay Rigid Portal Frame',
+    reactions: { Ry1: Number(Ry1.toFixed(1)), Ry2: Number(Ry2.toFixed(1)), Rx1: Number(Rx1.toFixed(1)), Rx2: Number(Rx2.toFixed(1)) },
+    internal_forces: { M_corner: Number(M_corner.toFixed(1)), M_span: Number(M_span.toFixed(1)), max_axial_col: Number(Math.max(Ry1, Ry2).toFixed(1)) },
+    verification: { status: 'COMPLETED' },
+  };
+}
+
+// ==========================================
+// 6. BEAM ANALYSIS SOLVER
 // ==========================================
 function analyzeBeam(data: any) {
   const {
@@ -51,7 +320,6 @@ function analyzeBeam(data: any) {
   const x_coords: number[] = [];
   for (let i = 0; i <= N; i++) x_coords.push(i * dx);
 
-  // Reaction Calculations
   let R_A = 0;
   let R_B = 0;
   let total_load = 0;
@@ -86,7 +354,6 @@ function analyzeBeam(data: any) {
     R_A = total_load - R_B;
   }
 
-  // Shear Force (SFD) & Bending Moment (BMD) Discretization
   const shear_force: number[] = new Array(N + 1).fill(0);
   const bending_moment: number[] = new Array(N + 1).fill(0);
 
@@ -127,27 +394,26 @@ function analyzeBeam(data: any) {
   const max_shear_force = Math.max(...shear_force.map(Math.abs));
   const max_bending_moment = Math.max(...bending_moment.map(Math.abs));
 
-  // Section Capacity Verification
   let M_rd = 0;
   let V_rd = 0;
 
   if (material_type === 'rc') {
-    const d = h - 40; // Effective depth
+    const d = h - 40;
     const As = numBarsBot * ((Math.PI * Math.pow(barDiamBot, 2)) / 4);
     const a = (As * fy) / (0.85 * fc * b);
-    M_rd = (0.9 * As * fy * (d - a / 2)) / 1e6; // kN·m
+    M_rd = (0.9 * As * fy * (d - a / 2)) / 1e6;
 
     const Av = 2 * ((Math.PI * Math.pow(stirrupDiam, 2)) / 4);
     const Vc = (0.17 * Math.sqrt(fc) * b * d) / 1000;
     const Vs = (Av * fy * d) / stirrupSpacing / 1000;
-    V_rd = 0.75 * (Vc + Vs); // kN
+    V_rd = 0.75 * (Vc + Vs);
   } else if (material_type === 'steel') {
-    M_rd = (0.9 * Zx * 1000 * fy_steel) / 1e6; // kN·m
-    V_rd = (0.9 * 0.6 * fy_steel * b * h) / 1000; // kN
+    M_rd = (0.9 * Zx * 1000 * fy_steel) / 1e6;
+    V_rd = (0.9 * 0.6 * fy_steel * b * h) / 1000;
   } else if (material_type === 'timber') {
     const Z_timber = (b * Math.pow(h, 2)) / 6;
-    M_rd = (k_mod * f_m * Z_timber) / 1e6; // kN·m
-    V_rd = (k_mod * 2.0 * b * h) / 1000; // kN
+    M_rd = (k_mod * f_m * Z_timber) / 1e6;
+    V_rd = (k_mod * 2.0 * b * h) / 1000;
   } else {
     M_rd = (0.9 * Zx * 1000 * fy_steel + 0.85 * fc * b * h * 0.1) / 1e6;
     V_rd = (0.9 * 0.6 * fy_steel * b * h) / 1000;
@@ -156,7 +422,6 @@ function analyzeBeam(data: any) {
   const flexureDCR = M_rd > 0 ? Number((max_bending_moment / M_rd).toFixed(2)) : 0;
   const shearDCR = V_rd > 0 ? Number((max_shear_force / V_rd).toFixed(2)) : 0;
   const overallDCR = Math.max(flexureDCR, shearDCR);
-  const status = overallDCR <= 1.0 ? 'SAFE' : 'OVERSTRESSED';
 
   return {
     material_type,
@@ -168,14 +433,7 @@ function analyzeBeam(data: any) {
       max_bending_moment: Number(max_bending_moment.toFixed(1)),
       max_deflection: Number(((max_bending_moment * L * L) / (1000 * 200)).toFixed(2)),
     },
-    design_verification: {
-      M_rd: Number(M_rd.toFixed(1)),
-      V_rd: Number(V_rd.toFixed(1)),
-      flexureDCR,
-      shearDCR,
-      overallDCR,
-      status,
-    },
+    design_verification: { M_rd: Number(M_rd.toFixed(1)), V_rd: Number(V_rd.toFixed(1)), flexureDCR, shearDCR, overallDCR, status: overallDCR <= 1.0 ? 'SAFE' : 'OVERSTRESSED' },
     x_coords,
     shear_force,
     bending_moment,
@@ -183,7 +441,7 @@ function analyzeBeam(data: any) {
 }
 
 // ==========================================
-// 2. COLUMN ANALYSIS SOLVER
+// 7. COLUMN ANALYSIS SOLVER
 // ==========================================
 function analyzeColumn(data: any) {
   const {
@@ -324,26 +582,6 @@ function analyzeColumn(data: any) {
   }
 
   const dcr = capacity_Mn > 0 ? Number((Mc / capacity_Mn).toFixed(2)) : pu > phiPn_max ? 1.45 : 0.85;
-  const status = dcr <= 1.0 && pu <= phiPn_max ? 'SAFE' : 'OVERSTRESSED';
-
-  const bar_locations = [];
-  const offset = cover + 8 + barDiam / 2;
-  const x_left = -(b / 2 - offset);
-  const x_right = b / 2 - offset;
-  const y_top = -(h / 2 - offset);
-  const y_bot = h / 2 - offset;
-
-  bar_locations.push({ x: x_left, y: y_top }, { x: x_right, y: y_top });
-  bar_locations.push({ x: x_left, y: y_bot }, { x: x_right, y: y_bot });
-
-  const remaining = numBars - 4;
-  if (remaining > 0) {
-    const perSide = Math.ceil(remaining / 2);
-    for (let i = 1; i <= perSide; i++) {
-      const y_mid = y_top + (i * (y_bot - y_top)) / (perSide + 1);
-      bar_locations.push({ x: x_left, y: y_mid }, { x: x_right, y: y_mid });
-    }
-  }
 
   return {
     design_code,
@@ -357,8 +595,7 @@ function analyzeColumn(data: any) {
       delta_ns: Number(delta_ns.toFixed(2)),
       Mc: Number(Mc.toFixed(1)),
     },
-    capacity: { phiPn_max, dcr, status },
+    capacity: { phiPn_max, dcr, status: dcr <= 1.0 && pu <= phiPn_max ? 'SAFE' : 'OVERSTRESSED' },
     pm_envelope,
-    bar_locations,
   };
 }
