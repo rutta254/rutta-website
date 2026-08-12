@@ -119,7 +119,7 @@ export default function BeamAnalysisTool() {
       doc.text(`Date Generated: ${dateStr}`, 14, 30);
       doc.line(14, 34, 196, 34);
 
-      // Section 1: Inputs
+      // Section 1: Inputs Table
       doc.setFontSize(11);
       doc.setTextColor(15, 23, 42);
       doc.text('1. Beam Geometry & Boundary Conditions', 14, 42);
@@ -158,7 +158,7 @@ export default function BeamAnalysisTool() {
         headStyles: { fillColor: [51, 65, 85] },
       });
 
-      // Section 2: Statics & Reaction Extremes
+      // Section 2: Computed Reactions Table
       lastY = getFinalY(doc) + 8;
       doc.text('2. Computed Support Reactions & Critical Extremes', 14, lastY);
 
@@ -176,39 +176,55 @@ export default function BeamAnalysisTool() {
         headStyles: { fillColor: [15, 118, 110] },
       });
 
-      // Section 3: Visual Capture (SVG Beam Diagram + Recharts SFD/BMD)
+      // Section 3: Safe Capture (Sanitizes lab()/oklch() styles & sets fixed chart sizes)
       if (reportCaptureRef.current) {
-        const canvas = await html2canvas(reportCaptureRef.current, {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#0f172a',
-          logging: false,
-          windowWidth: 1200,
-          onclone: (clonedDoc) => {
-            // Force responsive containers to fixed pixel dimensions in screenshot clone
-            const containers = clonedDoc.querySelectorAll('.recharts-responsive-container');
-            containers.forEach((c) => {
-              (c as HTMLElement).style.width = '700px';
-              (c as HTMLElement).style.height = '200px';
-            });
-            // Force inline SVG visibility
-            const svgs = clonedDoc.querySelectorAll('svg');
-            svgs.forEach((s) => {
-              s.style.overflow = 'visible';
-            });
-          },
-        });
+        try {
+          const canvas = await html2canvas(reportCaptureRef.current, {
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#0f172a',
+            logging: false,
+            windowWidth: 1200,
+            onclone: (clonedDoc) => {
+              // Strip unsupported modern CSS color functions across all DOM elements
+              const allElements = clonedDoc.querySelectorAll('*');
+              allElements.forEach((el) => {
+                const htmlEl = el as HTMLElement;
+                const computed = window.getComputedStyle(htmlEl);
 
-        const imgData = canvas.toDataURL('image/png');
-        const imgWidth = 182;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                if (computed.backgroundColor.includes('lab') || computed.backgroundColor.includes('oklch')) {
+                  htmlEl.style.backgroundColor = '#0f172a';
+                }
+                if (computed.borderColor.includes('lab') || computed.borderColor.includes('oklch')) {
+                  htmlEl.style.borderColor = '#1e293b';
+                }
+                if (computed.color.includes('lab') || computed.color.includes('oklch')) {
+                  htmlEl.style.color = '#f8fafc';
+                }
+              });
 
-        doc.addPage();
-        doc.setFontSize(11);
-        doc.setTextColor(15, 23, 42);
-        doc.text('3. Structural Visualization, SFD & BMD Diagrams', 14, 18);
-        doc.addImage(imgData, 'PNG', 14, 24, imgWidth, Math.min(imgHeight, 250));
+              // Force Recharts containers to fixed pixel sizes during capture
+              const containers = clonedDoc.querySelectorAll('.recharts-responsive-container');
+              containers.forEach((c) => {
+                (c as HTMLElement).style.width = '700px';
+                (c as HTMLElement).style.height = '200px';
+              });
+            },
+          });
+
+          const imgData = canvas.toDataURL('image/png');
+          const imgWidth = 182;
+          const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+          doc.addPage();
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42);
+          doc.text('3. Structural Visualization, SFD & BMD Diagrams', 14, 18);
+          doc.addImage(imgData, 'PNG', 14, 24, imgWidth, Math.min(imgHeight, 250));
+        } catch (captureErr) {
+          console.warn('Diagram snapshot capture skipped:', captureErr);
+        }
       }
 
       doc.save(`Haya_Structures_Beam_${length}m_Report.pdf`);
@@ -270,7 +286,7 @@ export default function BeamAnalysisTool() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      {/* Input Controls */}
+      {/* Control Panel Column */}
       <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800">
         <h3 className="font-semibold text-slate-200 border-b border-slate-800 pb-2">Beam Geometry & Supports</h3>
 
@@ -458,7 +474,7 @@ export default function BeamAnalysisTool() {
           </div>
         </div>
 
-        {/* SFD & BMD Recharts Output */}
+        {/* SFD & BMD Charts Output */}
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
           {chartData.length > 0 ? (
             <div className="space-y-6 bg-slate-900 p-3 rounded-lg">

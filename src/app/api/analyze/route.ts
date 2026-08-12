@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     let R_A = 0;
     let R_B = 0;
 
-    // 1. Compute Exact Analytical Reaction Statics
+    // 1. Analytical Reaction Calculations
     loads.forEach((load) => {
       const P = Number(load.magnitude);
       const a = Number(load.position);
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       }
     });
 
-    // 2. Discretize Span into 101 Coordinate Points for SFD & BMD
+    // 2. Discretization Array for SFD and BMD Diagrams
     const numPoints = 101;
     const x_coords: number[] = [];
     const shear_force: number[] = [];
@@ -74,7 +74,6 @@ export async function POST(request: Request) {
       let M = R_A * x;
 
       if (support === 'fixed_fixed' || support === 'propped_cantilever') {
-        // Apply end restraint moments for statically indeterminate conditions
         loads.forEach((load) => {
           const P = Number(load.magnitude);
           const a = Number(load.position);
@@ -134,12 +133,12 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: `Structural solver execution failed: ${message}` },
+      { error: `Structural solver failure: ${message}` },
       { status: 500 }
     );
   }
 }
 
 export async function GET() {
-  return NextResponse.json({ status: 'online', mode: 'Integrated FEA & Analytical Solver' });
+  return NextResponse.json({ status: 'online', mode: 'Integrated Structural Solver' });
 }
