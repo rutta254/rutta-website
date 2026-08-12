@@ -25,6 +25,25 @@ type ColumnSectionType =
   | 'steel_encased_h'
   | 'steel_encased_t';
 
+interface CapacityBreakdown {
+  axial: {
+    pc: number;
+    ps: number;
+    pa: number;
+    pc_pct: number;
+    ps_pct: number;
+    pa_pct: number;
+  };
+  flexure: {
+    mc: number;
+    ms: number;
+    ma: number;
+    mc_pct: number;
+    ms_pct: number;
+    ma_pct: number;
+  };
+}
+
 interface ColumnResult {
   section_type: ColumnSectionType;
   design_code: DesignCode;
@@ -49,6 +68,7 @@ interface ColumnResult {
     phiMny: number;
     phiVc: number;
   };
+  breakdown: CapacityBreakdown;
   dcr: {
     axial_dcr: number;
     flexure_x_dcr: number;
@@ -65,7 +85,6 @@ interface ColumnResult {
   pm_envelope: { m: number; p: number }[];
 }
 
-// Helper to convert Recharts/DOM SVG nodes into base64 PNG for jsPDF inclusion
 const captureSvgToCanvas = (containerEl: HTMLElement | null): Promise<string | null> => {
   return new Promise((resolve) => {
     if (!containerEl) return resolve(null);
@@ -74,28 +93,28 @@ const captureSvgToCanvas = (containerEl: HTMLElement | null): Promise<string | n
 
     const xml = new XMLSerializer().serializeToString(svgEl);
     const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(svgBlob);
+    const url = URL.createObjectURL ? URL.createObjectURL(svgBlob) : '';
     const img = new Image();
 
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const scale = 2; // High DPI export
+      const scale = 2;
       canvas.width = (svgEl.clientWidth || 500) * scale;
       canvas.height = (svgEl.clientHeight || 250) * scale;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.fillStyle = '#0f172a'; // Match slate-900 background
+        ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/png');
-        URL.revokeObjectURL(url);
+        if (url) URL.revokeObjectURL(url);
         resolve(dataUrl);
       } else {
         resolve(null);
       }
     };
     img.onerror = () => {
-      URL.revokeObjectURL(url);
+      if (url) URL.revokeObjectURL(url);
       resolve(null);
     };
     img.src = url;
@@ -105,12 +124,13 @@ const captureSvgToCanvas = (containerEl: HTMLElement | null): Promise<string | n
 export default function ColumnAnalysisTool() {
   const [designCode, setDesignCode] = useState<DesignCode>('ACI318');
   const [sectionType, setSectionType] = useState<ColumnSectionType>('steel_encased_i');
+  const [viewMode, setViewMode] = useState<'3d' | '2d' | 'split'>('split');
 
   // Concrete Dimensions
   const [b, setB] = useState<number>(500);
   const [h, setH] = useState<number>(500);
   const [cover, setCover] = useState<number>(40);
-  const [columnLength, setColumnLength] = useState<number>(3.5); // meters
+  const [columnLength, setColumnLength] = useState<number>(3.5);
 
   // Encased Steel Section Dimensions
   const [ds, setDs] = useState<number>(300);
@@ -142,17 +162,62 @@ export default function ColumnAnalysisTool() {
 
   const mountRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLDivElement>(null);
+  const svg2dRef = useRef<HTMLDivElement>(null);
 
   const isEncased = sectionType.startsWith('steel_encased');
   const isCircular = sectionType === 'rc_circular';
 
-  // --- 3D THREE.JS WEBGL RENDERER ---
+  // --- 2D SECTION REBAR COORDINATE CALCULATOR ---
+  const rebar2DPositions = useMemo(() => {
+    const coords: { x: number; y: number }[] = [];
+    const width = b;
+    const height = isCircular ? b : h;
+    const effCover = cover + tieDiam + barDiam / 2;
+
+    if (isCircular) {
+      const radius = width / 2 - effCover;
+      const count = Math.max(nTotalCircular, 4);
+      for (let i = 0; i < count; i++) {
+        const angle = (2 * Math.PI * i) / count;
+        coords.push({
+          x: width / 2 + radius * Math.cos(angle),
+          y: height / 2 + radius * Math.sin(angle),
+        });
+      }
+    } else {
+      const xLeft = effCover;
+      const xRight = width - effCover;
+      const yTop = effCover;
+      const yBottom = height - effCover;
+
+      const numX = Math.max(nx, 2);
+      const numY = Math.max(ny, 2);
+
+      const dx = (xRight - xLeft) / (numX - 1 || 1);
+      const dy = (yBottom - yTop) / (numY - 1 || 1);
+
+      for (let i = 0; i < numX; i++) {
+        const xPos = xLeft + i * dx;
+        coords.push({ x: xPos, y: yTop });
+        coords.push({ x: xPos, y: yBottom });
+      }
+      for (let j = 1; j < numY - 1; j++) {
+        const yPos = yTop + j * dy;
+        coords.push({ x: xLeft, y: yPos });
+        coords.push({ x: xRight, y: yPos });
+      }
+    }
+    return coords;
+  }, [b, h, cover, tieDiam, barDiam, nx, ny, nTotalCircular, isCircular]);
+
+  // --- 3D WEBGL RENDERER ---
   useEffect(() => {
+    if (viewMode === '2d') return;
     const mount = mountRef.current;
     if (!mount) return;
 
-    const widthVal = mount.clientWidth || 500;
-    const heightVal = mount.clientHeight || 300;
+    const widthVal = mount.clientWidth || 400;
+    const heightVal = mount.clientHeight || 260;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0f172a);
@@ -169,18 +234,15 @@ export default function ColumnAnalysisTool() {
     controls.target.set(0, columnLength / 2, 0);
     controls.update();
 
-    // Lighting
     scene.add(new THREE.AmbientLight(0xffffff, 0.9));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(10, 20, 15);
     scene.add(dirLight);
 
-    // Floor Base Grid
     const grid = new THREE.GridHelper(8, 16, 0x334155, 0x1e293b);
     grid.position.set(0, 0, 0);
     scene.add(grid);
 
-    // Concrete Column Geometry
     const wMeters = b / 1000;
     const hMeters = isCircular ? wMeters : h / 1000;
     let colMesh: THREE.Mesh;
@@ -197,35 +259,31 @@ export default function ColumnAnalysisTool() {
     colMesh.position.set(0, columnLength / 2, 0);
     scene.add(colMesh);
 
-    // Encased Structural Steel Profile (If Applicable)
     if (isEncased) {
       const dsM = ds / 1000;
       const bfM = bf / 1000;
       const twM = tw / 1000;
       const tfM = tf / 1000;
       const steelMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.8, roughness: 0.2 });
-
       const steelGroup = new THREE.Group();
 
       if (sectionType === 'steel_encased_i' || sectionType === 'steel_encased_h') {
-        // Top Flange
         const tfMesh = new THREE.Mesh(new THREE.BoxGeometry(bfM, columnLength, tfM), steelMat);
         tfMesh.position.set(0, 0, dsM / 2 - tfM / 2);
         steelGroup.add(tfMesh);
-        // Bottom Flange
+
         const bfMesh = new THREE.Mesh(new THREE.BoxGeometry(bfM, columnLength, tfM), steelMat);
         bfMesh.position.set(0, 0, -dsM / 2 + tfM / 2);
         steelGroup.add(bfMesh);
-        // Web
+
         const webMesh = new THREE.Mesh(new THREE.BoxGeometry(twM, columnLength, dsM - 2 * tfM), steelMat);
         webMesh.position.set(0, 0, 0);
         steelGroup.add(webMesh);
       } else if (sectionType === 'steel_encased_t') {
-        // Flange
         const tfMesh = new THREE.Mesh(new THREE.BoxGeometry(bfM, columnLength, tfM), steelMat);
         tfMesh.position.set(0, 0, dsM / 2 - tfM / 2);
         steelGroup.add(tfMesh);
-        // Stem
+
         const webMesh = new THREE.Mesh(new THREE.BoxGeometry(twM, columnLength, dsM - tfM), steelMat);
         webMesh.position.set(0, 0, -tfM / 2);
         steelGroup.add(webMesh);
@@ -235,39 +293,17 @@ export default function ColumnAnalysisTool() {
       scene.add(steelGroup);
     }
 
-    // Rebar Cage
     const rebarMat = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.9 });
-    const barR = (barDiam / 1000) / 2;
-    const covM = cover / 1000;
+    const barR = Math.max((barDiam / 1000) / 2, 0.004);
 
-    if (isCircular) {
-      const radius = wMeters / 2 - covM;
-      const count = Math.max(nTotalCircular, 4);
-      for (let i = 0; i < count; i++) {
-        const angle = (2 * Math.PI * i) / count;
-        const xPos = radius * Math.cos(angle);
-        const zPos = radius * Math.sin(angle);
-        const barMesh = new THREE.Mesh(new THREE.CylinderGeometry(barR, barR, columnLength - 0.1, 12), rebarMat);
-        barMesh.position.set(xPos, columnLength / 2, zPos);
-        scene.add(barMesh);
-      }
-    } else {
-      const innerW = wMeters / 2 - covM;
-      const innerH = hMeters / 2 - covM;
-      const corners = [
-        [-innerW, -innerH],
-        [innerW, -innerH],
-        [-innerW, innerH],
-        [innerW, innerH],
-      ];
-      corners.forEach(([xP, zP]) => {
-        const barMesh = new THREE.Mesh(new THREE.CylinderGeometry(barR, barR, columnLength - 0.1, 12), rebarMat);
-        barMesh.position.set(xP, columnLength / 2, zP);
-        scene.add(barMesh);
-      });
-    }
+    rebar2DPositions.forEach((pt) => {
+      const xPos = pt.x / 1000 - wMeters / 2;
+      const zPos = pt.y / 1000 - hMeters / 2;
+      const barMesh = new THREE.Mesh(new THREE.CylinderGeometry(barR, barR, columnLength - 0.1, 12), rebarMat);
+      barMesh.position.set(xPos, columnLength / 2, zPos);
+      scene.add(barMesh);
+    });
 
-    // Applied Axial Vector Arrow
     const arrowHelper = new THREE.ArrowHelper(
       new THREE.Vector3(0, -1, 0),
       new THREE.Vector3(0, columnLength + 0.8, 0),
@@ -291,9 +327,9 @@ export default function ColumnAnalysisTool() {
         mount.removeChild(renderer.domElement);
       }
     };
-  }, [b, h, columnLength, cover, sectionType, ds, bf, tw, tf, barDiam, nTotalCircular, isCircular, isEncased]);
+  }, [b, h, columnLength, cover, sectionType, ds, bf, tw, tf, barDiam, tieDiam, rebar2DPositions, isCircular, isEncased, viewMode]);
 
-  // --- ANALYSIS ENGINE & P-M GENERATOR ---
+  // --- MATHEMATICAL ANALYSIS & CAPACITY BREAKDOWN ENGINE ---
   const handleAnalyze = () => {
     setLoading(true);
 
@@ -341,7 +377,16 @@ export default function ColumnAnalysisTool() {
       const f_y = Number(fy);
       const f_ys = Number(fys);
 
-      const P0 = (0.85 * f_c * Ac + f_y * Ast + f_ys * Ass) / 1000;
+      // Component Axial Capacity Contributions (kN)
+      const Pc = (0.85 * f_c * Ac) / 1000;
+      const Ps = (f_y * Ast) / 1000;
+      const Pa = (f_ys * Ass) / 1000;
+      const P0 = Pc + Ps + Pa;
+
+      const pc_pct = Number(((Pc / P0) * 100).toFixed(1));
+      const ps_pct = Number(((Ps / P0) * 100).toFixed(1));
+      const pa_pct = Number(((Pa / P0) * 100).toFixed(1));
+
       const phi_axial = isCircular ? 0.75 : 0.65;
       const alpha_ecc = isCircular ? 0.85 : 0.8;
       const phiPn_max = Math.max(alpha_ecc * phi_axial * P0, 1.0);
@@ -349,18 +394,19 @@ export default function ColumnAnalysisTool() {
       const d_eff_x = grossH - cover - Number(tieDiam) - db / 2;
       const d_eff_y = grossB - cover - Number(tieDiam) - db / 2;
 
-      const M_cx = (0.85 * f_c * grossB * Math.pow(grossH, 2)) / 4 / 1e6;
-      const M_cy = (0.85 * f_c * grossH * Math.pow(grossB, 2)) / 4 / 1e6;
+      // Component Moment Capacity Contributions (kNm)
+      const Mc = (0.85 * f_c * grossB * Math.pow(grossH, 2)) / 4 / 1e6;
+      const Ms = (0.8 * Ast * f_y * (d_eff_x - grossH / 2)) / 1e6;
+      const Ma = (Zx_steel * f_ys) / 1e6;
+      const M_tot = Mc + Ms + Ma || 1.0;
 
-      const M_stx = (0.8 * Ast * f_y * (d_eff_x - grossH / 2)) / 1e6;
-      const M_sty = (0.8 * Ast * f_y * (d_eff_y - grossB / 2)) / 1e6;
-
-      const M_ssx = (Zx_steel * f_ys) / 1e6;
-      const M_ssy = (Zy_steel * f_ys) / 1e6;
+      const mc_pct = Number(((Mc / M_tot) * 100).toFixed(1));
+      const ms_pct = Number(((Ms / M_tot) * 100).toFixed(1));
+      const ma_pct = Number(((Ma / M_tot) * 100).toFixed(1));
 
       const phi_flexure = 0.7;
-      const phiMnx = Math.max(phi_flexure * (0.8 * M_cx + M_stx + M_ssx), 1.0);
-      const phiMny = Math.max(phi_flexure * (0.8 * M_cy + M_sty + M_ssy), 1.0);
+      const phiMnx = Math.max(phi_flexure * (0.8 * Mc + Ms + Ma), 1.0);
+      const phiMny = Math.max(phi_flexure * (0.8 * ((0.85 * f_c * grossH * Math.pow(grossB, 2)) / 4 / 1e6) + (0.8 * Ast * f_y * (d_eff_y - grossB / 2)) / 1e6 + (Zy_steel * f_ys) / 1e6), 1.0);
 
       const phi_shear = 0.75;
       const Vc = (0.17 * Math.sqrt(f_c) * grossB * d_eff_x) / 1000;
@@ -391,7 +437,6 @@ export default function ColumnAnalysisTool() {
       if (rebar_ratio < 0.8) governing_check = 'Min Rebar Ratio (< 0.8%)';
       if (rebar_ratio > 8.0) governing_check = 'Max Rebar Ratio (> 8.0%)';
 
-      // P-M Envelope Coordinates Construction
       const pm_envelope: { m: number; p: number }[] = [];
       const steps = 15;
       for (let i = 0; i <= steps; i++) {
@@ -420,6 +465,24 @@ export default function ColumnAnalysisTool() {
           phiMny: Number(phiMny.toFixed(1)),
           phiVc: Number(phiVc.toFixed(1)),
         },
+        breakdown: {
+          axial: {
+            pc: Math.round(Pc),
+            ps: Math.round(Ps),
+            pa: Math.round(Pa),
+            pc_pct,
+            ps_pct,
+            pa_pct,
+          },
+          flexure: {
+            mc: Number(Mc.toFixed(1)),
+            ms: Number(Ms.toFixed(1)),
+            ma: Number(Ma.toFixed(1)),
+            mc_pct,
+            ms_pct,
+            ma_pct,
+          },
+        },
         dcr: {
           axial_dcr: Number(axial_dcr.toFixed(3)),
           flexure_x_dcr: Number(flexure_x_dcr.toFixed(3)),
@@ -442,7 +505,6 @@ export default function ColumnAnalysisTool() {
     }
   };
 
-  // --- ZERO-WHITE-SPACE PDF GENERATION ENGINE ---
   const generatePDF = async () => {
     if (!result) return;
     setDownloadingPdf(true);
@@ -451,7 +513,6 @@ export default function ColumnAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
-      // Top Header Band
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, 210, 18, 'F');
 
@@ -465,34 +526,30 @@ export default function ColumnAnalysisTool() {
       doc.setTextColor(226, 232, 240);
       doc.text(`Code Standard: ${designCode} | Section: ${sectionType.toUpperCase()} | Date: ${dateStr}`, 10, 14);
 
-      // Section 1: Side-by-Side Visuals Capture
       doc.setFillColor(30, 41, 59);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(255, 255, 255);
       doc.rect(10, 21, 190, 6, 'F');
-      doc.text('1. 3D COLUMN GEOMETRY & P-M CAPACITY INTERACTION DIAGRAM', 12, 25);
+      doc.text('1. 2D / 3D COLUMN GEOMETRY & P-M CAPACITY INTERACTION DIAGRAM', 12, 25);
 
-      // WebGL Canvas Capture
       const canvas3D = mountRef.current?.querySelector('canvas');
       if (canvas3D) {
         const img3D = canvas3D.toDataURL('image/png');
         doc.addImage(img3D, 'PNG', 10, 28, 93, 48);
       }
 
-      // Recharts Interactive P-M Capture
       const chartImg = await captureSvgToCanvas(chartRef.current);
       if (chartImg) {
         doc.addImage(chartImg, 'PNG', 107, 28, 93, 48);
       }
 
-      // Section 2: Input & Capacity Verification Tables
       doc.setFillColor(30, 41, 59);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(255, 255, 255);
       doc.rect(10, 78, 190, 6, 'F');
-      doc.text('2. DESIGN PARAMETERS & CAPACITY VERIFICATION', 12, 82);
+      doc.text('2. DESIGN PARAMETERS & SECTION CAPACITY BREAKDOWN', 12, 82);
 
       autoTable(doc, {
         startY: 85,
@@ -503,11 +560,11 @@ export default function ColumnAnalysisTool() {
           ['Section Type', sectionType.replace(/_/g, ' ').toUpperCase()],
           ['Section Dimensions', `${result.geometry.b} × ${result.geometry.h} mm`],
           ['Concrete Clear Cover', `${result.geometry.cover} mm`],
+          ['Rebar Arrangement', isCircular ? `${nTotalCircular} Bars Total` : `${nx} × ${ny} Face Grid`],
           ['Concrete Strength (f\'c)', `${fc} MPa`],
           ['Rebar Yield (fy)', `${fy} MPa`],
           ...(isEncased ? [['Encased Steel Yield (fys)', `${fys} MPa`]] : []),
           ['Axial Load (Pu)', `${result.loads.Pu} kN`],
-          ['Moment X Axis (Mux)', `${result.loads.Mux} kN·m`],
         ],
         theme: 'grid',
         headStyles: { fillColor: [14, 116, 144], fontSize: 7, cellPadding: 1.5 },
@@ -518,23 +575,19 @@ export default function ColumnAnalysisTool() {
         startY: 85,
         margin: { left: 107 },
         tableWidth: 93,
-        head: [['Capacity Check Metric', 'Calculated Output']],
+        head: [['Material Component', 'Axial (kN)', 'Share (%)', 'Flexure (kNm)']],
         body: [
-          ['Gross Section Area (Ag)', `${result.geometry.Ag} mm²`],
-          ['Rebar Steel Area (Ast)', `${result.geometry.Ast} mm²`],
-          ['Total Steel Ratio (ρ)', `${result.verification.rebar_ratio}%`],
-          ['Axial Capacity (φPn,max)', `${result.capacity.phiPn_max} kN`],
-          ['Flexural Capacity X (φMnx)', `${result.capacity.phiMnx} kN·m`],
-          ['Shear Capacity (φVc)', `${result.capacity.phiVc} kN`],
-          ['Governing Failure State', result.verification.governing_check],
-          ['Design Verdict', result.verification.status],
+          ['Concrete Core', `${result.breakdown.axial.pc}`, `${result.breakdown.axial.pc_pct}%`, `${result.breakdown.flexure.mc}`],
+          ['Rebar Cage', `${result.breakdown.axial.ps}`, `${result.breakdown.axial.ps_pct}%`, `${result.breakdown.flexure.ms}`],
+          ...(isEncased ? [['Encased Steel', `${result.breakdown.axial.pa}`, `${result.breakdown.axial.pa_pct}%`, `${result.breakdown.flexure.ma}`]] : []),
+          ['Total Design Capacity', `${result.capacity.phiPn_max}`, '100%', `${result.capacity.phiMnx}`],
+          ['Governing Failure Check', result.verification.governing_check, '-', result.verification.status],
         ],
         theme: 'grid',
         headStyles: { fillColor: [15, 118, 110], fontSize: 7, cellPadding: 1.5 },
         bodyStyles: { fontSize: 7, cellPadding: 1.5 },
       });
 
-      // Section 3: Demand Capacity Ratio (DCR) Matrix
       doc.setFillColor(30, 41, 59);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
@@ -559,7 +612,6 @@ export default function ColumnAnalysisTool() {
         bodyStyles: { fontSize: 7, cellPadding: 1.5 },
       });
 
-      // Section 4: Engineering Sign-off Box
       const finalY = (doc as any).lastAutoTable.finalY + 6;
 
       doc.setFillColor(248, 250, 252);
@@ -611,7 +663,6 @@ export default function ColumnAnalysisTool() {
       doc.setTextColor(100, 116, 139);
       doc.text('Authorized Structural Engineer Signature', 129, finalY + 30);
 
-      // Footer
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 287, 210, 10, 'F');
       doc.setFontSize(6.5);
@@ -638,7 +689,7 @@ export default function ColumnAnalysisTool() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-950 p-6 rounded-2xl border border-slate-800 text-slate-100 font-sans">
-      {/* Inputs Column */}
+      {/* Controls Column */}
       <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-xl">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
           <h3 className="font-semibold text-slate-200 text-sm">Column Controls & Properties</h3>
@@ -668,6 +719,7 @@ export default function ColumnAnalysisTool() {
           </select>
         </div>
 
+        {/* Geometry Dimensions */}
         <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="block text-[10px] text-slate-400">Width b (mm)</label>
@@ -685,6 +737,7 @@ export default function ColumnAnalysisTool() {
           </div>
         </div>
 
+        {/* Encased Steel Controls */}
         {isEncased && (
           <div className="p-2.5 bg-cyan-950/30 border border-cyan-800/40 rounded-lg space-y-2">
             <h4 className="text-[10px] font-semibold text-cyan-400 uppercase tracking-wider">Encased Steel Profile Specs (mm)</h4>
@@ -709,6 +762,44 @@ export default function ColumnAnalysisTool() {
           </div>
         )}
 
+        {/* Reinforcement Configurations */}
+        <div className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg space-y-2">
+          <h4 className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Reinforcement Configuration</h4>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="block text-[9px] text-slate-400">Cover (mm)</label>
+              <input type="number" value={cover} onChange={(e) => setCover(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+            </div>
+            <div>
+              <label className="block text-[9px] text-slate-400">Bar Diam (mm)</label>
+              <input type="number" value={barDiam} onChange={(e) => setBarDiam(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+            </div>
+            <div>
+              <label className="block text-[9px] text-slate-400">Tie Diam (mm)</label>
+              <input type="number" value={tieDiam} onChange={(e) => setTieDiam(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200" />
+            </div>
+          </div>
+
+          {isCircular ? (
+            <div>
+              <label className="block text-[9px] text-slate-400 mb-1">Total Rebars in Circle</label>
+              <input type="number" value={nTotalCircular} onChange={(e) => setNTotalCircular(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-bold" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[9px] text-slate-400 mb-1">Bars along X Face (nx)</label>
+                <input type="number" value={nx} onChange={(e) => setNx(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-bold" />
+              </div>
+              <div>
+                <label className="block text-[9px] text-slate-400 mb-1">Bars along Y Face (ny)</label>
+                <input type="number" value={ny} onChange={(e) => setNy(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-bold" />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Material Strengths */}
         <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="block text-[10px] text-slate-400">f'c (MPa)</label>
@@ -726,6 +817,7 @@ export default function ColumnAnalysisTool() {
           )}
         </div>
 
+        {/* Applied Loads */}
         <div className="pt-2 border-t border-slate-800 space-y-2">
           <h4 className="font-semibold text-slate-200 text-xs">Applied Factored Actions</h4>
           <div className="grid grid-cols-4 gap-1.5">
@@ -777,17 +869,191 @@ export default function ColumnAnalysisTool() {
         )}
       </div>
 
-      {/* Visual Models Column */}
+      {/* Visual Models & Breakdown Column */}
       <div className="lg:col-span-7 space-y-4">
-        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col">
-          <h3 className="text-xs font-bold text-slate-300 mb-3">3D INTERACTIVE COLUMN MODEL & ENCASED CAGE</h3>
-          <div ref={mountRef} className="w-full h-64 rounded-lg overflow-hidden border border-slate-800 relative">
-            <div className="absolute bottom-2 left-2 bg-slate-950/80 px-2 py-1 rounded text-[10px] text-slate-400 pointer-events-none">
-              Orbit: Left Click + Drag | Pan: Right Click | Zoom: Scroll
+        {/* Visual Viewport Control */}
+        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col space-y-3">
+          <div className="flex justify-between items-center">
+            <h3 className="text-xs font-bold text-slate-300">STRUCTURAL DRAWING & VISUALIZATION</h3>
+            <div className="flex space-x-1 bg-slate-950 p-0.5 rounded border border-slate-800">
+              <button
+                onClick={() => setViewMode('2d')}
+                className={`px-2 py-1 text-[10px] font-bold rounded ${viewMode === '2d' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                2D Section
+              </button>
+              <button
+                onClick={() => setViewMode('3d')}
+                className={`px-2 py-1 text-[10px] font-bold rounded ${viewMode === '3d' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                3D Model
+              </button>
+              <button
+                onClick={() => setViewMode('split')}
+                className={`px-2 py-1 text-[10px] font-bold rounded ${viewMode === 'split' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Dual View
+              </button>
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 min-h-[260px]">
+            {/* 2D Cross Section SVG Drawing */}
+            {(viewMode === '2d' || viewMode === 'split') && (
+              <div
+                ref={svg2dRef}
+                className={`w-full bg-slate-950 border border-slate-800 rounded-lg p-2 flex flex-col items-center justify-center relative ${viewMode === '2d' ? 'md:col-span-2' : ''}`}
+              >
+                <div className="absolute top-2 left-2 text-[10px] font-semibold text-slate-400">2D Section Detail</div>
+                <svg viewBox="-20 -20 540 540" className="w-full h-56 max-w-[240px]">
+                  {/* Concrete Core */}
+                  {isCircular ? (
+                    <circle cx="250" cy="250" r="230" fill="#334155" stroke="#94a3b8" strokeWidth="4" />
+                  ) : (
+                    <rect x="20" y="20" width="460" height="460" fill="#334155" stroke="#94a3b8" strokeWidth="4" rx="4" />
+                  )}
+
+                  {/* Stirrups / Ties */}
+                  {isCircular ? (
+                    <circle cx="250" cy="250" r={230 - cover * 0.8} fill="none" stroke="#e2e8f0" strokeWidth="3" strokeDasharray="6 4" />
+                  ) : (
+                    <rect x={20 + cover * 0.8} y={20 + cover * 0.8} width={460 - cover * 1.6} height={460 - cover * 1.6} fill="none" stroke="#e2e8f0" strokeWidth="3" strokeDasharray="6 4" />
+                  )}
+
+                  {/* Encased Structural Steel Profile Drawing */}
+                  {isEncased && (
+                    <g>
+                      {(sectionType === 'steel_encased_i' || sectionType === 'steel_encased_h') && (
+                        <>
+                          {/* Top Flange */}
+                          <rect x={250 - (bf / b) * 230} y={250 - (ds / h) * 230} width={(bf / b) * 460} height={(tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                          {/* Bottom Flange */}
+                          <rect x={250 - (bf / b) * 230} y={250 + (ds / h) * 230 - (tf / h) * 460} width={(bf / b) * 460} height={(tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                          {/* Web */}
+                          <rect x={250 - (tw / b) * 230} y={250 - (ds / h) * 230 + (tf / h) * 460} width={(tw / b) * 460} height={(ds / h) * 460 - 2 * (tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                        </>
+                      )}
+                      {sectionType === 'steel_encased_t' && (
+                        <>
+                          {/* Flange */}
+                          <rect x={250 - (bf / b) * 230} y={250 - (ds / h) * 230} width={(bf / b) * 460} height={(tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                          {/* Stem */}
+                          <rect x={250 - (tw / b) * 230} y={250 - (ds / h) * 230 + (tf / h) * 460} width={(tw / b) * 460} height={(ds / h) * 460 - (tf / h) * 460} fill="#38bdf8" stroke="#0284c7" strokeWidth="2" />
+                        </>
+                      )}
+                    </g>
+                  )}
+
+                  {/* Rebars */}
+                  {rebar2DPositions.map((pt, idx) => {
+                    const cx = 20 + (pt.x / b) * 460;
+                    const cy = 20 + (pt.y / (isCircular ? b : h)) * 460;
+                    return <circle key={idx} cx={cx} cy={cy} r="10" fill="#ef4444" stroke="#7f1d1d" strokeWidth="2" />;
+                  })}
+
+                  {/* Dimension Annotations */}
+                  <text x="250" y="10" fill="#94a3b8" fontSize="18" textAnchor="middle" fontWeight="bold">
+                    b = {b} mm
+                  </text>
+                  {!isCircular && (
+                    <text x="500" y="250" fill="#94a3b8" fontSize="18" textAnchor="middle" fontWeight="bold" transform="rotate(90 500 250)">
+                      h = {h} mm
+                    </text>
+                  )}
+                </svg>
+              </div>
+            )}
+
+            {/* 3D Model Viewport */}
+            {(viewMode === '3d' || viewMode === 'split') && (
+              <div
+                ref={mountRef}
+                className={`w-full h-full bg-slate-950 border border-slate-800 rounded-lg overflow-hidden relative ${viewMode === '3d' ? 'md:col-span-2 min-h-[260px]' : ''}`}
+              >
+                <div className="absolute bottom-2 left-2 bg-slate-950/80 px-2 py-1 rounded text-[10px] text-slate-400 pointer-events-none">
+                  Orbit: Drag | Zoom: Scroll
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
+        {/* Section Capacity Breakdown Card */}
+        {result && (
+          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+            <h4 className="text-xs font-bold text-slate-300 border-b border-slate-800 pb-2">SECTION CAPACITY BREAKDOWN (MATERIAL CONTRIBUTIONS)</h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Axial Breakdown */}
+              <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400 font-semibold">Nominal Axial Capacity (P0)</span>
+                  <span className="text-cyan-400 font-bold font-mono">
+                    {result.breakdown.axial.pc + result.breakdown.axial.ps + result.breakdown.axial.pa} kN
+                  </span>
+                </div>
+
+                <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden flex">
+                  <div style={{ width: `${result.breakdown.axial.pc_pct}%` }} className="bg-slate-500 h-full" title={`Concrete: ${result.breakdown.axial.pc_pct}%`} />
+                  <div style={{ width: `${result.breakdown.axial.ps_pct}%` }} className="bg-red-500 h-full" title={`Rebars: ${result.breakdown.axial.ps_pct}%`} />
+                  {isEncased && <div style={{ width: `${result.breakdown.axial.pa_pct}%` }} className="bg-cyan-400 h-full" title={`Steel Profile: ${result.breakdown.axial.pa_pct}%`} />}
+                </div>
+
+                <div className="space-y-1 text-[11px]">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-500 inline-block" /> Concrete Core (Pc):</span>
+                    <span className="font-mono text-slate-200">{result.breakdown.axial.pc} kN ({result.breakdown.axial.pc_pct}%)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Rebar Cage (Ps):</span>
+                    <span className="font-mono text-slate-200">{result.breakdown.axial.ps} kN ({result.breakdown.axial.ps_pct}%)</span>
+                  </div>
+                  {isEncased && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-cyan-400 inline-block" /> Encased Steel (Pa):</span>
+                      <span className="font-mono text-slate-200">{result.breakdown.axial.pa} kN ({result.breakdown.axial.pa_pct}%)</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Flexural Breakdown */}
+              <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400 font-semibold">Flexural Contribution (Mnx)</span>
+                  <span className="text-cyan-400 font-bold font-mono">
+                    {Number((result.breakdown.flexure.mc + result.breakdown.flexure.ms + result.breakdown.flexure.ma).toFixed(1))} kNm
+                  </span>
+                </div>
+
+                <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden flex">
+                  <div style={{ width: `${result.breakdown.flexure.mc_pct}%` }} className="bg-slate-500 h-full" title={`Concrete: ${result.breakdown.flexure.mc_pct}%`} />
+                  <div style={{ width: `${result.breakdown.flexure.ms_pct}%` }} className="bg-red-500 h-full" title={`Rebars: ${result.breakdown.flexure.ms_pct}%`} />
+                  {isEncased && <div style={{ width: `${result.breakdown.flexure.ma_pct}%` }} className="bg-cyan-400 h-full" title={`Steel Profile: ${result.breakdown.flexure.ma_pct}%`} />}
+                </div>
+
+                <div className="space-y-1 text-[11px]">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-500 inline-block" /> Concrete Core (Mc):</span>
+                    <span className="font-mono text-slate-200">{result.breakdown.flexure.mc} kNm ({result.breakdown.flexure.mc_pct}%)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Rebar Cage (Ms):</span>
+                    <span className="font-mono text-slate-200">{result.breakdown.flexure.ms} kNm ({result.breakdown.flexure.ms_pct}%)</span>
+                  </div>
+                  {isEncased && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-cyan-400 inline-block" /> Encased Steel (Ma):</span>
+                      <span className="font-mono text-slate-200">{result.breakdown.flexure.ma} kNm ({result.breakdown.flexure.ma_pct}%)</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* P-M Interaction Chart */}
         {result && (
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
             <h4 className="text-xs font-bold text-slate-300 border-b border-slate-800 pb-2">P-M INTERACTION DIAGRAM (CAPACITY ENVELOPE)</h4>
