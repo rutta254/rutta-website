@@ -37,9 +37,9 @@ interface NodeStruct {
   y: number;
   z: number;
   support: SupportType;
-  fx: number; // kN
-  fy: number; // kN
-  fz: number; // kN
+  fx: number;
+  fy: number;
+  fz: number;
   chordType?: 'TOP' | 'BOTTOM' | 'WEB' | 'APEX';
 }
 
@@ -56,7 +56,7 @@ interface SectionProps {
   t: number;
   tw: number;
   area: number; // mm²
-  ry: number; // mm
+  ry: number;   // mm
 }
 
 interface MemberResult {
@@ -70,15 +70,42 @@ interface MemberResult {
   status: 'PASS' | 'FAIL';
 }
 
+interface NodalDisplacement {
+  node: number;
+  ux: number;
+  uy: number;
+  uz: number;
+  uTotal: number;
+}
+
 interface AnalysisResult {
   dimMode: DimensionMode;
   code: DesignCode;
-  displacements: { node: number; ux: number; uy: number; uz: number }[];
+  displacements: NodalDisplacement[];
+  maxDisplacement: number;
+  maxDispNode: number;
   reactions: { node: number; rx: number; ry: number; rz: number }[];
   memberResults: MemberResult[];
   maxDcr: number;
   overallStatus: 'SAFE' | 'OVERSTRESSED';
   governingMember: number;
+  totalWeightKg: number;
+}
+
+interface BaySweepResult {
+  bays: number;
+  bayWidth: number;
+  maxDcr: number;
+  maxDeflectionMm: number;
+  totalWeightKg: number;
+  status: 'SAFE' | 'OVERSTRESSED';
+  isOptimal?: boolean;
+}
+
+interface CustomNodeLoad {
+  fx: number;
+  fy: number;
+  fz: number;
 }
 
 export default function UnifiedTrussTool() {
@@ -89,34 +116,50 @@ export default function UnifiedTrussTool() {
   const [topology2D, setTopology2D] = useState<Topology2D>('pratt');
   const [topology3D, setTopology3D] = useState<Topology3D>('flat_grid');
 
-  // Dimensions & Subdivisions
-  const [spanX, setSpanX] = useState<number>(12); // Span L (m)
-  const [spanY, setSpanY] = useState<number>(6);  // Width W (m)
-  const [trussHeight, setTrussHeight] = useState<number>(2.5); // Depth / Height H (m)
+  // Geometry Parameters
+  const [spanX, setSpanX] = useState<number>(18);
+  const [spanY, setSpanY] = useState<number>(6);
+  const [trussHeight, setTrussHeight] = useState<number>(2.5);
   const [baysX, setBaysX] = useState<number>(6);
   const [baysY, setBaysY] = useState<number>(3);
   const [domeRings, setDomeRings] = useState<number>(4);
 
-  // Loading Patterns (UDL & Point Loads)
-  const [udlTopChord, setUdlTopChord] = useState<number>(8.5); // kN/m
-  const [udlBottomChord, setUdlBottomChord] = useState<number>(2.0); // kN/m
-  const [windLoadX, setWindLoadX] = useState<number>(5.0); // kN horizontal
-  const [pointLoadZ, setPointLoadZ] = useState<number>(-15.0); // kN for 3D grids
+  // Bay Iteration Sweep Controls
+  const [sweepMinBays, setSweepMinBays] = useState<number>(2);
+  const [sweepMaxBays, setSweepMaxBays] = useState<number>(12);
+  const [sweepResults, setSweepResults] = useState<BaySweepResult[]>([]);
+  const [isSweeping, setIsSweeping] = useState<boolean>(false);
 
-  // Visualization Options
+  // UDL Loading Patterns
+  const [udlTopChord, setUdlTopChord] = useState<number>(8.5);
+  const [udlBottomChord, setUdlBottomChord] = useState<number>(2.0);
+
+  // Selective Node Loading
+  const [targetLoadNodeId, setTargetLoadNodeId] = useState<number>(1);
+  const [customFx, setCustomFx] = useState<number>(0);
+  const [customFy, setCustomFy] = useState<number>(-10);
+  const [customFz, setCustomFz] = useState<number>(0);
+  const [customNodeLoads, setCustomNodeLoads] = useState<Record<number, CustomNodeLoad>>({});
+
+  // Deflected Shape Visualization
+  const [showDeformation, setShowDeformation] = useState<boolean>(false);
+  const [defScale, setDefScale] = useState<number>(100);
+
+  // Visual Controls
   const [showNodeLabels, setShowNodeLabels] = useState<boolean>(true);
   const [showMemberLabels, setShowMemberLabels] = useState<boolean>(false);
   const [showGrid, setShowGrid] = useState<boolean>(true);
   const [autoRotate, setAutoRotate] = useState<boolean>(false);
+  const [activeResultTab, setActiveResultTab] = useState<'members' | 'displacements'>('members');
 
-  // Section Geometry Inputs
+  // Section Properties
   const [secType, setSecType] = useState<SectionType>('RHS');
   const [dimB, setDimB] = useState<number>(100);
   const [dimH, setDimH] = useState<number>(100);
   const [dimT, setDimT] = useState<number>(5);
   const [dimTw, setDimTw] = useState<number>(5);
-  const [fy, setFy] = useState<number>(355); // MPa
-  const [modulusE, setModulusE] = useState<number>(210000); // MPa
+  const [fy, setFy] = useState<number>(355);
+  const [modulusE, setModulusE] = useState<number>(210000);
 
   const [sectionProps, setSectionProps] = useState<SectionProps>({
     type: 'RHS', b: 100, h: 100, t: 5, tw: 5, area: 1800, ry: 38.7
@@ -131,8 +174,9 @@ export default function UnifiedTrussTool() {
   const mountRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
 
-  // --- AUTOMATIC SECTION PROPERTY CALCULATOR ---
+  // Section Calculator
   useEffect(() => {
     let area = 0;
     let ry = 1;
@@ -169,23 +213,29 @@ export default function UnifiedTrussTool() {
     });
   }, [secType, dimB, dimH, dimT, dimTw]);
 
-  // --- PARAMETRIC GEOMETRY GENERATOR & UDL CONVERTER ---
-  useEffect(() => {
+  // Parametric Geometry Generator (Corrected Y-UP Coordinate System)
+  const generateTrussGeometry = (
+    currentSpanX: number,
+    currentSpanY: number,
+    currentHeight: number,
+    currentBaysX: number,
+    currentBaysY: number,
+    currentRings: number
+  ) => {
     const newNodes: NodeStruct[] = [];
     const newMembers: MemberStruct[] = [];
 
-    const Lx = Math.max(spanX, 1);
-    const Ly = Math.max(spanY, 1);
-    const H = Math.max(trussHeight, 0.5);
-    const Nx = Math.max(baysX, 1);
-    const Ny = Math.max(baysY, 1);
-    const Rings = Math.max(domeRings, 2);
+    const Lx = Math.max(currentSpanX, 1);
+    const Ly = Math.max(currentSpanY, 1);
+    const H = Math.max(currentHeight, 0.2);
+    const Nx = Math.max(currentBaysX, 1);
+    const Ny = Math.max(currentBaysY, 1);
+    const Rings = Math.max(currentRings, 2);
 
     if (dimMode === '2D') {
-      // ---------------- 2D EXPANDED TOPOLOGIES & CHORD UDL ----------------
       const dx = Lx / Nx;
 
-      // Bottom Chord Nodes
+      // Bottom Chord Nodes (Y = 0)
       for (let i = 0; i <= Nx; i++) {
         let supp: SupportType = 'FREE';
         if (i === 0) supp = 'PINNED';
@@ -197,14 +247,14 @@ export default function UnifiedTrussTool() {
           y: 0,
           z: 0,
           support: supp,
-          fx: i === 0 ? windLoadX : 0,
+          fx: 0,
           fy: 0,
           fz: 0,
           chordType: 'BOTTOM',
         });
       }
 
-      // Top Chord Nodes
+      // Top Chord Nodes (Y = Height)
       for (let i = 0; i <= Nx; i++) {
         const ratio = i / Nx;
         let nodeY = H;
@@ -216,7 +266,7 @@ export default function UnifiedTrussTool() {
           const absX = Math.abs(ratio - 0.5);
           nodeY = absX > 0.25 ? H * (1 - (absX - 0.25) * 2.5) : H;
         } else if (topology2D === 'bowstring') {
-          nodeY = 4 * H * ratio * (1 - ratio); // Parabolic Arch
+          nodeY = 4 * H * ratio * (1 - ratio);
         }
 
         newNodes.push({
@@ -232,27 +282,22 @@ export default function UnifiedTrussTool() {
         });
       }
 
-      // Apply Statically Equivalent Nodal Loads from UDLs
+      // Apply UDL loads
       for (let i = 0; i <= Nx; i++) {
         let tribLen = dx;
         if (i === 0 || i === Nx) tribLen = dx / 2;
 
-        // Bottom Chord Node UDL load
         newNodes[i].fy -= udlBottomChord * tribLen;
-
-        // Top Chord Node UDL load
         newNodes[Nx + 1 + i].fy -= udlTopChord * tribLen;
       }
 
-      // Connect Members
+      // Member Connectivity
       let mId = 0;
-      // Chords
       for (let i = 0; i < Nx; i++) {
         newMembers.push({ id: ++mId, startNode: i + 1, endNode: i + 2 });
         newMembers.push({ id: ++mId, startNode: Nx + 2 + i, endNode: Nx + 3 + i });
       }
 
-      // Web Members
       for (let i = 0; i <= Nx; i++) {
         const bNode = i + 1;
         const tNode = Nx + 2 + i;
@@ -269,53 +314,46 @@ export default function UnifiedTrussTool() {
             newMembers.push({ id: ++mId, startNode: bNode, endNode: tNode + 1 });
             newMembers.push({ id: ++mId, startNode: bNode + 1, endNode: tNode });
           } else {
-            // Warren, Fink, Bowstring, Scissors
             newMembers.push({ id: ++mId, startNode: bNode, endNode: tNode + 1 });
           }
         }
       }
     } else {
-      // ---------------- 3D SPATIAL TOPOLOGIES ----------------
+      // 3D Spatial Topologies (Mapped with Y = Vertical Elevation, X/Z = Ground Plane)
       let nId = 0;
       let mId = 0;
 
       if (topology3D === 'flat_grid') {
-        // 1. FLAT SPACE GRID (Double-Layer)
         const stepX = Lx / Nx;
-        const stepY = Ly / Ny;
+        const stepZ = Ly / Ny;
 
-        // Bottom Grid (Z = 0)
         for (let i = 0; i <= Nx; i++) {
           for (let j = 0; j <= Ny; j++) {
             const isCorner = (i === 0 || i === Nx) && (j === 0 || j === Ny);
             newNodes.push({
               id: ++nId,
               x: Number((i * stepX).toFixed(2)),
-              y: Number((j * stepY).toFixed(2)),
-              z: 0,
-              support: isCorner ? 'PINNED' : 'FREE',
-              fx: 0, fy: 0, fz: 0, chordType: 'BOTTOM',
+              y: 0,
+              z: Number((j * stepZ - Ly / 2).toFixed(2)),
+              support: isCorner ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'BOTTOM'
             });
           }
         }
         const numBottom = newNodes.length;
 
-        // Top Grid (Z = H)
         for (let i = 0; i < Nx; i++) {
           for (let j = 0; j < Ny; j++) {
             newNodes.push({
               id: ++nId,
               x: Number(((i + 0.5) * stepX).toFixed(2)),
-              y: Number(((j + 0.5) * stepY).toFixed(2)),
-              z: H,
-              support: 'FREE',
-              fx: 0, fy: 0, fz: pointLoadZ, chordType: 'TOP',
+              y: H,
+              z: Number(((j + 0.5) * stepZ - Ly / 2).toFixed(2)),
+              support: 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'TOP'
             });
           }
         }
 
         const getNodeIdx = (i: number, j: number) => i * (Ny + 1) + j + 1;
-        // Bottom Chord Members
         for (let i = 0; i <= Nx; i++) {
           for (let j = 0; j <= Ny; j++) {
             if (i < Nx) newMembers.push({ id: ++mId, startNode: getNodeIdx(i, j), endNode: getNodeIdx(i + 1, j) });
@@ -323,16 +361,12 @@ export default function UnifiedTrussTool() {
           }
         }
 
-        // Web Diagonals to Top Grid
         let topIdCounter = numBottom + 1;
         for (let i = 0; i < Nx; i++) {
           for (let j = 0; j < Ny; j++) {
             const topId = topIdCounter++;
-            const b1 = getNodeIdx(i, j);
-            const b2 = getNodeIdx(i + 1, j);
-            const b3 = getNodeIdx(i + 1, j + 1);
-            const b4 = getNodeIdx(i, j + 1);
-
+            const b1 = getNodeIdx(i, j); const b2 = getNodeIdx(i + 1, j);
+            const b3 = getNodeIdx(i + 1, j + 1); const b4 = getNodeIdx(i, j + 1);
             newMembers.push({ id: ++mId, startNode: b1, endNode: topId });
             newMembers.push({ id: ++mId, startNode: b2, endNode: topId });
             newMembers.push({ id: ++mId, startNode: b3, endNode: topId });
@@ -340,9 +374,8 @@ export default function UnifiedTrussTool() {
           }
         }
       } else if (topology3D === 'pyramidal') {
-        // 2. PYRAMIDAL SPACE TRUSS
         const stepX = Lx / Nx;
-        const stepY = Ly / Ny;
+        const stepZ = Ly / Ny;
 
         for (let i = 0; i <= Nx; i++) {
           for (let j = 0; j <= Ny; j++) {
@@ -350,25 +383,22 @@ export default function UnifiedTrussTool() {
             newNodes.push({
               id: ++nId,
               x: Number((i * stepX).toFixed(2)),
-              y: Number((j * stepY).toFixed(2)),
-              z: 0,
-              support: isBound ? 'PINNED' : 'FREE',
-              fx: 0, fy: 0, fz: 0, chordType: 'BOTTOM',
+              y: 0,
+              z: Number((j * stepZ - Ly / 2).toFixed(2)),
+              support: isBound ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'BOTTOM'
             });
           }
         }
         const numBase = newNodes.length;
 
-        // Pyramid Apex Nodes
         for (let i = 0; i < Nx; i++) {
           for (let j = 0; j < Ny; j++) {
             newNodes.push({
               id: ++nId,
               x: Number(((i + 0.5) * stepX).toFixed(2)),
-              y: Number(((j + 0.5) * stepY).toFixed(2)),
-              z: H,
-              support: 'FREE',
-              fx: 0, fy: 0, fz: pointLoadZ, chordType: 'APEX',
+              y: H,
+              z: Number(((j + 0.5) * stepZ - Ly / 2).toFixed(2)),
+              support: 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'APEX'
             });
           }
         }
@@ -379,18 +409,14 @@ export default function UnifiedTrussTool() {
         for (let i = 0; i < Nx; i++) {
           for (let j = 0; j < Ny; j++) {
             const apexId = apexCounter++;
-            const b1 = getBaseIdx(i, j);
-            const b2 = getBaseIdx(i + 1, j);
-            const b3 = getBaseIdx(i + 1, j + 1);
-            const b4 = getBaseIdx(i, j + 1);
+            const b1 = getBaseIdx(i, j); const b2 = getBaseIdx(i + 1, j);
+            const b3 = getBaseIdx(i + 1, j + 1); const b4 = getBaseIdx(i, j + 1);
 
-            // Pyramid Base Edges
             newMembers.push({ id: ++mId, startNode: b1, endNode: b2 });
             newMembers.push({ id: ++mId, startNode: b2, endNode: b3 });
             newMembers.push({ id: ++mId, startNode: b3, endNode: b4 });
             newMembers.push({ id: ++mId, startNode: b4, endNode: b1 });
 
-            // Pyramid Diagonal Legs
             newMembers.push({ id: ++mId, startNode: b1, endNode: apexId });
             newMembers.push({ id: ++mId, startNode: b2, endNode: apexId });
             newMembers.push({ id: ++mId, startNode: b3, endNode: apexId });
@@ -398,68 +424,44 @@ export default function UnifiedTrussTool() {
           }
         }
       } else if (topology3D === 'prismatic') {
-        // 3. PRISMATIC SPACE TRUSS (Triangular Cross-Section Beam)
         const stepX = Lx / Nx;
 
         for (let i = 0; i <= Nx; i++) {
           const x = Number((i * stepX).toFixed(2));
           const isEnd = i === 0 || i === Nx;
-
-          // Bottom Left
-          newNodes.push({ id: ++nId, x, y: -Ly / 2, z: 0, support: isEnd ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'BOTTOM' });
-          // Bottom Right
-          newNodes.push({ id: ++nId, x, y: Ly / 2, z: 0, support: isEnd ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'BOTTOM' });
-          // Top Apex
-          newNodes.push({ id: ++nId, x, y: 0, z: H, support: 'FREE', fx: 0, fy: 0, fz: pointLoadZ, chordType: 'TOP' });
+          newNodes.push({ id: ++nId, x, y: 0, z: -Ly / 2, support: isEnd ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'BOTTOM' });
+          newNodes.push({ id: ++nId, x, y: 0, z: Ly / 2, support: isEnd ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'BOTTOM' });
+          newNodes.push({ id: ++nId, x, y: H, z: 0, support: 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'TOP' });
         }
 
         for (let i = 0; i < Nx; i++) {
-          const b1 = i * 3 + 1;
-          const b2 = i * 3 + 2;
-          const t1 = i * 3 + 3;
+          const b1 = i * 3 + 1; const b2 = i * 3 + 2; const t1 = i * 3 + 3;
+          const b1_next = (i + 1) * 3 + 1; const b2_next = (i + 1) * 3 + 2; const t1_next = (i + 1) * 3 + 3;
 
-          const b1_next = (i + 1) * 3 + 1;
-          const b2_next = (i + 1) * 3 + 2;
-          const t1_next = (i + 1) * 3 + 3;
-
-          // Longitudinal Chords
           newMembers.push({ id: ++mId, startNode: b1, endNode: b1_next });
           newMembers.push({ id: ++mId, startNode: b2, endNode: b2_next });
           newMembers.push({ id: ++mId, startNode: t1, endNode: t1_next });
 
-          // Cross Triangles
           newMembers.push({ id: ++mId, startNode: b1, endNode: b2 });
           newMembers.push({ id: ++mId, startNode: b1, endNode: t1 });
           newMembers.push({ id: ++mId, startNode: b2, endNode: t1 });
 
-          // Space Diagonals
           newMembers.push({ id: ++mId, startNode: b1, endNode: t1_next });
           newMembers.push({ id: ++mId, startNode: b2, endNode: t1_next });
         }
       } else if (topology3D === 'barrel_vault') {
-        // 4. BARREL VAULT SPACE TRUSS
-        const stepY = Ly / Ny;
+        const stepZ = Ly / Ny;
 
         for (let j = 0; j <= Ny; j++) {
-          const y = Number((j * stepY).toFixed(2));
-
+          const z = Number((j * stepZ - Ly / 2).toFixed(2));
           for (let i = 0; i <= Nx; i++) {
             const theta = (i / Nx) * Math.PI;
             const rx = (Lx / 2) * Math.cos(theta);
-            const rz = H * Math.sin(theta);
+            const ry = H * Math.sin(theta);
             const isBound = i === 0 || i === Nx;
 
-            // Inner Arch Shell
-            newNodes.push({
-              id: ++nId, x: Number(rx.toFixed(2)), y, z: Number(rz.toFixed(2)),
-              support: isBound ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'BOTTOM'
-            });
-
-            // Outer Arch Shell
-            newNodes.push({
-              id: ++nId, x: Number((rx * 1.15).toFixed(2)), y, z: Number((rz * 1.15).toFixed(2)),
-              support: 'FREE', fx: 0, fy: 0, fz: pointLoadZ / 2, chordType: 'TOP'
-            });
+            newNodes.push({ id: ++nId, x: Number(rx.toFixed(2)), y: Number(ry.toFixed(2)), z, support: isBound ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'BOTTOM' });
+            newNodes.push({ id: ++nId, x: Number((rx * 1.15).toFixed(2)), y: Number((ry * 1.15).toFixed(2)), z, support: 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'TOP' });
           }
         }
 
@@ -471,7 +473,6 @@ export default function UnifiedTrussTool() {
             const nNextInner = (j + 1) * nodesPerRing + i * 2 + 1;
             const nNextOuter = nNextInner + 1;
 
-            // Shell & Web Links
             newMembers.push({ id: ++mId, startNode: nCurrInner, endNode: nCurrOuter });
             newMembers.push({ id: ++mId, startNode: nCurrInner, endNode: nNextInner });
             newMembers.push({ id: ++mId, startNode: nCurrOuter, endNode: nNextOuter });
@@ -479,32 +480,31 @@ export default function UnifiedTrussTool() {
           }
         }
       } else {
-        // 5. SPHERICAL DOME TRUSS
+        // Spherical Dome
         const R = Lx / 2;
-
-        // Top Apex Joint
-        newNodes.push({ id: ++nId, x: 0, y: 0, z: H, support: 'FREE', fx: 0, fy: 0, fz: pointLoadZ, chordType: 'APEX' });
+        newNodes.push({ id: ++nId, x: 0, y: H, z: 0, support: 'FREE', fx: 0, fy: 0, fz: 0, chordType: 'APEX' });
 
         for (let r = 1; r <= Rings; r++) {
           const phi = (r / Rings) * (Math.PI / 2.2);
           const ringRadius = R * Math.sin(phi);
-          const ringZ = H * Math.cos(phi);
+          const ringY = H * Math.cos(phi);
           const isBaseRing = r === Rings;
 
           const ringNodesCount = 6 * r;
           for (let k = 0; k < ringNodesCount; k++) {
             const alpha = (k / ringNodesCount) * 2 * Math.PI;
-            const rx = ringRadius * Math.cos(alpha);
-            const ry = ringRadius * Math.sin(alpha);
-
             newNodes.push({
-              id: ++nId, x: Number(rx.toFixed(2)), y: Number(ry.toFixed(2)), z: Number(ringZ.toFixed(2)),
-              support: isBaseRing ? 'PINNED' : 'FREE', fx: 0, fy: 0, fz: isBaseRing ? 0 : pointLoadZ / 2, chordType: 'TOP'
+              id: ++nId,
+              x: Number((ringRadius * Math.cos(alpha)).toFixed(2)),
+              y: Number(ringY.toFixed(2)),
+              z: Number((ringRadius * Math.sin(alpha)).toFixed(2)),
+              support: isBaseRing ? 'PINNED' : 'FREE',
+              fx: 0, fy: 0, fz: 0,
+              chordType: 'TOP'
             });
           }
         }
 
-        // Connect Apex to First Ring
         for (let i = 2; i <= 7; i++) {
           newMembers.push({ id: ++mId, startNode: 1, endNode: i });
           newMembers.push({ id: ++mId, startNode: i, endNode: i === 7 ? 2 : i + 1 });
@@ -512,311 +512,235 @@ export default function UnifiedTrussTool() {
       }
     }
 
+    // Apply Custom Selective Loads
+    newNodes.forEach((node) => {
+      const custom = customNodeLoads[node.id];
+      if (custom) {
+        node.fx += custom.fx;
+        node.fy += custom.fy;
+        node.fz += custom.fz;
+      }
+    });
+
+    return { newNodes, newMembers };
+  };
+
+  useEffect(() => {
+    const { newNodes, newMembers } = generateTrussGeometry(spanX, spanY, trussHeight, baysX, baysY, domeRings);
     setNodes(newNodes);
     setMembers(newMembers);
-    if (newNodes.length > 0) setSelectedNodeId(newNodes[0].id);
-  }, [dimMode, topology2D, topology3D, spanX, spanY, trussHeight, baysX, baysY, domeRings, udlTopChord, udlBottomChord, windLoadX, pointLoadZ]);
+    if (newNodes.length > 0 && !targetLoadNodeId) setTargetLoadNodeId(newNodes[0].id);
+  }, [dimMode, topology2D, topology3D, spanX, spanY, trussHeight, baysX, baysY, domeRings, udlTopChord, udlBottomChord, customNodeLoads]);
 
-  const createTextSprite = (text: string, color = '#38bdf8') => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = color;
-      ctx.font = 'Bold 28px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text, 64, 32);
-    }
-    const texture = new THREE.CanvasTexture(canvas);
-    const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-    const sprite = new THREE.Sprite(spriteMat);
-    sprite.scale.set(0.7, 0.35, 1);
-    return sprite;
+  const handleApplyCustomNodeLoad = () => {
+    setCustomNodeLoads((prev) => ({
+      ...prev,
+      [targetLoadNodeId]: { fx: customFx, fy: customFy, fz: customFz },
+    }));
   };
 
-  // --- THREE.JS ENGINE WITH ORBIT CONTROLS ---
-  useEffect(() => {
-    if (!mountRef.current || nodes.length === 0) return;
+  const handleClearNodeLoad = (nodeId: number) => {
+    setCustomNodeLoads((prev) => {
+      const next = { ...prev };
+      delete next[nodeId];
+      return next;
+    });
+  };
 
-    const width = mountRef.current.clientWidth || 500;
-    const height = 340;
+  const handleResetAllNodeLoads = () => {
+    setCustomNodeLoads({});
+  };
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#0f172a');
+  // Solver Engine
+  const solveTrussSystem = (targetNodes: NodeStruct[], targetMembers: MemberStruct[]): AnalysisResult => {
+    const totalDof = targetNodes.length * 3;
+    const K_global = Array.from({ length: totalDof }, () => new Array(totalDof).fill(0));
+    const F_global = new Array(totalDof).fill(0);
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    cameraRef.current = camera;
+    targetNodes.forEach((node, idx) => {
+      F_global[3 * idx] = node.fx;
+      F_global[3 * idx + 1] = node.fy;
+      F_global[3 * idx + 2] = node.fz;
+    });
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(width, height);
+    let totalLengthM = 0;
 
-    mountRef.current.innerHTML = '';
-    mountRef.current.appendChild(renderer.domElement);
+    targetMembers.forEach((mem) => {
+      const n1 = targetNodes.find((n) => n.id === mem.startNode)!;
+      const n2 = targetNodes.find((n) => n.id === mem.endNode)!;
+      const idx1 = targetNodes.findIndex((n) => n.id === mem.startNode);
+      const idx2 = targetNodes.findIndex((n) => n.id === mem.endNode);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controlsRef.current = controls;
+      const dx = n2.x - n1.x; const dy = n2.y - n1.y; const dz = n2.z - n1.z;
+      const L = Math.max(Math.sqrt(dx * dx + dy * dy + dz * dz), 0.001);
+      totalLengthM += L;
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(20, 40, 30);
-    scene.add(dirLight);
+      const Cx = dx / L; const Cy = dy / L; const Cz = dz / L;
+      const k_axial = (modulusE * sectionProps.area) / (L * 1000);
 
-    const cx = nodes.reduce((s, n) => s + n.x, 0) / nodes.length;
-    const cy = nodes.reduce((s, n) => s + n.y, 0) / nodes.length;
-    const cz = nodes.reduce((s, n) => s + n.z, 0) / nodes.length;
+      const C = [Cx, Cy, Cz, -Cx, -Cy, -Cz];
+      const dofs = [3 * idx1, 3 * idx1 + 1, 3 * idx1 + 2, 3 * idx2, 3 * idx2 + 1, 3 * idx2 + 2];
 
-    if (dimMode === '2D') {
-      camera.position.set(cx, cy + 0.2, spanX * 1.5);
-      controls.target.set(cx, cy, 0);
-    } else {
-      camera.position.set(cx + spanX * 1.4, cy + spanY * 1.4, cz + trussHeight * 2);
-      controls.target.set(cx, cy, cz);
-    }
-    controls.update();
-
-    if (showGrid) {
-      const grid = new THREE.GridHelper(Math.max(spanX, spanY) * 2.5, 20, 0x38bdf8, 0x334155);
-      grid.position.set(cx, 0, cz);
-      if (dimMode === '2D') grid.rotation.x = Math.PI / 2;
-      scene.add(grid);
-
-      const axes = new THREE.AxesHelper(2);
-      scene.add(axes);
-    }
-
-    // Render Nodes & Support Indicators
-    nodes.forEach((n) => {
-      const isSelected = n.id === selectedNodeId;
-      const nodeGeo = new THREE.SphereGeometry(isSelected ? 0.22 : 0.15, 16, 16);
-      const nodeMat = new THREE.MeshStandardMaterial({ color: isSelected ? 0x38bdf8 : 0xf59e0b });
-      const sphere = new THREE.Mesh(nodeGeo, nodeMat);
-      sphere.position.set(n.x, n.y, n.z);
-      scene.add(sphere);
-
-      if (showNodeLabels) {
-        const label = createTextSprite(`N${n.id}`, isSelected ? '#38bdf8' : '#f8fafc');
-        label.position.set(n.x, n.y + 0.35, n.z);
-        scene.add(label);
-      }
-
-      if (n.support === 'PINNED') {
-        const coneGeo = new THREE.ConeGeometry(0.22, 0.45, 8);
-        const coneMat = new THREE.MeshStandardMaterial({ color: 0x10b981 });
-        const cone = new THREE.Mesh(coneGeo, coneMat);
-        cone.position.set(n.x, n.y - 0.22, n.z);
-        scene.add(cone);
-      } else if (n.support === 'ROLLER_X' || n.support === 'ROLLER_Y') {
-        const rollerGroup = new THREE.Group();
-        const pyramid = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.35, 4), new THREE.MeshStandardMaterial({ color: 0xfacc15 }));
-        pyramid.position.set(n.x, n.y - 0.17, n.z);
-        rollerGroup.add(pyramid);
-
-        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.3, 8), new THREE.MeshStandardMaterial({ color: 0x94a3b8 }));
-        wheel.rotation.z = Math.PI / 2;
-        wheel.position.set(n.x, n.y - 0.38, n.z);
-        rollerGroup.add(wheel);
-
-        scene.add(rollerGroup);
-      }
-
-      const loadVec = new THREE.Vector3(n.fx, n.fy, n.fz);
-      const loadMag = loadVec.length();
-      if (loadMag > 0) {
-        const dir = loadVec.clone().normalize();
-        const arrow = new THREE.ArrowHelper(dir, new THREE.Vector3(n.x, n.y, n.z), Math.min(loadMag * 0.04, 1.8), 0xef4444, 0.35, 0.25);
-        scene.add(arrow);
+      for (let r = 0; r < 6; r++) {
+        for (let c = 0; c < 6; c++) K_global[dofs[r]][dofs[c]] += k_axial * C[r] * C[c];
       }
     });
 
-    // Render Members & Member Stress Coloring
-    members.forEach((mem) => {
-      const n1 = nodes.find((n) => n.id === mem.startNode);
-      const n2 = nodes.find((n) => n.id === mem.endNode);
-      if (!n1 || !n2) return;
+    const K_bounded = K_global.map((row) => [...row]);
+    const F_bounded = [...F_global];
 
-      const p1 = new THREE.Vector3(n1.x, n1.y, n1.z);
-      const p2 = new THREE.Vector3(n2.x, n2.y, n2.z);
-      const dist = p1.distanceTo(p2);
+    targetNodes.forEach((node, idx) => {
+      const fixX = node.support === 'PINNED' || node.support === 'ROLLER_Y';
+      const fixY = node.support === 'PINNED' || node.support === 'ROLLER_X';
+      const fixZ = node.support === 'PINNED' || dimMode === '2D';
 
-      const res = result?.memberResults.find((m) => m.id === mem.id);
-      let color = 0x64748b;
-      if (res) {
-        if (res.dcr > 1.0) color = 0xef4444;
-        else if (res.dcr > 0.7) color = 0xfacc15;
-        else color = res.state === 'TENSION' ? 0x38bdf8 : 0x10b981;
-      }
-
-      const cylinderGeo = new THREE.CylinderGeometry(0.045, 0.045, dist, 8);
-      const cylinderMat = new THREE.MeshStandardMaterial({ color });
-      const cylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
-
-      const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
-      cylinder.position.copy(mid);
-      cylinder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p2.clone().sub(p1).normalize());
-      scene.add(cylinder);
-
-      if (showMemberLabels) {
-        const memLabel = createTextSprite(`M${mem.id}`, '#cbd5e1');
-        memLabel.position.copy(mid).add(new THREE.Vector3(0, 0.2, 0));
-        scene.add(memLabel);
-      }
+      if (fixX) { K_bounded[3 * idx][3 * idx] += 1e12; F_bounded[3 * idx] = 0; }
+      if (fixY) { K_bounded[3 * idx + 1][3 * idx + 1] += 1e12; F_bounded[3 * idx + 1] = 0; }
+      if (fixZ) { K_bounded[3 * idx + 2][3 * idx + 2] += 1e12; F_bounded[3 * idx + 2] = 0; }
     });
 
-    let animId: number;
-    const animate = () => {
-      animId = requestAnimationFrame(animate);
-      if (autoRotate && dimMode === '3D') scene.rotation.z += 0.003;
-      controls.update();
-      renderer.render(scene, camera);
+    const U = solveMatrix(K_bounded, F_bounded);
+
+    const memberResults: MemberResult[] = targetMembers.map((mem) => {
+      const n1 = targetNodes.find((n) => n.id === mem.startNode)!;
+      const n2 = targetNodes.find((n) => n.id === mem.endNode)!;
+      const idx1 = targetNodes.findIndex((n) => n.id === mem.startNode);
+      const idx2 = targetNodes.findIndex((n) => n.id === mem.endNode);
+
+      const dx = n2.x - n1.x; const dy = n2.y - n1.y; const dz = n2.z - n1.z;
+      const L = Math.max(Math.sqrt(dx * dx + dy * dy + dz * dz), 0.001);
+
+      const Cx = dx / L; const Cy = dy / L; const Cz = dz / L;
+
+      const u1 = U[3 * idx1]; const v1 = U[3 * idx1 + 1]; const w1 = U[3 * idx1 + 2];
+      const u2 = U[3 * idx2]; const v2 = U[3 * idx2 + 1]; const w2 = U[3 * idx2 + 2];
+
+      const axial = ((modulusE * sectionProps.area) / (L * 1000)) * ((u2 - u1) * Cx + (v2 - v1) * Cy + (w2 - w1) * Cz);
+      const state = Math.abs(axial) < 0.01 ? 'ZERO' : axial > 0 ? 'TENSION' : 'COMPRESSION';
+      const slenderness = (1.0 * L * 1000) / sectionProps.ry;
+
+      const f_y_kN = fy / 1000;
+      let capacity = 0;
+
+      if (state === 'TENSION') {
+        capacity = designCode === 'AISC360' ? 0.9 * sectionProps.area * f_y_kN : sectionProps.area * f_y_kN;
+      } else {
+        const P_euler = (Math.PI * Math.PI * modulusE * (sectionProps.area * sectionProps.ry * sectionProps.ry)) / Math.pow(L * 1000, 2) / 1000;
+        capacity = Math.min(P_euler, sectionProps.area * f_y_kN) * 0.85;
+      }
+
+      const demand = Math.abs(axial);
+      const dcr = Number((demand / Math.max(capacity, 0.1)).toFixed(3));
+
+      return {
+        id: mem.id,
+        length: Number(L.toFixed(2)),
+        axialForce: Number(axial.toFixed(2)),
+        state,
+        slenderness: Number(slenderness.toFixed(1)),
+        capacity: Number(capacity.toFixed(1)),
+        dcr,
+        status: dcr <= 1.0 ? 'PASS' : 'FAIL',
+      };
+    });
+
+    const maxDcr = Math.max(...memberResults.map((m) => m.dcr));
+    const govMem = memberResults.find((m) => m.dcr === maxDcr)?.id || 1;
+
+    const totalVolumeM3 = (sectionProps.area / 1e6) * totalLengthM;
+    const totalWeightKg = Number((totalVolumeM3 * 7850).toFixed(1));
+
+    let maxDispVal = 0;
+    let maxDispNodeId = 1;
+
+    const displArray: NodalDisplacement[] = targetNodes.map((n, idx) => {
+      const ux = U[3 * idx] * 1000;
+      const uy = U[3 * idx + 1] * 1000;
+      const uz = U[3 * idx + 2] * 1000;
+      const uTotal = Math.sqrt(ux * ux + uy * uy + uz * uz);
+
+      if (uTotal > maxDispVal) {
+        maxDispVal = uTotal;
+        maxDispNodeId = n.id;
+      }
+
+      return {
+        node: n.id,
+        ux: Number(ux.toFixed(2)),
+        uy: Number(uy.toFixed(2)),
+        uz: Number(uz.toFixed(2)),
+        uTotal: Number(uTotal.toFixed(2)),
+      };
+    });
+
+    const reactArray = targetNodes.map((n, idx) => ({
+      node: n.id,
+      rx: Number((-1 * F_bounded[3 * idx]).toFixed(1)),
+      ry: Number((-1 * F_bounded[3 * idx + 1]).toFixed(1)),
+      rz: Number((-1 * F_bounded[3 * idx + 2]).toFixed(1)),
+    }));
+
+    return {
+      dimMode,
+      code: designCode,
+      displacements: displArray,
+      maxDisplacement: Number(maxDispVal.toFixed(2)),
+      maxDispNode: maxDispNodeId,
+      reactions: reactArray,
+      memberResults,
+      maxDcr,
+      overallStatus: maxDcr <= 1.0 ? 'SAFE' : 'OVERSTRESSED',
+      governingMember: govMem,
+      totalWeightKg,
     };
-    animate();
-
-    return () => {
-      cancelAnimationFrame(animId);
-      renderer.dispose();
-    };
-  }, [nodes, members, result, dimMode, spanX, spanY, trussHeight, selectedNodeId, showNodeLabels, showMemberLabels, showGrid, autoRotate]);
-
-  const setCameraView = (view: 'FRONT' | 'TOP' | 'ISO') => {
-    if (!cameraRef.current || !controlsRef.current || nodes.length === 0) return;
-    const cx = nodes.reduce((s, n) => s + n.x, 0) / nodes.length;
-    const cy = nodes.reduce((s, n) => s + n.y, 0) / nodes.length;
-    const cz = nodes.reduce((s, n) => s + n.z, 0) / nodes.length;
-
-    if (view === 'FRONT') {
-      cameraRef.current.position.set(cx, cy, spanX * 1.6);
-    } else if (view === 'TOP') {
-      cameraRef.current.position.set(cx, cy + spanX * 1.5, 0.1);
-    } else {
-      cameraRef.current.position.set(cx + spanX * 1.2, cy + spanY * 1.2, cz + trussHeight * 1.8);
-    }
-    controlsRef.current.target.set(cx, cy, cz);
-    controlsRef.current.update();
   };
 
-  // --- SOLVER ENGINE ---
-  const handleRunAnalysis = () => {
+  const handleRunSingleAnalysis = () => {
     setAnalyzing(true);
     try {
-      const totalDof = nodes.length * 3;
-      const K_global = Array.from({ length: totalDof }, () => new Array(totalDof).fill(0));
-      const F_global = new Array(totalDof).fill(0);
-
-      nodes.forEach((node, idx) => {
-        F_global[3 * idx] = node.fx;
-        F_global[3 * idx + 1] = node.fy;
-        F_global[3 * idx + 2] = node.fz;
-      });
-
-      members.forEach((mem) => {
-        const n1 = nodes.find((n) => n.id === mem.startNode)!;
-        const n2 = nodes.find((n) => n.id === mem.endNode)!;
-        const idx1 = nodes.findIndex((n) => n.id === mem.startNode);
-        const idx2 = nodes.findIndex((n) => n.id === mem.endNode);
-
-        const dx = n2.x - n1.x; const dy = n2.y - n1.y; const dz = n2.z - n1.z;
-        const L = Math.max(Math.sqrt(dx * dx + dy * dy + dz * dz), 0.001);
-
-        const Cx = dx / L; const Cy = dy / L; const Cz = dz / L;
-        const k_axial = (modulusE * sectionProps.area) / (L * 1000);
-
-        const C = [Cx, Cy, Cz, -Cx, -Cy, -Cz];
-        const dofs = [3 * idx1, 3 * idx1 + 1, 3 * idx1 + 2, 3 * idx2, 3 * idx2 + 1, 3 * idx2 + 2];
-
-        for (let r = 0; r < 6; r++) {
-          for (let c = 0; c < 6; c++) K_global[dofs[r]][dofs[c]] += k_axial * C[r] * C[c];
-        }
-      });
-
-      const K_bounded = K_global.map((row) => [...row]);
-      const F_bounded = [...F_global];
-
-      nodes.forEach((node, idx) => {
-        const fixX = node.support === 'PINNED' || node.support === 'ROLLER_Y';
-        const fixY = node.support === 'PINNED' || node.support === 'ROLLER_X';
-        const fixZ = node.support === 'PINNED' || dimMode === '2D';
-
-        if (fixX) { K_bounded[3 * idx][3 * idx] += 1e12; F_bounded[3 * idx] = 0; }
-        if (fixY) { K_bounded[3 * idx + 1][3 * idx + 1] += 1e12; F_bounded[3 * idx + 1] = 0; }
-        if (fixZ) { K_bounded[3 * idx + 2][3 * idx + 2] += 1e12; F_bounded[3 * idx + 2] = 0; }
-      });
-
-      const U = solveMatrix(K_bounded, F_bounded);
-
-      const memberResults: MemberResult[] = members.map((mem) => {
-        const n1 = nodes.find((n) => n.id === mem.startNode)!;
-        const n2 = nodes.find((n) => n.id === mem.endNode)!;
-        const idx1 = nodes.findIndex((n) => n.id === mem.startNode);
-        const idx2 = nodes.findIndex((n) => n.id === mem.endNode);
-
-        const dx = n2.x - n1.x; const dy = n2.y - n1.y; const dz = n2.z - n1.z;
-        const L = Math.max(Math.sqrt(dx * dx + dy * dy + dz * dz), 0.001);
-
-        const Cx = dx / L; const Cy = dy / L; const Cz = dz / L;
-
-        const u1 = U[3 * idx1]; const v1 = U[3 * idx1 + 1]; const w1 = U[3 * idx1 + 2];
-        const u2 = U[3 * idx2]; const v2 = U[3 * idx2 + 1]; const w2 = U[3 * idx2 + 2];
-
-        const axial = ((modulusE * sectionProps.area) / (L * 1000)) * ((u2 - u1) * Cx + (v2 - v1) * Cy + (w2 - w1) * Cz);
-        const state = Math.abs(axial) < 0.01 ? 'ZERO' : axial > 0 ? 'TENSION' : 'COMPRESSION';
-        const slenderness = (1.0 * L * 1000) / sectionProps.ry;
-
-        const f_y_kN = fy / 1000;
-        let capacity = 0;
-
-        if (state === 'TENSION') {
-          capacity = designCode === 'AISC360' ? 0.9 * sectionProps.area * f_y_kN : sectionProps.area * f_y_kN;
-        } else {
-          const P_euler = (Math.PI * Math.PI * modulusE * (sectionProps.area * sectionProps.ry * sectionProps.ry)) / Math.pow(L * 1000, 2) / 1000;
-          capacity = Math.min(P_euler, sectionProps.area * f_y_kN) * 0.85;
-        }
-
-        const demand = Math.abs(axial);
-        const dcr = Number((demand / Math.max(capacity, 0.1)).toFixed(3));
-
-        return {
-          id: mem.id,
-          length: Number(L.toFixed(2)),
-          axialForce: Number(axial.toFixed(2)),
-          state,
-          slenderness: Number(slenderness.toFixed(1)),
-          capacity: Number(capacity.toFixed(1)),
-          dcr,
-          status: dcr <= 1.0 ? 'PASS' : 'FAIL',
-        };
-      });
-
-      const maxDcr = Math.max(...memberResults.map((m) => m.dcr));
-      const govMem = memberResults.find((m) => m.dcr === maxDcr)?.id || 1;
-
-      const displArray = nodes.map((n, idx) => ({
-        node: n.id,
-        ux: Number((U[3 * idx] * 1000).toFixed(2)),
-        uy: Number((U[3 * idx + 1] * 1000).toFixed(2)),
-        uz: Number((U[3 * idx + 2] * 1000).toFixed(2)),
-      }));
-
-      const reactArray = nodes.map((n, idx) => ({
-        node: n.id,
-        rx: Number((-1 * F_bounded[3 * idx]).toFixed(1)),
-        ry: Number((-1 * F_bounded[3 * idx + 1]).toFixed(1)),
-        rz: Number((-1 * F_bounded[3 * idx + 2]).toFixed(1)),
-      }));
-
-      setResult({
-        dimMode, code: designCode, displacements: displArray, reactions: reactArray,
-        memberResults, maxDcr, overallStatus: maxDcr <= 1.0 ? 'SAFE' : 'OVERSTRESSED', governingMember: govMem,
-      });
+      const res = solveTrussSystem(nodes, members);
+      setResult(res);
     } catch (e) {
       console.error(e);
-      alert('Error calculating matrix system.');
+      alert('Error calculating structural matrix.');
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  const handleRunBayOptimizationSweep = () => {
+    setIsSweeping(true);
+    const results: BaySweepResult[] = [];
+
+    const minB = Math.max(2, sweepMinBays);
+    const maxB = Math.max(minB + 1, sweepMaxBays);
+
+    for (let b = minB; b <= maxB; b++) {
+      const { newNodes, newMembers } = generateTrussGeometry(spanX, spanY, trussHeight, b, baysY, domeRings);
+      try {
+        const res = solveTrussSystem(newNodes, newMembers);
+        results.push({
+          bays: b,
+          bayWidth: Number((spanX / b).toFixed(2)),
+          maxDcr: res.maxDcr,
+          maxDeflectionMm: res.maxDisplacement,
+          totalWeightKg: res.totalWeightKg,
+          status: res.overallStatus,
+        });
+      } catch (e) {
+        console.error(`Error solving for ${b} bays:`, e);
+      }
+    }
+
+    const safeResults = results.filter((r) => r.status === 'SAFE');
+    if (safeResults.length > 0) {
+      const minWeight = Math.min(...safeResults.map((r) => r.totalWeightKg));
+      const opt = safeResults.find((r) => r.totalWeightKg === minWeight);
+      if (opt) opt.isOptimal = true;
+    }
+
+    setSweepResults(results);
+    setIsSweeping(false);
   };
 
   const solveMatrix = (A: number[][], b: number[]): number[] => {
@@ -847,6 +771,7 @@ export default function UnifiedTrussTool() {
     return x;
   };
 
+  // PDF Export
   const handleExportPDF = () => {
     if (!result) return;
     const doc = new jsPDF('portrait', 'mm', 'a4');
@@ -859,30 +784,263 @@ export default function UnifiedTrussTool() {
 
     doc.setTextColor(30, 41, 59);
     doc.setFontSize(9);
-    doc.text(`Dimension Mode: ${result.dimMode}`, 14, 32);
-    doc.text(`Topology: ${dimMode === '2D' ? topology2D : topology3D}`, 14, 37);
-    doc.text(`Design Standard: ${result.code}`, 14, 42);
-    doc.text(`Section Profile: ${sectionProps.type} (${sectionProps.b}x${sectionProps.h}x${sectionProps.t} mm)`, 14, 47);
+    doc.text(`Dimension Mode: ${result.dimMode}`, 14, 31);
+    doc.text(`Topology: ${dimMode === '2D' ? topology2D : topology3D}`, 14, 36);
+    doc.text(`Design Standard: ${result.code}`, 14, 41);
+    doc.text(`Section Profile: ${sectionProps.type} (${sectionProps.b}x${sectionProps.h}x${sectionProps.t} mm)`, 14, 46);
 
     doc.setFontSize(10);
-    doc.text(`Overall Status: ${result.overallStatus}`, 130, 32);
-    doc.text(`Max DCR: ${result.maxDcr}`, 130, 37);
+    doc.text(`Overall Status: ${result.overallStatus}`, 130, 31);
+    doc.text(`Max DCR: ${result.maxDcr}`, 130, 36);
+    doc.text(`Max Deflection: ${result.maxDisplacement} mm (N${result.maxDispNode})`, 130, 41);
+    doc.text(`Total Mass: ${result.totalWeightKg} kg`, 130, 46);
+
+    let startTableY = 52;
+
+    if (rendererRef.current) {
+      try {
+        const canvasImgData = rendererRef.current.domElement.toDataURL('image/png');
+        doc.setFontSize(10);
+        doc.text('Structural Geometry & Heatmap Visualization:', 14, 53);
+        doc.addImage(canvasImgData, 'PNG', 14, 56, 182, 80);
+        startTableY = 142;
+      } catch (err) {
+        console.error('Error rendering viewport canvas snapshot to PDF:', err);
+      }
+    }
 
     const memberRows = result.memberResults.map((m) => [
       `M${m.id}`, `${m.length} m`, `${m.axialForce} kN`, m.state, `${m.capacity} kN`, `${m.slenderness}`, `${m.dcr}`, m.status,
     ]);
 
     autoTable(doc, {
-      startY: 52,
+      startY: startTableY,
       margin: { left: 14, right: 14 },
       head: [['Member', 'Length', 'Axial Force', 'State', 'Capacity', 'KL/r', 'DCR', 'Status']],
       body: memberRows,
-      styles: { fontSize: 8, cellPadding: 2.5 },
+      styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [15, 23, 42] },
     });
 
-    doc.save(`Truss_Report_${result.dimMode}.pdf`);
+    const dispRows = result.displacements.map((d) => [
+      `N${d.node}`, `${d.ux} mm`, `${d.uy} mm`, `${d.uz} mm`, `${d.uTotal} mm`,
+    ]);
+
+    doc.addPage();
+    doc.setFontSize(12);
+    doc.text('Nodal Displacements & Resultant Deflections', 14, 15);
+
+    autoTable(doc, {
+      startY: 20,
+      margin: { left: 14, right: 14 },
+      head: [['Node', 'ux (mm)', 'uy (mm)', 'uz (mm)', 'Resultant Total δ (mm)']],
+      body: dispRows,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [15, 23, 42] },
+    });
+
+    doc.save(`Truss_Report_${result.dimMode}_${topology2D || topology3D}.pdf`);
   };
+
+  const createTextSprite = (text: string, color = '#38bdf8') => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = color;
+      ctx.font = 'Bold 28px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 64, 32);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(0.7, 0.35, 1);
+    return sprite;
+  };
+
+  const getNodePos = (node: NodeStruct): THREE.Vector3 => {
+    if (!showDeformation || !result) {
+      return new THREE.Vector3(node.x, node.y, node.z);
+    }
+
+    const disp = result.displacements.find((d) => d.node === node.id);
+    if (!disp) return new THREE.Vector3(node.x, node.y, node.z);
+
+    const dx = (disp.ux / 1000) * defScale;
+    const dy = (disp.uy / 1000) * defScale;
+    const dz = (disp.uz / 1000) * defScale;
+
+    return new THREE.Vector3(node.x + dx, node.y + dy, node.z + dz);
+  };
+
+  // Three.js Scene Setup (Upright Viewport Orientation)
+  useEffect(() => {
+    if (!mountRef.current || nodes.length === 0) return;
+
+    const width = mountRef.current.clientWidth || 500;
+    const height = 340;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#0f172a');
+
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    cameraRef.current = camera;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setSize(width, height);
+    rendererRef.current = renderer;
+
+    mountRef.current.innerHTML = '';
+    mountRef.current.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controlsRef.current = controls;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(20, 40, 30);
+    scene.add(dirLight);
+
+    const cx = nodes.reduce((s, n) => s + n.x, 0) / nodes.length;
+    const cy = nodes.reduce((s, n) => s + n.y, 0) / nodes.length;
+    const cz = nodes.reduce((s, n) => s + n.z, 0) / nodes.length;
+
+    if (dimMode === '2D') {
+      camera.position.set(cx, cy + trussHeight / 2, Math.max(spanX, trussHeight) * 1.5);
+      controls.target.set(cx, cy + trussHeight / 2, 0);
+    } else {
+      camera.position.set(cx + spanX * 1.2, cy + trussHeight * 1.5, cz + spanY * 1.5);
+      controls.target.set(cx, cy, cz);
+    }
+    controls.update();
+
+    if (showGrid) {
+      const grid = new THREE.GridHelper(Math.max(spanX, spanY) * 2.5, 20, 0x38bdf8, 0x334155);
+      grid.position.set(cx, 0, cz); // Horizontal ground plane at Y = 0
+      scene.add(grid);
+    }
+
+    if (showDeformation && result) {
+      members.forEach((mem) => {
+        const n1 = nodes.find((n) => n.id === mem.startNode);
+        const n2 = nodes.find((n) => n.id === mem.endNode);
+        if (!n1 || !n2) return;
+
+        const points = [new THREE.Vector3(n1.x, n1.y, n1.z), new THREE.Vector3(n2.x, n2.y, n2.z)];
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+        const lineMat = new THREE.LineDashedMaterial({
+          color: 0x475569,
+          dashSize: 0.2,
+          gapSize: 0.1,
+          transparent: true,
+          opacity: 0.5,
+        });
+        const line = new THREE.Line(lineGeo, lineMat);
+        line.computeLineDistances();
+        scene.add(line);
+      });
+    }
+
+    nodes.forEach((n) => {
+      const pos = getNodePos(n);
+      const isSelected = n.id === selectedNodeId;
+      const hasCustomLoad = !!customNodeLoads[n.id];
+      const isMaxDisp = result && result.maxDispNode === n.id;
+
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(isSelected ? 0.22 : 0.15, 16, 16),
+        new THREE.MeshStandardMaterial({
+          color: isMaxDisp ? 0xf43f5e : isSelected ? 0x38bdf8 : hasCustomLoad ? 0xef4444 : 0xf59e0b
+        })
+      );
+      sphere.position.copy(pos);
+      scene.add(sphere);
+
+      if (showNodeLabels) {
+        const label = createTextSprite(`N${n.id}`, isMaxDisp ? '#f43f5e' : hasCustomLoad ? '#f87171' : isSelected ? '#38bdf8' : '#f8fafc');
+        label.position.set(pos.x, pos.y + 0.35, pos.z);
+        scene.add(label);
+      }
+
+      // Supports correctly positioned vertically beneath nodes (Y = 0)
+      if (n.support === 'PINNED') {
+        const cone = new THREE.Mesh(
+          new THREE.ConeGeometry(0.22, 0.45, 8),
+          new THREE.MeshStandardMaterial({ color: 0x10b981 })
+        );
+        cone.position.set(n.x, n.y - 0.22, n.z);
+        scene.add(cone);
+      } else if (n.support === 'ROLLER_X' || n.support === 'ROLLER_Y') {
+        const rollerGroup = new THREE.Group();
+        const pyramid = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.35, 4), new THREE.MeshStandardMaterial({ color: 0xfacc15 }));
+        pyramid.position.set(n.x, n.y - 0.17, n.z);
+        rollerGroup.add(pyramid);
+        scene.add(rollerGroup);
+      }
+
+      const loadVec = new THREE.Vector3(n.fx, n.fy, n.fz);
+      const loadMag = loadVec.length();
+      if (loadMag > 0) {
+        const dir = loadVec.clone().normalize();
+        const arrow = new THREE.ArrowHelper(dir, pos, Math.min(loadMag * 0.04, 1.8), 0xef4444, 0.35, 0.25);
+        scene.add(arrow);
+      }
+    });
+
+    members.forEach((mem) => {
+      const n1 = nodes.find((n) => n.id === mem.startNode);
+      const n2 = nodes.find((n) => n.id === mem.endNode);
+      if (!n1 || !n2) return;
+
+      const p1 = getNodePos(n1);
+      const p2 = getNodePos(n2);
+      const dist = p1.distanceTo(p2);
+
+      const res = result?.memberResults.find((m) => m.id === mem.id);
+      let color = 0x64748b;
+      if (res) {
+        if (res.dcr > 1.0) color = 0xef4444;
+        else if (res.dcr > 0.7) color = 0xfacc15;
+        else color = res.state === 'TENSION' ? 0x38bdf8 : 0x10b981;
+      }
+
+      const cylinder = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.045, 0.045, dist, 8),
+        new THREE.MeshStandardMaterial({ color })
+      );
+      const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+      cylinder.position.copy(mid);
+      cylinder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p2.clone().sub(p1).normalize());
+      scene.add(cylinder);
+
+      if (showMemberLabels) {
+        const memLabel = createTextSprite(`M${mem.id}`, '#cbd5e1');
+        memLabel.position.copy(mid).add(new THREE.Vector3(0, 0.2, 0));
+        scene.add(memLabel);
+      }
+    });
+
+    let animId: number;
+    const animate = () => {
+      animId = requestAnimationFrame(animate);
+      if (autoRotate && dimMode === '3D') scene.rotation.y += 0.003;
+      controls.update();
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    return () => {
+      cancelAnimationFrame(animId);
+      renderer.dispose();
+    };
+  }, [nodes, members, result, dimMode, spanX, spanY, trussHeight, selectedNodeId, showNodeLabels, showMemberLabels, showGrid, autoRotate, customNodeLoads, showDeformation, defScale]);
+
+  const serviceabilityLimit = Number(((spanX * 1000) / 360).toFixed(1));
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 font-sans text-slate-200">
@@ -952,42 +1110,174 @@ export default function UnifiedTrussTool() {
           )}
         </div>
 
-        {/* Loading Configuration Panel */}
+        {/* Deflection / Deformation Toggle */}
         <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
-          <span className="text-xs font-bold text-amber-400 block">Targeted Loading Engine</span>
-          {dimMode === '2D' ? (
-            <div className="grid grid-cols-3 gap-2 text-xs font-mono">
-              <div>
-                <span className="text-slate-400 block text-[10px]">Top UDL (kN/m)</span>
-                <input type="number" value={udlTopChord} onChange={e => setUdlTopChord(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
+          <div className="flex justify-between items-center">
+            <span className="text-xs font-bold text-amber-400">Exaggerated Deflected Shape</span>
+            <button
+              onClick={() => setShowDeformation(!showDeformation)}
+              disabled={!result}
+              className={`px-2 py-0.5 rounded text-xs font-bold border transition ${
+                !result
+                  ? 'opacity-50 cursor-not-allowed bg-slate-900 border-slate-800 text-slate-500'
+                  : showDeformation
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+              }`}
+            >
+              {showDeformation ? 'DEFORMED' : 'UNDEFORMED'}
+            </button>
+          </div>
+
+          {showDeformation && result && (
+            <div>
+              <div className="flex justify-between text-xs text-slate-300 font-mono mb-1">
+                <span>Exaggeration Scale:</span>
+                <span className="font-bold text-amber-400">{defScale}x</span>
               </div>
-              <div>
-                <span className="text-slate-400 block text-[10px]">Bot UDL (kN/m)</span>
-                <input type="number" value={udlBottomChord} onChange={e => setUdlBottomChord(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px]">Wind Fx (kN)</span>
-                <input type="number" value={windLoadX} onChange={e => setWindLoadX(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-              <div>
-                <span className="text-slate-400 block text-[10px]">Top Joint Load Fz (kN)</span>
-                <input type="number" value={pointLoadZ} onChange={e => setPointLoadZ(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px]">Dome Rings</span>
-                <input type="number" value={domeRings} onChange={e => setDomeRings(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
-              </div>
+              <input
+                type="range"
+                min={1}
+                max={500}
+                step={5}
+                value={defScale}
+                onChange={(e) => setDefScale(Number(e.target.value))}
+                className="w-full accent-amber-500 cursor-pointer"
+              />
             </div>
           )}
+        </div>
+
+        {/* Selective Load Manager */}
+        <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-xs font-bold text-rose-400">Selective Node Load Manager</span>
+            {Object.keys(customNodeLoads).length > 0 && (
+              <button onClick={handleResetAllNodeLoads} className="text-[10px] text-rose-400 hover:underline font-bold">
+                Reset All
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-4 gap-2 text-xs font-mono">
+            <div>
+              <span className="text-slate-400 block text-[10px]">Target Node</span>
+              <select
+                value={targetLoadNodeId}
+                onChange={(e) => setTargetLoadNodeId(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-800 rounded p-1 font-bold text-cyan-400"
+              >
+                {nodes.map((n) => (
+                  <option key={`node-opt-${n.id}`} value={n.id}>
+                    N{n.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px]">Fx (kN)</span>
+              <input type="number" value={customFx} onChange={(e) => setCustomFx(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px]">Fy (kN)</span>
+              <input type="number" value={customFy} onChange={(e) => setCustomFy(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px]">Fz (kN)</span>
+              <input type="number" value={customFz} onChange={(e) => setCustomFz(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
+            </div>
+          </div>
+
+          <button
+            onClick={handleApplyCustomNodeLoad}
+            className="w-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-bold py-1 rounded text-xs transition"
+          >
+            Apply Load to Node N{targetLoadNodeId}
+          </button>
+
+          {Object.keys(customNodeLoads).length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {Object.entries(customNodeLoads).map(([nId, load]) => (
+                <span key={`badge-${nId}`} className="inline-flex items-center space-x-1 bg-rose-950/60 border border-rose-800 text-rose-300 px-2 py-0.5 rounded text-[10px] font-mono">
+                  <span>N{nId}: [{load.fx},{load.fy},{load.fz}]kN</span>
+                  <button onClick={() => handleClearNodeLoad(Number(nId))} className="ml-1 text-rose-400 hover:text-white font-bold">×</button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Parametric Geometry */}
+        <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+          <span className="text-xs font-bold text-cyan-400 block uppercase tracking-wider">
+            Parametric Span & Height Controls
+          </span>
+
+          <div>
+            <div className="flex justify-between text-xs text-slate-300 font-mono mb-1">
+              <span>Truss Span / Length (Lx):</span>
+              <span className="font-bold text-cyan-400">{spanX} m</span>
+            </div>
+            <input
+              type="range" min={4} max={60} step={0.5} value={spanX}
+              onChange={(e) => setSpanX(Number(e.target.value))}
+              className="w-full accent-cyan-500 cursor-pointer"
+            />
+          </div>
+
+          <div>
+            <div className="flex justify-between text-xs text-slate-300 font-mono mb-1">
+              <span>Truss Height / Depth (H):</span>
+              <span className="font-bold text-cyan-400">{trussHeight} m</span>
+            </div>
+            <input
+              type="range" min={0.5} max={10} step={0.1} value={trussHeight}
+              onChange={(e) => setTrussHeight(Number(e.target.value))}
+              className="w-full accent-cyan-500 cursor-pointer"
+            />
+          </div>
+
+          <div>
+            <div className="flex justify-between text-xs text-slate-300 font-mono mb-1">
+              <span>Current Bays (Nx):</span>
+              <span className="font-bold text-cyan-400">{baysX} Bays ({(spanX / baysX).toFixed(2)}m/bay)</span>
+            </div>
+            <input
+              type="range" min={2} max={20} step={1} value={baysX}
+              onChange={(e) => setBaysX(Number(e.target.value))}
+              className="w-full accent-cyan-500 cursor-pointer"
+            />
+          </div>
+        </div>
+
+        {/* Bay Sweep Controls */}
+        <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+          <span className="text-xs font-bold text-emerald-400 block uppercase tracking-wider">
+            Automated Bay Iteration Engine
+          </span>
+          <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+            <div>
+              <span className="text-slate-400 block text-[10px]">Min Bays</span>
+              <input type="number" value={sweepMinBays} onChange={(e) => setSweepMinBays(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px]">Max Bays</span>
+              <input type="number" value={sweepMaxBays} onChange={(e) => setSweepMaxBays(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded p-1" />
+            </div>
+          </div>
+          <button
+            onClick={handleRunBayOptimizationSweep}
+            disabled={isSweeping}
+            className="w-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 font-bold py-1.5 rounded text-xs transition"
+          >
+            {isSweeping ? 'Iterating Bays...' : 'Run Bay Optimization Sweep'}
+          </button>
         </div>
 
         {/* Section Profile Calculator */}
         <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
           <div className="flex justify-between items-center">
-            <span className="text-xs font-bold text-cyan-400">Section Profile Calculator</span>
+            <span className="text-xs font-bold text-cyan-400">Section Profile</span>
             <select
               value={secType}
               onChange={(e) => setSecType(e.target.value as SectionType)}
@@ -997,7 +1287,6 @@ export default function UnifiedTrussTool() {
               <option value="CHS">CHS Pipe</option>
               <option value="IBEAM">I-Beam</option>
               <option value="ANGLE">Angle</option>
-              <option value="RECT_SOLID">Solid Rect</option>
             </select>
           </div>
 
@@ -1022,76 +1311,62 @@ export default function UnifiedTrussTool() {
         </div>
 
         <button
-          onClick={handleRunAnalysis}
+          onClick={handleRunSingleAnalysis}
           disabled={analyzing}
           className="w-full bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold py-2.5 rounded transition shadow-lg shadow-cyan-500/20"
         >
-          {analyzing ? 'Solving Structural Matrix...' : `Run ${dimMode} Structural Analysis`}
+          {analyzing ? 'Solving Structural Matrix...' : `Run Structural Analysis (${baysX} Bays)`}
         </button>
       </div>
 
-      {/* Canvas Viewport & Results Output */}
+      {/* Viewport & Results Panel */}
       <div className="lg:col-span-7 space-y-6">
         <div className="bg-slate-900 p-4 rounded-xl border border-slate-800">
           <div className="flex justify-between items-center mb-2 border-b border-slate-800 pb-2">
-            <h4 className="text-xs font-bold text-slate-300">
-              THREE.JS VIEWPORT (DRAG TO ORBIT)
+            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              THREE.JS VIEWPORT ({spanX}m Span / {baysX} Bays)
             </h4>
-            <div className="flex space-x-1">
-              <button onClick={() => setCameraView('FRONT')} className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-[10px] font-bold rounded">Front</button>
-              <button onClick={() => setCameraView('TOP')} className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-[10px] font-bold rounded">Top</button>
-              <button onClick={() => setCameraView('ISO')} className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-[10px] font-bold rounded">ISO</button>
-            </div>
+            {showDeformation && (
+              <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono font-bold">
+                DEFORMED STATE ({defScale}x)
+              </span>
+            )}
           </div>
           <div ref={mountRef} className="bg-slate-950 rounded border border-slate-800 overflow-hidden flex justify-center cursor-grab active:cursor-grabbing" />
         </div>
 
-        {result && (
+        {/* Sweep Comparison Table */}
+        {sweepResults.length > 0 && (
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                Member Capacity Results
-              </h4>
-              <div className="flex items-center space-x-2">
-                <span className={`text-xs px-2 py-0.5 rounded font-bold ${result.overallStatus === 'SAFE' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                  {result.overallStatus}
-                </span>
-                <button
-                  onClick={handleExportPDF}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-2.5 py-1 rounded border border-slate-700 font-medium"
-                >
-                  Export PDF
-                </button>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto max-h-52">
+            <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider border-b border-slate-800 pb-2">
+              Bay Iteration Sweep Results ({spanX}m Span)
+            </h4>
+            <div className="overflow-x-auto max-h-48">
               <table className="w-full text-left text-xs font-mono">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400">
-                    <th className="pb-2 font-semibold">Mem</th>
-                    <th className="pb-2 font-semibold">Length</th>
-                    <th className="pb-2 font-semibold">Axial Force</th>
-                    <th className="pb-2 font-semibold">Capacity</th>
-                    <th className="pb-2 font-semibold">DCR</th>
+                    <th className="pb-2 font-semibold">Bays</th>
+                    <th className="pb-2 font-semibold">Bay Width</th>
+                    <th className="pb-2 font-semibold">Steel Mass</th>
+                    <th className="pb-2 font-semibold">Max Defl.</th>
+                    <th className="pb-2 font-semibold">Max DCR</th>
                     <th className="pb-2 font-semibold">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50 text-slate-300">
-                  {result.memberResults.map((m) => (
-                    <tr key={`res-row-${m.id}`}>
-                      <td className="py-1.5 font-bold">M{m.id}</td>
-                      <td className="py-1.5">{m.length} m</td>
-                      <td className={`py-1.5 font-bold ${m.state === 'TENSION' ? 'text-cyan-400' : m.state === 'COMPRESSION' ? 'text-rose-400' : 'text-slate-400'}`}>
-                        {m.axialForce} kN
-                      </td>
-                      <td className="py-1.5">{m.capacity} kN</td>
-                      <td className={`py-1.5 font-bold ${m.dcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {m.dcr}
-                      </td>
-                      <td className="py-1.5 font-bold">
-                        <span className={m.dcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}>
-                          {m.status}
+                  {sweepResults.map((r) => (
+                    <tr
+                      key={`sweep-row-${r.bays}`}
+                      className={r.isOptimal ? 'bg-emerald-500/10 font-bold text-emerald-400' : ''}
+                    >
+                      <td className="py-1.5">{r.bays} {r.isOptimal && '(OPTIMAL)'}</td>
+                      <td className="py-1.5">{r.bayWidth} m</td>
+                      <td className="py-1.5">{r.totalWeightKg} kg</td>
+                      <td className="py-1.5 text-amber-400">{r.maxDeflectionMm} mm</td>
+                      <td className={`py-1.5 ${r.maxDcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}`}>{r.maxDcr}</td>
+                      <td className="py-1.5">
+                        <span className={r.status === 'SAFE' ? 'text-emerald-400' : 'text-rose-400'}>
+                          {r.status}
                         </span>
                       </td>
                     </tr>
@@ -1099,6 +1374,142 @@ export default function UnifiedTrussTool() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* Results Tabbed Panel */}
+        {result && (
+          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setActiveResultTab('members')}
+                  className={`text-xs font-bold px-3 py-1 rounded transition ${
+                    activeResultTab === 'members'
+                      ? 'bg-cyan-500 text-slate-950 shadow'
+                      : 'bg-slate-950 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Member Capacities
+                </button>
+                <button
+                  onClick={() => setActiveResultTab('displacements')}
+                  className={`text-xs font-bold px-3 py-1 rounded transition ${
+                    activeResultTab === 'displacements'
+                      ? 'bg-cyan-500 text-slate-950 shadow'
+                      : 'bg-slate-950 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Nodal Displacements & Deflection
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <span className={`text-xs px-2 py-0.5 rounded font-bold ${result.overallStatus === 'SAFE' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                  {result.overallStatus} ({result.totalWeightKg} kg)
+                </span>
+                <button
+                  onClick={handleExportPDF}
+                  className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold text-xs px-3 py-1 rounded shadow transition"
+                >
+                  Export PDF
+                </button>
+              </div>
+            </div>
+
+            {/* TAB 1: Member Capacity Table */}
+            {activeResultTab === 'members' && (
+              <div className="overflow-x-auto max-h-56">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400">
+                      <th className="pb-2 font-semibold">Mem</th>
+                      <th className="pb-2 font-semibold">Length</th>
+                      <th className="pb-2 font-semibold">Axial Force</th>
+                      <th className="pb-2 font-semibold">Capacity</th>
+                      <th className="pb-2 font-semibold">DCR</th>
+                      <th className="pb-2 font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50 text-slate-300">
+                    {result.memberResults.map((m) => (
+                      <tr key={`res-row-${m.id}`}>
+                        <td className="py-1 font-bold">M{m.id}</td>
+                        <td className="py-1">{m.length} m</td>
+                        <td className={`py-1 font-bold ${m.state === 'TENSION' ? 'text-cyan-400' : m.state === 'COMPRESSION' ? 'text-rose-400' : 'text-slate-400'}`}>
+                          {m.axialForce} kN
+                        </td>
+                        <td className="py-1">{m.capacity} kN</td>
+                        <td className={`py-1 font-bold ${m.dcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}`}>{m.dcr}</td>
+                        <td className="py-1 font-bold">
+                          <span className={m.dcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}>
+                            {m.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* TAB 2: Nodal Displacements Table */}
+            {activeResultTab === 'displacements' && (
+              <div className="space-y-3">
+                <div className="flex justify-between items-center text-xs font-mono bg-slate-950 p-2.5 rounded border border-slate-800">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">PEAK RESULTANT DEFLECTION (δ max)</span>
+                    <span className="text-rose-400 font-bold text-sm">
+                      {result.maxDisplacement} mm <span className="text-xs text-slate-400">(Node N{result.maxDispNode})</span>
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-slate-400 block text-[10px]">SERVICEABILITY LIMIT (L/360)</span>
+                    <span className={`font-bold text-sm ${result.maxDisplacement <= serviceabilityLimit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {serviceabilityLimit} mm ({result.maxDisplacement <= serviceabilityLimit ? 'PASS' : 'EXCEEDED'})
+                    </span>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto max-h-56">
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400">
+                        <th className="pb-2 font-semibold">Node</th>
+                        <th className="pb-2 font-semibold">ux (mm)</th>
+                        <th className="pb-2 font-semibold">uy (mm)</th>
+                        <th className="pb-2 font-semibold">uz (mm)</th>
+                        <th className="pb-2 font-semibold text-amber-400">Total δ (mm)</th>
+                        <th className="pb-2 font-semibold">Remark</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50 text-slate-300">
+                      {result.displacements.map((d) => {
+                        const isMax = d.node === result.maxDispNode;
+                        return (
+                          <tr key={`disp-row-${d.node}`} className={isMax ? 'bg-rose-950/30 font-bold' : ''}>
+                            <td className="py-1 font-bold text-cyan-400">N{d.node}</td>
+                            <td className="py-1">{d.ux}</td>
+                            <td className="py-1">{d.uy}</td>
+                            <td className="py-1">{d.uz}</td>
+                            <td className={`py-1 font-bold ${isMax ? 'text-rose-400' : 'text-amber-400'}`}>
+                              {d.uTotal} mm
+                            </td>
+                            <td className="py-1">
+                              {isMax && (
+                                <span className="bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                  MAX DEFLECTION
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
