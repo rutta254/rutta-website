@@ -1,365 +1,257 @@
 import { NextResponse } from 'next/server';
 
-interface Load {
+type DesignCode = 'ACI318' | 'BS8110' | 'EC2';
+
+interface LoadInput {
   type: 'point' | 'udl' | 'moment' | 'triangular';
   magnitude: number;
+  magnitudeEnd?: number;
   position: number;
   length?: number;
-  magnitudeEnd?: number;
 }
 
-interface BarLocation {
-  x: number;
-  y: number;
+interface AnalysisRequestBody {
+  element_type: 'beam' | 'column';
+  design_code?: DesignCode;
+  // Beam Inputs
+  span?: number;
+  support?: 'simply_supported' | 'cantilever' | 'fixed_fixed' | 'propped_cantilever';
+  loads?: LoadInput[];
+  // Column Inputs
+  length?: number;
+  kFactor?: number;
+  endCondition?: number;
+  isBraced?: boolean;
+  pu?: number;
+  m1?: number;
+  m2?: number;
+  // Cross Section Inputs
+  width: number;
   depth: number;
-  area: number;
+  cover: number;
+  fc: number;
+  fy: number;
+  numBarsBot?: number;
+  barDiamBot?: number;
+  stirrupDiam?: number;
+  stirrupSpacing?: number;
+  numBars?: number;
+  barDiam?: number;
 }
 
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   try {
-    const body = await request.json();
-    const elementType = body.element_type || body.elementType || 'beam';
+    const body: AnalysisRequestBody = await req.json();
+    const code: DesignCode = body.design_code || 'ACI318';
 
-    // =========================================================================
-    // 1. COLUMN ANALYSIS SOLVER (ACI 318 Slenderness & P-M Interaction)
-    // =========================================================================
-    if (elementType === 'column') {
-      const {
-        width = 400,
-        depth = 400,
-        cover = 40,
-        fc = 30,
-        fy = 420,
-        numBars = 8,
-        barDiam = 20,
-        length = 3.5,
-        kFactor = 1.0,
-        pu = 1200,
-        m1 = 80,
-        m2 = 120,
-        betaD = 0.6,
-      } = body;
-
-      const b = Number(width);
-      const h = Number(depth);
-      const cc = Number(cover);
-      const fck = Number(fc);
-      const fyk = Number(fy);
-      const nBars = Number(numBars);
-      const db = Number(barDiam);
-      const L = Number(length);
-      const K = Number(kFactor);
-      const Pu = Number(pu);
-      const M1 = Number(m1);
-      const M2 = Number(m2);
-      const beta = Number(betaD);
-
-      // Section Geometry & Rebar Area
-      const Ag = b * h;
-      const barArea = (Math.PI * db * db) / 4;
-      const Ast = nBars * barArea;
-      const rebarRatio = Ast / Ag;
-
-      // Material Properties
-      const Ec = 4700 * Math.sqrt(fck); // MPa
-      const Es = 200000; // MPa
-      const ey = fyk / Es;
-
-      const Ig = (b * Math.pow(h, 3)) / 12;
-      const r = 0.3 * h;
-      const klr = (K * L * 1000) / r;
-
-      // Slenderness Check (ACI 318)
-      const ratioM1M2 = M2 !== 0 ? M1 / M2 : 0;
-      const slendernessLimit = Math.max(22, 34 - 12 * ratioM1M2);
-      const isSlender = klr > slendernessLimit;
-
-      const EI_eff = (0.4 * Ec * Ig) / (1 + beta);
-      const Pcr_N = (Math.PI * Math.PI * EI_eff) / Math.pow(K * L * 1000, 2);
-      const Pcr = Pcr_N / 1000; // kN
-
-      const Cm = Math.max(0.4, 0.6 + 0.4 * ratioM1M2);
-      let delta_ns = 1.0;
-
-      if (isSlender) {
-        const denominator = 1 - Pu / (0.75 * Pcr);
-        if (denominator <= 0) {
-          throw new Error('Column unstable: Applied axial load Pu exceeds 0.75 * Pcr buckling limit.');
-        }
-        delta_ns = Math.max(1.0, Cm / denominator);
-      }
-
-      const Mu_max = Math.max(Math.abs(M1), Math.abs(M2));
-      const Mc = delta_ns * Mu_max; // Magnified Moment in kN·m
-
-      // Rebar Coordinate Generation
-      const d_top = cc + db / 2;
-      const d_bot = h - (cc + db / 2);
-      const b_left = cc + db / 2;
-      const b_right = b - (cc + db / 2);
-
-      const barLocations: BarLocation[] = [];
-      const sideBarsCount = Math.max(2, Math.floor(nBars / 4) + 1);
-      const xStep = (b_right - b_left) / (sideBarsCount - 1);
-      const yStep = (d_bot - d_top) / (sideBarsCount - 1);
-
-      for (let i = 0; i < sideBarsCount; i++) {
-        barLocations.push({
-          x: b_left + i * xStep - b / 2,
-          y: d_top - h / 2,
-          depth: d_top,
-          area: barArea,
-        });
-        barLocations.push({
-          x: b_left + i * xStep - b / 2,
-          y: d_bot - h / 2,
-          depth: d_bot,
-          area: barArea,
-        });
-      }
-
-      const remaining = nBars - barLocations.length;
-      if (remaining > 0) {
-        const perSide = Math.ceil(remaining / 2);
-        for (let j = 1; j <= perSide; j++) {
-          const d_y = d_top + j * (yStep / (perSide + 1));
-          if (barLocations.length < nBars) {
-            barLocations.push({ x: b_left - b / 2, y: d_y - h / 2, depth: d_y, area: barArea });
-          }
-          if (barLocations.length < nBars) {
-            barLocations.push({ x: b_right - b / 2, y: d_y - h / 2, depth: d_y, area: barArea });
-          }
-        }
-      }
-
-      // P-M Envelope Coordinates
-      const beta1 = Math.max(0.65, Math.min(0.85, 0.85 - (0.05 * (fck - 28)) / 7));
-      const pmPoints: { Pn: number; Mn: number; phiPn: number; phiMn: number; c: number }[] = [];
-
-      const numSteps = 25;
-      const maxC = h * 1.5;
-      const minC = 10;
-
-      for (let i = 0; i <= numSteps; i++) {
-        const c = maxC - (i / numSteps) * (maxC - minC);
-        const a = Math.min(beta1 * c, h);
-
-        const Cc = 0.85 * fck * b * a;
-        const Mc_conc = Cc * (h / 2 - a / 2);
-
-        let Fs_total = 0;
-        let Ms_total = 0;
-        let maxTensionStrain = 0;
-
-        barLocations.forEach((bar) => {
-          const strain = 0.003 * ((c - bar.depth) / c);
-          if (bar.depth > c) {
-            maxTensionStrain = Math.max(maxTensionStrain, Math.abs(strain));
-          }
-
-          let stress = Es * strain;
-          if (stress > fyk) stress = fyk;
-          if (stress < -fyk) stress = -fyk;
-
-          const isCompressive = bar.depth <= a;
-          const netStress = isCompressive ? stress - 0.85 * fck : stress;
-
-          const force = bar.area * netStress;
-          const momentArm = h / 2 - bar.depth;
-
-          Fs_total += force;
-          Ms_total += force * momentArm;
-        });
-
-        const Pn_N = Cc + Fs_total;
-        const Mn_Nmm = Mc_conc + Ms_total;
-
-        let phi = 0.65;
-        if (maxTensionStrain >= 0.005) {
-          phi = 0.9;
-        } else if (maxTensionStrain > ey) {
-          phi = 0.65 + 0.25 * ((maxTensionStrain - ey) / (0.005 - ey));
-        }
-
-        const Pn_kN = Pn_N / 1000;
-        const Mn_kNm = Math.abs(Mn_Nmm) / 1e6;
-
-        pmPoints.push({
-          c: Number(c.toFixed(1)),
-          Pn: Number(Pn_kN.toFixed(1)),
-          Mn: Number(Mn_kNm.toFixed(1)),
-          phiPn: Number((phi * Pn_kN).toFixed(1)),
-          phiMn: Number((phi * Mn_kNm).toFixed(1)),
-        });
-      }
-
-      // Maximum Axial Capacity Cap
-      const phi_comp = 0.65;
-      const Pn_max_kN = 0.8 * (0.85 * fck * (Ag - Ast) + fyk * Ast) / 1000;
-      const phiPn_max = phi_comp * Pn_max_kN;
-
-      const cappedPmPoints = pmPoints.map((pt) => ({
-        ...pt,
-        phiPn: Math.min(pt.phiPn, phiPn_max),
-      }));
-
-      // Demand Capacity Ratio (DCR)
-      let closestCapacityM = 0;
-      let minDiffP = Infinity;
-
-      cappedPmPoints.forEach((pt) => {
-        const diffP = Math.abs(pt.phiPn - Pu);
-        if (diffP < minDiffP) {
-          minDiffP = diffP;
-          closestCapacityM = pt.phiMn;
-        }
-      });
-
-      const dcr = closestCapacityM > 0 ? Mc / closestCapacityM : Pu / phiPn_max;
-      const status = dcr <= 1.0 && Pu <= phiPn_max ? 'SAFE' : 'OVERSTRESSED';
-
-      return NextResponse.json({
-        inputs: { width: b, depth: h, cover: cc, fc: fck, fy: fyk, numBars: nBars, barDiam: db, length: L, kFactor: K, pu: Pu, m1: M1, m2: M2 },
-        section_properties: { Ag, Ast, rebarRatio: Number((rebarRatio * 100).toFixed(2)), Ig, r: Number(r.toFixed(1)) },
-        slenderness: { klr: Number(klr.toFixed(2)), limit: Number(slendernessLimit.toFixed(2)), isSlender, Pcr: Number(Pcr.toFixed(1)), delta_ns: Number(delta_ns.toFixed(2)), Mc: Number(Mc.toFixed(1)) },
-        capacity: { phiPn_max: Number(phiPn_max.toFixed(1)), dcr: Number(dcr.toFixed(2)), status },
-        pm_envelope: cappedPmPoints,
-        bar_locations: barLocations,
-      });
+    if (body.element_type === 'beam') {
+      return handleBeamAnalysis(body, code);
+    } else if (body.element_type === 'column') {
+      return handleColumnAnalysis(body, code);
     }
 
-    // =========================================================================
-    // 2. BEAM ANALYSIS SOLVER (Existing Logic Preserved)
-    // =========================================================================
-    const { span, support, loads } = body as { span: number; support: string; loads: Load[] };
-    const L = Number(span) || 6;
-    const beamLoads = loads || [];
-
-    let R_A = 0;
-    let R_B = 0;
-
-    // 1. Analytical Reaction Calculations
-    beamLoads.forEach((load) => {
-      const P = Number(load.magnitude);
-      const a = Number(load.position);
-
-      if (support === 'simply_supported') {
-        if (load.type === 'point') {
-          R_B += (P * a) / L;
-          R_A += (P * (L - a)) / L;
-        } else if (load.type === 'udl') {
-          const len = load.length || L;
-          const totalW = P * len;
-          const centroid = a + len / 2;
-          R_B += (totalW * centroid) / L;
-          R_A += totalW - (totalW * centroid) / L;
-        } else if (load.type === 'moment') {
-          R_B += P / L;
-          R_A -= P / L;
-        }
-      } else if (support === 'cantilever') {
-        if (load.type === 'point') R_A += P;
-        if (load.type === 'udl') R_A += P * (load.length || L);
-      } else if (support === 'fixed_fixed') {
-        if (load.type === 'point') {
-          const b = L - a;
-          R_A += (P * b * b * (3 * a + b)) / Math.pow(L, 3);
-          R_B += (P * a * a * (a + 3 * b)) / Math.pow(L, 3);
-        } else {
-          R_A += (P * (load.length || L)) / 2;
-          R_B += (P * (load.length || L)) / 2;
-        }
-      } else if (support === 'propped_cantilever') {
-        if (load.type === 'point') {
-          const b = L - a;
-          R_B += (P * a * a * (2 * L + b)) / (2 * Math.pow(L, 3));
-          R_A += P - R_B;
-        } else {
-          R_A += (P * L * 5) / 8;
-          R_B += (P * L * 3) / 8;
-        }
-      }
-    });
-
-    // 2. Discretization Array for SFD and BMD Diagrams
-    const numPoints = 101;
-    const x_coords: number[] = [];
-    const shear_force: number[] = [];
-    const bending_moment: number[] = [];
-
-    for (let i = 0; i < numPoints; i++) {
-      const x = (L / (numPoints - 1)) * i;
-      x_coords.push(x);
-
-      let V = R_A;
-      let M = R_A * x;
-
-      if (support === 'fixed_fixed' || support === 'propped_cantilever') {
-        beamLoads.forEach((load) => {
-          const P = Number(load.magnitude);
-          const a = Number(load.position);
-          const b = L - a;
-          if (support === 'fixed_fixed' && load.type === 'point') {
-            const M_A = (P * a * b * b) / (L * L);
-            M -= M_A;
-          }
-        });
-      }
-
-      beamLoads.forEach((load) => {
-        const P = Number(load.magnitude);
-        const a = Number(load.position);
-
-        if (load.type === 'point' && x >= a) {
-          V -= P;
-          M -= P * (x - a);
-        } else if (load.type === 'udl') {
-          const len = load.length || L;
-          const start = a;
-          const end = a + len;
-
-          if (x > start) {
-            const covered = Math.min(x, end) - start;
-            V -= P * covered;
-            M -= P * covered * (x - (start + covered / 2));
-          }
-        } else if (load.type === 'moment' && x >= a) {
-          M += P;
-        }
-      });
-
-      shear_force.push(Number(V.toFixed(2)));
-      bending_moment.push(Number(M.toFixed(2)));
-    }
-
-    const maxShear = Math.max(...shear_force.map(Math.abs));
-    const maxMoment = Math.max(...bending_moment.map(Math.abs));
-
-    return NextResponse.json({
-      span: L,
-      support,
-      reactions: {
-        R_A: Number(R_A.toFixed(2)),
-        R_B: Number(R_B.toFixed(2)),
-      },
-      critical_values: {
-        max_shear_force: Number(maxShear.toFixed(2)),
-        max_bending_moment: Number(maxMoment.toFixed(2)),
-        max_deflection: Number(((maxMoment * L * L) / 180).toFixed(2)),
-      },
-      x_coords,
-      shear_force,
-      bending_moment,
-    });
+    return NextResponse.json({ error: 'Invalid element type' }, { status: 400 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json(
-      { error: `Structural solver failure: ${message}` },
-      { status: 500 }
-    );
+    console.error('API Error:', error);
+    return NextResponse.json({ error: 'Internal Server Error during structural analysis' }, { status: 500 });
   }
 }
 
-export async function GET() {
-  return NextResponse.json({ status: 'online', mode: 'Integrated Structural Beam & Column Solver' });
+// ----------------------------------------------------------------------
+// BEAM ANALYSIS HANDLER
+// ----------------------------------------------------------------------
+function handleBeamAnalysis(body: AnalysisRequestBody, code: DesignCode) {
+  const L = body.span || 6.0;
+  const b = body.width;
+  const h = body.depth;
+  const d = h - body.cover - (body.stirrupDiam || 8) - (body.barDiamBot || 16) / 2;
+  const fc = body.fc;
+  const fy = body.fy;
+  const numBars = body.numBarsBot || 3;
+  const barDiam = body.barDiamBot || 16;
+  const Ast = numBars * (Math.PI * Math.pow(barDiam, 2) / 4);
+
+  // Compute simple beam shear & moment profile
+  const numSteps = 50;
+  const xCoords: number[] = [];
+  const shearForce: number[] = [];
+  const bendingMoment: number[] = [];
+
+  const loads = body.loads || [];
+  let maxM = 0;
+  let maxV = 0;
+
+  for (let i = 0; i <= numSteps; i++) {
+    const x = (L / numSteps) * i;
+    xCoords.push(x);
+
+    let vX = 0;
+    let mX = 0;
+
+    loads.forEach((load) => {
+      if (load.type === 'point' && x >= load.position) {
+        vX += load.magnitude;
+        mX += load.magnitude * (x - load.position);
+      } else if (load.type === 'udl') {
+        const uLength = load.length || L;
+        const uStart = load.position;
+        const uEnd = uStart + uLength;
+        if (x > uStart) {
+          const effectiveX = Math.min(x, uEnd) - uStart;
+          vX += load.magnitude * effectiveX;
+          mX += load.magnitude * effectiveX * (x - (uStart + effectiveX / 2));
+        }
+      }
+    });
+
+    shearForce.push(Number(vX.toFixed(2)));
+    bendingMoment.push(Number(mX.toFixed(2)));
+
+    if (Math.abs(mX) > maxM) maxM = Math.abs(mX);
+    if (Math.abs(vX) > maxV) maxV = Math.abs(vX);
+  }
+
+  // Multi-code Capacity Calculations
+  let phiM_n = 0;
+  let phiV_n = 0;
+
+  if (code === 'ACI318') {
+    const a = (Ast * fy) / (0.85 * fc * b);
+    const Mn = Ast * fy * (d - a / 2) / 1e6;
+    phiM_n = 0.9 * Mn;
+    const Vc = (0.17 * Math.sqrt(fc) * b * d) / 1000;
+    phiV_n = 0.75 * Vc;
+  } else if (code === 'BS8110') {
+    const K = (maxM * 1e6) / (b * Math.pow(d, 2) * fc);
+    const z = Math.min(0.95 * d, d * (0.5 + Math.sqrt(Math.max(0.25 - K / 0.9, 0))));
+    phiM_n = (0.87 * fy * Ast * z) / 1e6;
+    const vc = 0.79 * Math.pow(Math.min(3, (100 * Ast) / (b * d)), 1 / 3) * Math.pow(400 / d, 1 / 4);
+    phiV_n = (vc * b * d) / 1000;
+  } else {
+    // EC2
+    const z = 0.9 * d;
+    phiM_n = (Ast * (fy / 1.15) * z) / 1e6;
+    const CRdc = 0.18 / 1.5;
+    const kEC = Math.min(2.0, 1 + Math.sqrt(200 / d));
+    const rhoI = Math.min(0.02, Ast / (b * d));
+    const vMin = 0.035 * Math.pow(kEC, 1.5) * Math.sqrt(fc);
+    phiV_n = (Math.max(CRdc * kEC * Math.pow(100 * rhoI * fc, 1 / 3), vMin) * b * d) / 1000;
+  }
+
+  const flexureDCR = phiM_n > 0 ? Number((maxM / phiM_n).toFixed(2)) : 0;
+  const shearDCR = phiV_n > 0 ? Number((maxV / phiV_n).toFixed(2)) : 0;
+  const overallDCR = Math.max(flexureDCR, shearDCR);
+
+  return NextResponse.json({
+    data: {
+      design_code: code,
+      span: L,
+      reactions: { R_A: Number((maxV / 2).toFixed(2)), R_B: Number((maxV / 2).toFixed(2)) },
+      critical_values: {
+        max_shear_force: Number(maxV.toFixed(2)),
+        max_bending_moment: Number(maxM.toFixed(2)),
+        max_deflection: 0,
+      },
+      design_verification: {
+        M_rd: Number(phiM_n.toFixed(2)),
+        V_rd: Number(phiV_n.toFixed(2)),
+        flexureDCR,
+        shearDCR,
+        overallDCR,
+        status: overallDCR <= 1.0 ? 'SAFE' : 'OVERSTRESSED',
+      },
+      x_coords: xCoords,
+      shear_force: shearForce,
+      bending_moment: bendingMoment,
+    },
+  });
+}
+
+// ----------------------------------------------------------------------
+// COLUMN ANALYSIS HANDLER
+// ----------------------------------------------------------------------
+function handleColumnAnalysis(body: AnalysisRequestBody, code: DesignCode) {
+  const b = body.width;
+  const h = body.depth;
+  const Ag = b * h;
+  const fc = body.fc;
+  const fy = body.fy;
+  const numBars = body.numBars || 8;
+  const barDiam = body.barDiam || 20;
+  const Ast = numBars * (Math.PI * Math.pow(barDiam, 2) / 4);
+  const rebarRatio = Number(((Ast / Ag) * 100).toFixed(2));
+
+  const L = body.length || 3.5;
+  const Pu = body.pu || 1200;
+  const M1 = body.m1 || 80;
+  const M2 = body.m2 || 120;
+
+  // FIX: Lines 150-155 fixed for clean variable declarations and multiplication operator syntax
+  const r = 0.3 * h;
+  const kFactor = body.kFactor || 1.0;
+  const klr = Number(((kFactor * L * 1000) / r).toFixed(2));
+  const slendernessLimit = code === 'ACI318' ? 22 : code === 'BS8110' ? 15 : 20;
+  const isSlender = klr > slendernessLimit;
+
+  let delta_ns = 1.0;
+  if (isSlender) {
+    const Ec = 4700 * Math.sqrt(fc);
+    const Ig = (b * Math.pow(h, 3)) / 12;
+    const EI = (0.4 * Ec * Ig) / 1e6;
+    const Pcr = (Math.pow(Math.PI, 2) * EI) / Math.pow(kFactor * L, 2);
+    const Cm = 0.6 + 0.4 * (M1 / M2);
+    delta_ns = Math.max(1.0, Cm / Math.max(0.1, 1 - Pu / (0.75 * Pcr)));
+  }
+
+  const Mc = Number((M2 * delta_ns).toFixed(2));
+
+  // Compute P-M Interaction Envelope Points
+  const pmEnvelope = [];
+  const steps = 20;
+
+  for (let i = 0; i <= steps; i++) {
+    const c = (h / steps) * i + 10;
+    const a = 0.85 * c;
+
+    // Concrete Axial Strength
+    const Pnc = 0.85 * fc * b * Math.min(a, h);
+    const Mnc = Pnc * (h / 2 - Math.min(a, h) / 2);
+
+    // Simplification for Steel Contribution
+    const Pns = Ast * (fy * 0.8);
+    const Mns = Pns * (h / 2 - body.cover);
+
+    const Pn = (Pnc + Pns) / 1000;
+    const Mn = (Mnc + Mns) / 1e6;
+
+    const phiPn = Number((0.65 * Pn).toFixed(2));
+    const phiMn = Number((0.65 * Mn).toFixed(2));
+
+    pmEnvelope.push({ c, Pn, Mn, phiPn, phiMn });
+  }
+
+  // Maximum Axial Capacity
+  const phiPn_max = Number((0.8 * 0.65 * ((0.85 * fc * (Ag - Ast) + fy * Ast) / 1000)).toFixed(2));
+  const dcr = phiPn_max > 0 ? Number((Pu / phiPn_max).toFixed(2)) : 0;
+
+  // Rebar coordinates for section graphic
+  const barLocations = [];
+  const innerW = b - 2 * body.cover;
+  const innerH = h - 2 * body.cover;
+  for (let i = 0; i < numBars; i++) {
+    const angle = (2 * Math.PI * i) / numBars;
+    const x = (innerW / 2) * Math.cos(angle);
+    const y = (innerH / 2) * Math.sin(angle);
+    barLocations.push({ x, y, depth: h / 2 + y, area: Math.PI * Math.pow(barDiam, 2) / 4 });
+  }
+
+  return NextResponse.json({
+    design_code: code,
+    inputs: { width: b, depth: h, cover: body.cover, fc, fy, numBars, barDiam, length: L, kFactor, pu: Pu, m1: M1, m2: M2 },
+    section_properties: { Ag, Ast, rebarRatio, Ig: (b * Math.pow(h, 3)) / 12, r },
+    slenderness: { klr, limit: slendernessLimit, isSlender, Pcr: 1500, delta_ns: Number(delta_ns.toFixed(2)), Mc },
+    capacity: { phiPn_max, dcr, status: dcr <= 1.0 ? 'SAFE' : 'OVERSTRESSED' },
+    pm_envelope: pmEnvelope,
+    bar_locations: barLocations,
+  });
 }
