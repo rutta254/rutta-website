@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import {
   ResponsiveContainer,
   LineChart,
@@ -13,7 +13,6 @@ import {
 } from 'recharts';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import html2canvas from 'html2canvas';
 
 type SupportType = 'simply_supported' | 'cantilever' | 'fixed_fixed' | 'propped_cantilever';
 
@@ -49,8 +48,6 @@ export default function BeamAnalysisTool() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
-
-  const reportCaptureRef = useRef<HTMLDivElement>(null);
 
   const addLoad = () => {
     setLoads([
@@ -100,6 +97,60 @@ export default function BeamAnalysisTool() {
     }
   };
 
+  // Helper function: Convert live SVG node to high-res PNG Data URL
+  const convertSvgToPng = (svgElement: SVGSVGElement, bgColor = '#0f172a'): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement;
+        const bbox = svgElement.getBoundingClientRect();
+        const w = bbox.width || 800;
+        const h = bbox.height || 220;
+
+        clonedSvg.setAttribute('width', w.toString());
+        clonedSvg.setAttribute('height', h.toString());
+        if (!clonedSvg.getAttribute('viewBox')) {
+          clonedSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+        }
+
+        const serializer = new XMLSerializer();
+        let svgString = serializer.serializeToString(clonedSvg);
+
+        if (!svgString.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)) {
+          svgString = svgString.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+        }
+
+        const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = w * 2; // 2x scale for crisp PDF vector rendering
+          canvas.height = h * 2;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/png'));
+          } else {
+            reject(new Error('Canvas 2D context unavailable'));
+          }
+          URL.revokeObjectURL(url);
+        };
+
+        img.onerror = (e) => {
+          URL.revokeObjectURL(url);
+          reject(e);
+        };
+
+        img.src = url;
+      } catch (err) {
+        reject(err);
+      }
+    });
+  };
+
   const generatePDF = async () => {
     if (!result) return;
     setDownloadingPdf(true);
@@ -108,7 +159,7 @@ export default function BeamAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
-      // Page 1 Header
+      // Page 1: Title Header
       doc.setFontSize(18);
       doc.setTextColor(15, 23, 42);
       doc.text('HAYA STRUCTURES LLC', 14, 18);
@@ -158,7 +209,7 @@ export default function BeamAnalysisTool() {
         headStyles: { fillColor: [51, 65, 85] },
       });
 
-      // Section 2: Computed Reactions Table
+      // Section 2: Statics Summary
       lastY = getFinalY(doc) + 8;
       doc.text('2. Computed Support Reactions & Critical Extremes', 14, lastY);
 
@@ -176,54 +227,55 @@ export default function BeamAnalysisTool() {
         headStyles: { fillColor: [15, 118, 110] },
       });
 
-      // Section 3: Safe Capture (Sanitizes lab()/oklch() styles & sets fixed chart sizes)
-      if (reportCaptureRef.current) {
-        try {
-          const canvas = await html2canvas(reportCaptureRef.current, {
-            scale: 2,
-            useCORS: true,
-            allowTaint: true,
-            backgroundColor: '#0f172a',
-            logging: false,
-            windowWidth: 1200,
-            onclone: (clonedDoc) => {
-              // Strip unsupported modern CSS color functions across all DOM elements
-              const allElements = clonedDoc.querySelectorAll('*');
-              allElements.forEach((el) => {
-                const htmlEl = el as HTMLElement;
-                const computed = window.getComputedStyle(htmlEl);
+      // Section 3: Direct SVG Diagram Ingestion for Page 2
+      const beamSvg = document.getElementById('live-beam-svg') as unknown as SVGSVGElement;
+      const sfdSvg = document.querySelector('#sfd-chart-container svg') as SVGSVGElement;
+      const bmdSvg = document.querySelector('#bmd-chart-container svg') as SVGSVGElement;
 
-                if (computed.backgroundColor.includes('lab') || computed.backgroundColor.includes('oklch')) {
-                  htmlEl.style.backgroundColor = '#0f172a';
-                }
-                if (computed.borderColor.includes('lab') || computed.borderColor.includes('oklch')) {
-                  htmlEl.style.borderColor = '#1e293b';
-                }
-                if (computed.color.includes('lab') || computed.color.includes('oklch')) {
-                  htmlEl.style.color = '#f8fafc';
-                }
-              });
+      if (beamSvg || sfdSvg || bmdSvg) {
+        doc.addPage();
+        doc.setFontSize(12);
+        doc.setTextColor(15, 23, 42);
+        doc.text('3. Structural Visualization, SFD & BMD Diagrams', 14, 18);
 
-              // Force Recharts containers to fixed pixel sizes during capture
-              const containers = clonedDoc.querySelectorAll('.recharts-responsive-container');
-              containers.forEach((c) => {
-                (c as HTMLElement).style.width = '700px';
-                (c as HTMLElement).style.height = '200px';
-              });
-            },
-          });
+        let currentY = 24;
 
-          const imgData = canvas.toDataURL('image/png');
-          const imgWidth = 182;
-          const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        if (beamSvg) {
+          try {
+            const beamPng = await convertSvgToPng(beamSvg, '#0f172a');
+            doc.setFontSize(10);
+            doc.setTextColor(51, 65, 85);
+            doc.text('Live Beam Geometry & Applied Loads', 14, currentY);
+            doc.addImage(beamPng, 'PNG', 14, currentY + 3, 182, 50);
+            currentY += 60;
+          } catch (e) {
+            console.warn('Beam SVG export failed:', e);
+          }
+        }
 
-          doc.addPage();
-          doc.setFontSize(11);
-          doc.setTextColor(15, 23, 42);
-          doc.text('3. Structural Visualization, SFD & BMD Diagrams', 14, 18);
-          doc.addImage(imgData, 'PNG', 14, 24, imgWidth, Math.min(imgHeight, 250));
-        } catch (captureErr) {
-          console.warn('Diagram snapshot capture skipped:', captureErr);
+        if (sfdSvg) {
+          try {
+            const sfdPng = await convertSvgToPng(sfdSvg, '#0f172a');
+            doc.setFontSize(10);
+            doc.setTextColor(14, 116, 144);
+            doc.text('Shear Force Diagram (SFD) [kN]', 14, currentY);
+            doc.addImage(sfdPng, 'PNG', 14, currentY + 3, 182, 55);
+            currentY += 65;
+          } catch (e) {
+            console.warn('SFD SVG export failed:', e);
+          }
+        }
+
+        if (bmdSvg) {
+          try {
+            const bmdPng = await convertSvgToPng(bmdSvg, '#0f172a');
+            doc.setFontSize(10);
+            doc.setTextColor(15, 118, 110);
+            doc.text('Bending Moment Diagram (BMD) [kN·m]', 14, currentY);
+            doc.addImage(bmdPng, 'PNG', 14, currentY + 3, 182, 55);
+          } catch (e) {
+            console.warn('BMD SVG export failed:', e);
+          }
         }
       }
 
@@ -420,14 +472,14 @@ export default function BeamAnalysisTool() {
       </div>
 
       {/* Captured Visual Section */}
-      <div className="lg:col-span-7 space-y-6" ref={reportCaptureRef}>
+      <div className="lg:col-span-7 space-y-6">
         {/* SVG Beam Diagram */}
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
           <h3 className="text-xs font-bold text-slate-300 mb-4 border-b border-slate-800 pb-2">
             LIVE BEAM VISUALIZATION
           </h3>
           <div className="w-full overflow-hidden bg-slate-950/50 rounded-lg border border-slate-800 mb-2 flex justify-center p-4">
-            <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-48 drop-shadow-md">
+            <svg id="live-beam-svg" viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-48 drop-shadow-md">
               <line x1={marginX} y1={beamY + 60} x2={marginX + beamWidth} y2={beamY + 60} stroke="#475569" strokeWidth="1" />
               <text x={marginX + beamWidth / 2} y={beamY + 80} fill="#94a3b8" fontSize="14" textAnchor="middle" fontWeight="bold">
                 Span (L) = {length}m
@@ -485,7 +537,7 @@ export default function BeamAnalysisTool() {
 
               <div>
                 <h4 className="text-xs font-semibold text-cyan-400 mb-1 uppercase">Shear Force Diagram (SFD) [kN]</h4>
-                <div className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
+                <div id="sfd-chart-container" className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
@@ -493,7 +545,7 @@ export default function BeamAnalysisTool() {
                       <YAxis stroke="#64748b" fontSize={10} unit="kN" />
                       <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '11px' }} />
                       <ReferenceLine y={0} stroke="#475569" strokeWidth={1.5} />
-                      <Line type="monotone" dataKey="Shear" stroke="#38bdf8" strokeWidth={2.5} dot={false} />
+                      <Line type="monotone" dataKey="Shear" stroke="#38bdf8" strokeWidth={2.5} dot={false} isAnimationActive={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -501,7 +553,7 @@ export default function BeamAnalysisTool() {
 
               <div>
                 <h4 className="text-xs font-semibold text-emerald-400 mb-1 uppercase">Bending Moment Diagram (BMD) [kN·m]</h4>
-                <div className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
+                <div id="bmd-chart-container" className="h-48 w-full bg-slate-950/70 p-2 rounded border border-slate-800">
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
@@ -509,7 +561,7 @@ export default function BeamAnalysisTool() {
                       <YAxis stroke="#64748b" fontSize={10} unit="kN·m" />
                       <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '11px' }} />
                       <ReferenceLine y={0} stroke="#475569" strokeWidth={1.5} />
-                      <Line type="monotone" dataKey="Moment" stroke="#34d399" strokeWidth={2.5} dot={false} />
+                      <Line type="monotone" dataKey="Moment" stroke="#34d399" strokeWidth={2.5} dot={false} isAnimationActive={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
