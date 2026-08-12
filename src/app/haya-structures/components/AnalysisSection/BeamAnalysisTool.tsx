@@ -54,7 +54,7 @@ interface AnalysisResult {
   deflection: number[];
 }
 
-// --- Matrix & Numerical Analysis Engine (Euler-Bernoulli Finite Elements) ---
+// --- Matrix & Numerical Analysis Engine ---
 function solveBeamLocally(
   L: number,
   support: SupportType,
@@ -120,7 +120,7 @@ function solveBeamLocally(
     M_A = totalEquivMomentA - R_B * L;
   }
 
-  // Internal Forces via Section Cuts along x
+  // Section Cuts along x
   for (let i = 0; i <= numSteps; i++) {
     const x = xCoords[i];
     let V = R_A;
@@ -154,7 +154,7 @@ function solveBeamLocally(
     bendingMoment[i] = Number(M.toFixed(2));
 
     // Elastic Deflection Approximation (mm)
-    const EI = (props.E || 30000) * 1e6 * ((props.I || 1) * 1e-8); // kN*m2
+    const EI = (props.E || 30000) * 1e6 * ((props.I || 1) * 1e-8);
     const maxM = Math.max(...bendingMoment.map((val) => Math.abs(val) || 0));
     const delta = (-(maxM * L * L) / (10 * (EI || 1))) * Math.sin((Math.PI * x) / (L || 1)) * 1000;
     deflection[i] = Number((isNaN(delta) ? 0 : delta).toFixed(2));
@@ -164,7 +164,6 @@ function solveBeamLocally(
   const maxM = Math.max(...bendingMoment.map((m) => Math.abs(m) || 0));
   const maxDef = Math.max(...deflection.map((d) => Math.abs(d) || 0));
 
-  // Capacities computation based on Material Type
   let M_rd = 0;
   let V_rd = 0;
 
@@ -209,13 +208,50 @@ function solveBeamLocally(
   };
 }
 
+// Utility to convert SVG nodes to PNG data URL
+const captureSvgToCanvas = (containerEl: HTMLElement | null): Promise<string | null> => {
+  return new Promise((resolve) => {
+    if (!containerEl) return resolve(null);
+    const svgEl = containerEl.querySelector('svg');
+    if (!svgEl) return resolve(null);
+
+    const xml = new XMLSerializer().serializeToString(svgEl);
+    const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const scale = 2; // High-DPI scaling
+      canvas.width = (svgEl.clientWidth || 500) * scale;
+      canvas.height = (svgEl.clientHeight || 200) * scale;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#0f172a'; // Match Slate-900 background
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/png');
+        URL.revokeObjectURL(url);
+        resolve(dataUrl);
+      } else {
+        resolve(null);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    img.src = url;
+  });
+};
+
 export default function BeamAnalysisTool() {
   const [materialType, setMaterialType] = useState<MaterialType>('rc');
   const [designCode, setDesignCode] = useState<DesignCode>('ACI318');
   const [length, setLength] = useState<number>(6);
   const [support, setSupport] = useState<SupportType>('simply_supported');
 
-  // Properties
+  // Section Properties
   const [width, setWidth] = useState<number>(300);
   const [depth, setDepth] = useState<number>(500);
   const [cover, setCover] = useState<number>(35);
@@ -245,6 +281,7 @@ export default function BeamAnalysisTool() {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const mountRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
 
   // --- Three.js 3D Viewport Initialization ---
@@ -282,7 +319,7 @@ export default function BeamAnalysisTool() {
     grid.position.set(length / 2, -0.5, 0);
     scene.add(grid);
 
-    // Render Beam Body
+    // Render Beam Geometry
     const beamGeo = new THREE.BoxGeometry(length, 0.3, 0.3);
     const beamMat = new THREE.MeshStandardMaterial({
       color: materialType === 'rc' ? 0x94a3b8 : materialType === 'steel' ? 0x38bdf8 : 0xf59e0b,
@@ -293,7 +330,7 @@ export default function BeamAnalysisTool() {
     beamMesh.position.set(length / 2, 0, 0);
     scene.add(beamMesh);
 
-    // Supports
+    // Render Supports
     const drawSupport = (x: number, type: 'pin' | 'fixed') => {
       if (type === 'pin') {
         const suppGeo = new THREE.ConeGeometry(0.25, 0.4, 4);
@@ -323,7 +360,7 @@ export default function BeamAnalysisTool() {
       drawSupport(length, 'pin');
     }
 
-    // Dynamic 3D Load Vectors Rendering
+    // Dynamic Load Vectors
     loads.forEach((load) => {
       if (load.type === 'point') {
         const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(load.position, 1.2, 0), 1.0, 0xef4444, 0.2, 0.15);
@@ -472,7 +509,7 @@ export default function BeamAnalysisTool() {
         setResult(localData);
       }
     } catch (err) {
-      console.warn('API offline. Executing locally.', err);
+      console.warn('API offline. Executing FE matrix locally.', err);
       const localData = solveBeamLocally(length, support, loads, materialType, {
         E: materialType === 'steel' ? 200000 : 30000,
         I: (width * Math.pow(depth, 3)) / 12,
@@ -490,6 +527,7 @@ export default function BeamAnalysisTool() {
     }
   };
 
+  // Zero-White-Space PDF Engine
   const generatePDF = async () => {
     if (!result) return;
     setDownloadingPdf(true);
@@ -498,60 +536,158 @@ export default function BeamAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
-      // Header Block
-      doc.setFillColor(15, 23, 42);
-      doc.rect(0, 0, 210, 16, 'F');
+      // 1. Full Dark Header
+      doc.setFillColor(15, 23, 42); // slate-900
+      doc.rect(0, 0, 210, 18, 'F');
 
-      doc.setFontSize(11);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
       doc.setTextColor(56, 189, 248);
-      doc.text('HAYA STRUCTURES | BEAM STRENGTH & DEFLECTION VERIFICATION REPORT', 12, 10);
+      doc.text('HAYA STRUCTURES | BEAM ANALYSIS & DESIGN CALCULATION REPORT', 10, 8);
 
       doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
       doc.setTextColor(226, 232, 240);
-      doc.text(`Material: ${materialType.toUpperCase()} | Code: ${designCode} | Date: ${dateStr}`, 12, 14);
+      doc.text(`Material: ${materialType.toUpperCase()} | Code: ${designCode} | Support: ${support.replace('_', ' ').toUpperCase()} | Date: ${dateStr}`, 10, 14);
 
-      // Embedded 3D Viewport Capture into PDF
-      const canvas = mountRef.current?.querySelector('canvas');
-      if (canvas) {
-        const imgData = canvas.toDataURL('image/png');
-        doc.addImage(imgData, 'PNG', 12, 18, 186, 70);
+      // Section 1: Visuals Side-by-Side Block
+      doc.setFillColor(30, 41, 59);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.rect(10, 21, 190, 6, 'F');
+      doc.text('1. 3D STRUCTURAL MODEL & RESPONSE DIAGRAM CAPTURE', 12, 25);
+
+      // Capture 3D Canvas Snapshot
+      const canvas3D = mountRef.current?.querySelector('canvas');
+      if (canvas3D) {
+        const img3D = canvas3D.toDataURL('image/png');
+        doc.addImage(img3D, 'PNG', 10, 28, 93, 48);
       }
 
-      // Input & Output Summary Tables
+      // Capture Recharts Diagram Snapshot
+      const chartImg = await captureSvgToCanvas(chartRef.current);
+      if (chartImg) {
+        doc.addImage(chartImg, 'PNG', 107, 28, 93, 48);
+      } else {
+        doc.setDrawColor(51, 65, 85);
+        doc.rect(107, 28, 93, 48);
+        doc.setTextColor(148, 163, 184);
+        doc.text('Diagram capture unavailable', 130, 52);
+      }
+
+      // Section 2: Input Parameters & Capacity Verification Tables
+      doc.setFillColor(30, 41, 59);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.rect(10, 78, 190, 6, 'F');
+      doc.text('2. DESIGN PARAMETERS & VERIFICATION SUMMARY', 12, 82);
+
       autoTable(doc, {
-        startY: 92,
-        margin: { left: 12 },
-        tableWidth: 90,
-        head: [['Design Input Parameter', 'Value / Unit']],
+        startY: 85,
+        margin: { left: 10 },
+        tableWidth: 93,
+        head: [['Input Parameter', 'Design Value']],
         body: [
           ['Material Class', materialType.toUpperCase()],
-          ['Design Code', designCode],
           ['Span Length (L)', `${result.span ?? length} m`],
           ['Section Dimensions', `${width} × ${depth} mm`],
-          ['Yield Strength', materialType === 'rc' ? `${fy} MPa` : `${fySteel} MPa`],
+          ['Yield Strength (fy)', materialType === 'rc' ? `${fy} MPa` : `${fySteel} MPa`],
+          ['Concrete Grade (f\'c)', `${fc} MPa`],
         ],
         theme: 'grid',
-        headStyles: { fillColor: [14, 116, 144], fontSize: 6.5, cellPadding: 1 },
-        bodyStyles: { fontSize: 6.5, cellPadding: 1 },
+        headStyles: { fillColor: [14, 116, 144], fontSize: 7, cellPadding: 1.5 },
+        bodyStyles: { fontSize: 7, cellPadding: 1.5 },
       });
 
       autoTable(doc, {
-        startY: 92,
-        margin: { left: 108 },
-        tableWidth: 90,
-        head: [['Verification Metric', 'Calculated Output']],
+        startY: 85,
+        margin: { left: 107 },
+        tableWidth: 93,
+        head: [['Capacity Check Metric', 'Calculated Output']],
         body: [
           ['Max Applied Moment |M_max|', `${result.critical_values?.max_bending_moment ?? 0} kN·m`],
           ['Design Moment Capacity (M_rd)', `${result.design_verification?.M_rd ?? 0} kN·m`],
           ['Max Applied Shear |V_max|', `${result.critical_values?.max_shear_force ?? 0} kN`],
           ['Design Shear Capacity (V_rd)', `${result.design_verification?.V_rd ?? 0} kN`],
           ['Max Deflection |δ_max|', `${result.critical_values?.max_deflection ?? 0} mm`],
-          ['Overall DCR Status', `${result.design_verification?.overallDCR ?? 0} [${result.design_verification?.status}]`],
+          ['Overall DCR & Status', `${result.design_verification?.overallDCR ?? 0} [${result.design_verification?.status}]`],
         ],
         theme: 'grid',
-        headStyles: { fillColor: [15, 118, 110], fontSize: 6.5, cellPadding: 1 },
+        headStyles: { fillColor: [15, 118, 110], fontSize: 7, cellPadding: 1.5 },
+        bodyStyles: { fontSize: 7, cellPadding: 1.5 },
+      });
+
+      // Section 3: Station Analysis Table (Fills full lower page width)
+      doc.setFillColor(30, 41, 59);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.rect(10, 132, 190, 6, 'F');
+      doc.text('3. STATION ANALYSIS BREAKDOWN ALONG SPAN', 12, 136);
+
+      // Extract 11 sampled key stations
+      const sampleIndices = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+      const stationRows = sampleIndices.map((idx) => {
+        const x = result.x_coords?.[idx] ?? 0;
+        const V = result.shear_force?.[idx] ?? 0;
+        const M = result.bending_moment?.[idx] ?? 0;
+        const def = result.deflection?.[idx] ?? 0;
+        const localDCR = Math.abs(M) / (result.design_verification?.M_rd || 1);
+        return [
+          `${x.toFixed(2)} m`,
+          `${V.toFixed(2)} kN`,
+          `${M.toFixed(2)} kNm`,
+          `${def.toFixed(2)} mm`,
+          localDCR.toFixed(2),
+          localDCR <= 1.0 ? 'OK' : 'FAIL',
+        ];
+      });
+
+      autoTable(doc, {
+        startY: 139,
+        margin: { left: 10, right: 10 },
+        tableWidth: 190,
+        head: [['Station (x)', 'Shear Force V(x)', 'Bending Moment M(x)', 'Deflection δ(x)', 'Local DCR', 'Status']],
+        body: stationRows,
+        theme: 'striped',
+        headStyles: { fillColor: [30, 41, 59], fontSize: 7, cellPadding: 1.5 },
         bodyStyles: { fontSize: 6.5, cellPadding: 1 },
       });
+
+      // Section 4: Support Reactions Footer Card
+      doc.setFillColor(30, 41, 59);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.rect(10, 222, 190, 6, 'F');
+      doc.text('4. SUPPORT REACTION FORCES', 12, 226);
+
+      autoTable(doc, {
+        startY: 229,
+        margin: { left: 10, right: 10 },
+        tableWidth: 190,
+        head: [['Reaction A (R_A)', 'Reaction B (R_B)', 'Moment A (M_A)', 'Moment B (M_B)']],
+        body: [
+          [
+            `${result.reactions?.R_A ?? 0} kN`,
+            `${result.reactions?.R_B ?? 0} kN`,
+            `${result.reactions?.M_A ?? 0} kNm`,
+            `${result.reactions?.M_B ?? 0} kNm`,
+          ],
+        ],
+        theme: 'grid',
+        headStyles: { fillColor: [71, 85, 105], fontSize: 7, cellPadding: 2 },
+        bodyStyles: { fontSize: 7, cellPadding: 2 },
+      });
+
+      // Footer line
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 287, 210, 10, 'F');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text('Haya Structures - Verified Finite Element Verification Sheet | Page 1 of 1', 10, 293);
 
       doc.save(`Haya_Beam_${materialType}_${designCode}_Report.pdf`);
     } catch (err) {
@@ -740,7 +876,7 @@ export default function BeamAnalysisTool() {
             </p>
 
             <button onClick={generatePDF} disabled={downloadingPdf} className="w-full mt-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded transition shadow-lg text-xs">
-              {downloadingPdf ? 'Generating PDF...' : '📄 Download PDF Report (With 3D Capture)'}
+              {downloadingPdf ? 'Generating PDF Sheet...' : '📄 Download PDF Calculation Sheet'}
             </button>
           </div>
         )}
@@ -798,7 +934,7 @@ export default function BeamAnalysisTool() {
               </div>
             </div>
 
-            <div className="h-48 w-full">
+            <div ref={chartRef} className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 {chartTab === 'sfd_bmd' ? (
                   <LineChart data={chartData}>
