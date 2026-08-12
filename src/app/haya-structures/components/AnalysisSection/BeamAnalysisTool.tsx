@@ -97,7 +97,7 @@ export default function BeamAnalysisTool() {
     }
   };
 
-  // Helper function: Convert live SVG node to high-res PNG Data URL
+  // Convert live SVG element to PNG Data URL for PDF inclusion
   const convertSvgToPng = (svgElement: SVGSVGElement, bgColor = '#0f172a'): Promise<string> => {
     return new Promise((resolve, reject) => {
       try {
@@ -125,7 +125,7 @@ export default function BeamAnalysisTool() {
 
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          canvas.width = w * 2; // 2x scale for crisp PDF vector rendering
+          canvas.width = w * 2;
           canvas.height = h * 2;
           const ctx = canvas.getContext('2d');
           if (ctx) {
@@ -134,7 +134,7 @@ export default function BeamAnalysisTool() {
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             resolve(canvas.toDataURL('image/png'));
           } else {
-            reject(new Error('Canvas 2D context unavailable'));
+            reject(new Error('Canvas context unavailable'));
           }
           URL.revokeObjectURL(url);
         };
@@ -159,123 +159,119 @@ export default function BeamAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
-      // Page 1: Title Header
-      doc.setFontSize(18);
+      // --- Header Block (Compact) ---
+      doc.setFontSize(14);
       doc.setTextColor(15, 23, 42);
-      doc.text('HAYA STRUCTURES LLC', 14, 18);
-      doc.setFontSize(11);
+      doc.text('HAYA STRUCTURES LLC', 14, 12);
+      doc.setFontSize(8);
       doc.setTextColor(100);
-      doc.text('Comprehensive Beam Analysis & Verification Report', 14, 25);
+      doc.text(`Beam Analysis & Verification Report | Date: ${dateStr}`, 14, 16);
+      doc.line(14, 19, 196, 19);
+
+      // --- Section 1: Side-by-Side Compact Tables ---
       doc.setFontSize(9);
-      doc.text(`Date Generated: ${dateStr}`, 14, 30);
-      doc.line(14, 34, 196, 34);
-
-      // Section 1: Inputs Table
-      doc.setFontSize(11);
       doc.setTextColor(15, 23, 42);
-      doc.text('1. Beam Geometry & Boundary Conditions', 14, 42);
+      doc.text('1. Design Inputs & Structural Reactions', 14, 24);
 
+      // Left Column Table 1: Geometry & Supports
       autoTable(doc, {
-        startY: 46,
+        startY: 27,
+        margin: { left: 14 },
+        tableWidth: 88,
         head: [['Parameter', 'Value', 'Unit']],
         body: [
           ['Span Length (L)', `${result.span ?? length}`, 'm'],
-          ['Support Configuration', `${support.replace('_', ' ').toUpperCase()}`, '-'],
-          ['Applied Load Count', `${loads.length}`, 'items'],
+          ['Support Type', `${support.replace('_', ' ').toUpperCase()}`, '-'],
+          ['Load Count', `${loads.length}`, 'items'],
         ],
         theme: 'striped',
-        headStyles: { fillColor: [14, 116, 144] },
+        headStyles: { fillColor: [14, 116, 144], fontSize: 7, cellPadding: 1 },
+        bodyStyles: { fontSize: 7, cellPadding: 1 },
       });
 
       const getFinalY = (pdfDoc: jsPDF) =>
-        (pdfDoc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 60;
+        (pdfDoc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 45;
 
-      let lastY = getFinalY(doc) + 6;
-      doc.text('Applied Loading Schedule', 14, lastY);
+      const leftY1 = getFinalY(doc);
 
-      const loadRows = loads.map((l, index) => [
-        `Load #${index + 1}`,
-        l.type.toUpperCase(),
-        `${l.magnitude} ${l.type === 'udl' ? 'kN/m' : 'kN'}`,
-        `${l.position} m`,
-        l.length ? `${l.length} m` : '-',
-      ]);
-
+      // Left Column Table 2: Applied Loads
       autoTable(doc, {
-        startY: lastY + 4,
-        head: [['Load ID', 'Type', 'Magnitude', 'Position (Start)', 'Span Length']],
-        body: loadRows,
+        startY: leftY1 + 3,
+        margin: { left: 14 },
+        tableWidth: 88,
+        head: [['Load ID', 'Type', 'Mag.', 'Pos.', 'Len.']],
+        body: loads.map((l, index) => [
+          `#${index + 1}`,
+          l.type.toUpperCase(),
+          `${l.magnitude}`,
+          `${l.position}m`,
+          l.length ? `${l.length}m` : '-',
+        ]),
         theme: 'grid',
-        headStyles: { fillColor: [51, 65, 85] },
+        headStyles: { fillColor: [51, 65, 85], fontSize: 7, cellPadding: 1 },
+        bodyStyles: { fontSize: 7, cellPadding: 1 },
       });
 
-      // Section 2: Statics Summary
-      lastY = getFinalY(doc) + 8;
-      doc.text('2. Computed Support Reactions & Critical Extremes', 14, lastY);
+      const leftYTotal = getFinalY(doc);
 
+      // Right Column Table: Statics & Reaction Extremes
       autoTable(doc, {
-        startY: lastY + 4,
+        startY: 27,
+        margin: { left: 106 },
+        tableWidth: 90,
         head: [['Metric Description', 'Value', 'Unit']],
         body: [
-          ['Left Support Reaction (R_A)', `${result.reactions?.R_A ?? 0}`, 'kN'],
-          ['Right Support Reaction (R_B)', `${result.reactions?.R_B ?? 0}`, 'kN'],
-          ['Max Shear Force (|V_max|)', `${result.critical_values?.max_shear_force ?? 0}`, 'kN'],
-          ['Max Bending Moment (|M_max|)', `${result.critical_values?.max_bending_moment ?? 0}`, 'kN·m'],
-          ['Max Midspan Deflection', `${result.critical_values?.max_deflection ?? 0}`, 'mm'],
+          ['Left Reaction (R_A)', `${result.reactions?.R_A ?? 0}`, 'kN'],
+          ['Right Reaction (R_B)', `${result.reactions?.R_B ?? 0}`, 'kN'],
+          ['Max Shear (|V_max|)', `${result.critical_values?.max_shear_force ?? 0}`, 'kN'],
+          ['Max Moment (|M_max|)', `${result.critical_values?.max_bending_moment ?? 0}`, 'kN·m'],
+          ['Max Deflection', `${result.critical_values?.max_deflection ?? 0}`, 'mm'],
         ],
         theme: 'striped',
-        headStyles: { fillColor: [15, 118, 110] },
+        headStyles: { fillColor: [15, 118, 110], fontSize: 7, cellPadding: 1 },
+        bodyStyles: { fontSize: 7, cellPadding: 1 },
       });
 
-      // Section 3: Direct SVG Diagram Ingestion for Page 2
+      const rightYTotal = getFinalY(doc);
+
+      let currentY = Math.max(leftYTotal, rightYTotal) + 5;
+
+      // --- Section 2: Single-Page Visualizations ---
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      doc.text('2. Live Structural Visualizations (SFD & BMD)', 14, currentY);
+      currentY += 3;
+
       const beamSvg = document.getElementById('live-beam-svg') as unknown as SVGSVGElement;
       const sfdSvg = document.querySelector('#sfd-chart-container svg') as SVGSVGElement;
       const bmdSvg = document.querySelector('#bmd-chart-container svg') as SVGSVGElement;
 
-      if (beamSvg || sfdSvg || bmdSvg) {
-        doc.addPage();
-        doc.setFontSize(12);
-        doc.setTextColor(15, 23, 42);
-        doc.text('3. Structural Visualization, SFD & BMD Diagrams', 14, 18);
-
-        let currentY = 24;
-
-        if (beamSvg) {
-          try {
-            const beamPng = await convertSvgToPng(beamSvg, '#0f172a');
-            doc.setFontSize(10);
-            doc.setTextColor(51, 65, 85);
-            doc.text('Live Beam Geometry & Applied Loads', 14, currentY);
-            doc.addImage(beamPng, 'PNG', 14, currentY + 3, 182, 50);
-            currentY += 60;
-          } catch (e) {
-            console.warn('Beam SVG export failed:', e);
-          }
+      if (beamSvg) {
+        try {
+          const beamPng = await convertSvgToPng(beamSvg, '#0f172a');
+          doc.addImage(beamPng, 'PNG', 14, currentY, 182, 36);
+          currentY += 39;
+        } catch (e) {
+          console.warn('Beam SVG export failed:', e);
         }
+      }
 
-        if (sfdSvg) {
-          try {
-            const sfdPng = await convertSvgToPng(sfdSvg, '#0f172a');
-            doc.setFontSize(10);
-            doc.setTextColor(14, 116, 144);
-            doc.text('Shear Force Diagram (SFD) [kN]', 14, currentY);
-            doc.addImage(sfdPng, 'PNG', 14, currentY + 3, 182, 55);
-            currentY += 65;
-          } catch (e) {
-            console.warn('SFD SVG export failed:', e);
-          }
+      if (sfdSvg) {
+        try {
+          const sfdPng = await convertSvgToPng(sfdSvg, '#0f172a');
+          doc.addImage(sfdPng, 'PNG', 14, currentY, 182, 46);
+          currentY += 49;
+        } catch (e) {
+          console.warn('SFD SVG export failed:', e);
         }
+      }
 
-        if (bmdSvg) {
-          try {
-            const bmdPng = await convertSvgToPng(bmdSvg, '#0f172a');
-            doc.setFontSize(10);
-            doc.setTextColor(15, 118, 110);
-            doc.text('Bending Moment Diagram (BMD) [kN·m]', 14, currentY);
-            doc.addImage(bmdPng, 'PNG', 14, currentY + 3, 182, 55);
-          } catch (e) {
-            console.warn('BMD SVG export failed:', e);
-          }
+      if (bmdSvg) {
+        try {
+          const bmdPng = await convertSvgToPng(bmdSvg, '#0f172a');
+          doc.addImage(bmdPng, 'PNG', 14, currentY, 182, 46);
+        } catch (e) {
+          console.warn('BMD SVG export failed:', e);
         }
       }
 
@@ -471,7 +467,7 @@ export default function BeamAnalysisTool() {
         )}
       </div>
 
-      {/* Captured Visual Section */}
+      {/* Visual Report Display Section */}
       <div className="lg:col-span-7 space-y-6">
         {/* SVG Beam Diagram */}
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
@@ -494,6 +490,7 @@ export default function BeamAnalysisTool() {
 
               {loads.map((load) => {
                 const startX = getX(Math.min(load.position, length));
+
                 if (load.type === 'point') {
                   return (
                     <g key={load.id}>
@@ -505,6 +502,7 @@ export default function BeamAnalysisTool() {
                     </g>
                   );
                 }
+
                 if (load.type === 'udl') {
                   const loadLen = load.length || length;
                   const endX = getX(Math.min(load.position + loadLen, length));
@@ -520,6 +518,37 @@ export default function BeamAnalysisTool() {
                     );
                   }
                 }
+
+                if (load.type === 'moment') {
+                  return (
+                    <g key={load.id}>
+                      {/* Curved Arc for Concentrated Moment */}
+                      <path
+                        d={`M ${startX - 15} ${beamY - 10} A 18 18 0 1 1 ${startX + 12} ${beamY - 22}`}
+                        fill="none"
+                        stroke="#f59e0b"
+                        strokeWidth="2.5"
+                      />
+                      {/* Moment Arrowhead */}
+                      <polygon
+                        points={`${startX + 12},${beamY - 22} ${startX + 5},${beamY - 28} ${startX + 16},${beamY - 28}`}
+                        fill="#f59e0b"
+                      />
+                      {/* Moment Magnitude Label */}
+                      <text
+                        x={startX}
+                        y={beamY - 42}
+                        fill="#fbbf24"
+                        fontSize="12"
+                        textAnchor="middle"
+                        fontWeight="bold"
+                      >
+                        {load.magnitude} kN·m
+                      </text>
+                    </g>
+                  );
+                }
+
                 return null;
               })}
             </svg>
