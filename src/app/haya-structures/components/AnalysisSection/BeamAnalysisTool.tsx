@@ -108,7 +108,7 @@ export default function BeamAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
-      // Document Header
+      // Page 1 Header
       doc.setFontSize(18);
       doc.setTextColor(15, 23, 42);
       doc.text('HAYA STRUCTURES LLC', 14, 18);
@@ -136,7 +136,6 @@ export default function BeamAnalysisTool() {
         headStyles: { fillColor: [14, 116, 144] },
       });
 
-      // Section 1b: Applied Loads Table
       const getFinalY = (pdfDoc: jsPDF) =>
         (pdfDoc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 60;
 
@@ -159,7 +158,7 @@ export default function BeamAnalysisTool() {
         headStyles: { fillColor: [51, 65, 85] },
       });
 
-      // Section 2: Statics & Extremes
+      // Section 2: Statics & Reaction Extremes
       lastY = getFinalY(doc) + 8;
       doc.text('2. Computed Support Reactions & Critical Extremes', 14, lastY);
 
@@ -177,27 +176,39 @@ export default function BeamAnalysisTool() {
         headStyles: { fillColor: [15, 118, 110] },
       });
 
-      // Section 3: Captured Visuals (Safely Isolated)
+      // Section 3: Visual Capture (SVG Beam Diagram + Recharts SFD/BMD)
       if (reportCaptureRef.current) {
-        try {
-          const canvas = await html2canvas(reportCaptureRef.current, {
-            scale: 1.5,
-            useCORS: true,
-            allowTaint: true,
-            backgroundColor: '#0f172a',
-            logging: false,
-          });
+        const canvas = await html2canvas(reportCaptureRef.current, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#0f172a',
+          logging: false,
+          windowWidth: 1200,
+          onclone: (clonedDoc) => {
+            // Force responsive containers to fixed pixel dimensions in screenshot clone
+            const containers = clonedDoc.querySelectorAll('.recharts-responsive-container');
+            containers.forEach((c) => {
+              (c as HTMLElement).style.width = '700px';
+              (c as HTMLElement).style.height = '200px';
+            });
+            // Force inline SVG visibility
+            const svgs = clonedDoc.querySelectorAll('svg');
+            svgs.forEach((s) => {
+              s.style.overflow = 'visible';
+            });
+          },
+        });
 
-          const imgData = canvas.toDataURL('image/png');
+        const imgData = canvas.toDataURL('image/png');
+        const imgWidth = 182;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-          doc.addPage();
-          doc.setFontSize(11);
-          doc.setTextColor(15, 23, 42);
-          doc.text('3. Structural Visualization, SFD & BMD Diagrams', 14, 18);
-          doc.addImage(imgData, 'PNG', 14, 24, 182, 240);
-        } catch (canvasErr) {
-          console.warn('DOM diagram capture failed, generating numerical PDF report only:', canvasErr);
-        }
+        doc.addPage();
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42);
+        doc.text('3. Structural Visualization, SFD & BMD Diagrams', 14, 18);
+        doc.addImage(imgData, 'PNG', 14, 24, imgWidth, Math.min(imgHeight, 250));
       }
 
       doc.save(`Haya_Structures_Beam_${length}m_Report.pdf`);
@@ -259,7 +270,7 @@ export default function BeamAnalysisTool() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      {/* Control Panel Column */}
+      {/* Input Controls */}
       <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800">
         <h3 className="font-semibold text-slate-200 border-b border-slate-800 pb-2">Beam Geometry & Supports</h3>
 
@@ -392,7 +403,7 @@ export default function BeamAnalysisTool() {
         )}
       </div>
 
-      {/* Visual Report Capture Section */}
+      {/* Captured Visual Section */}
       <div className="lg:col-span-7 space-y-6" ref={reportCaptureRef}>
         {/* SVG Beam Diagram */}
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 flex flex-col justify-center">
