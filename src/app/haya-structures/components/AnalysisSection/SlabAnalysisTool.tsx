@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import jsPDF from 'jspdf';
@@ -93,7 +93,7 @@ export default function SlabAnalysisTool() {
   const [thickness, setThickness] = useState<number>(180);
   const [cover, setCover] = useState<number>(25);
 
-  // Column / Drop Panel Geometry (Punching Shear)
+  // Column / Drop Panel Geometry
   const [colW, setColW] = useState<number>(400);
   const [colH, setColH] = useState<number>(400);
   const [dropPanelT, setDropPanelT] = useState<number>(50);
@@ -106,15 +106,13 @@ export default function SlabAnalysisTool() {
   const [deadLoad, setDeadLoad] = useState<number>(1.5);
   const [liveLoad, setLiveLoad] = useState<number>(3.0);
 
-  // Reinforcement (Short Span / X)
+  // Reinforcement
   const [barDiam, setBarDiam] = useState<number>(12);
   const [barSpacing, setBarSpacing] = useState<number>(150);
-
-  // Reinforcement (Long Span / Y)
   const [barDiamY, setBarDiamY] = useState<number>(10);
   const [barSpacingY, setBarSpacingY] = useState<number>(200);
 
-  // Visualization View Controls
+  // Controls
   const [viewMode, setViewMode] = useState<'3d' | '2d' | 'split'>('split');
   const [deflectionScale, setDeflectionScale] = useState<number>(150);
   const [showWireframe, setShowWireframe] = useState<boolean>(true);
@@ -181,7 +179,7 @@ export default function SlabAnalysisTool() {
     scene.background = new THREE.Color(0x0f172a);
 
     const camera = new THREE.PerspectiveCamera(45, widthVal / heightVal, 0.1, 1000);
-    camera.position.set(lx * 0.9, Math.max(lx, ly) * 1.1, ly * 1.2);
+    camera.position.set(lx * 0.9, Math.max(lx, ly) * 1.2, ly * 1.3);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setSize(widthVal, heightVal);
@@ -189,17 +187,13 @@ export default function SlabAnalysisTool() {
     mount.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(lx / 2, 0, ly / 2);
+    controls.target.set(lx / 2, -0.2, ly / 2);
     controls.update();
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.9));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(lx * 2, ly * 2, lx * 2);
     scene.add(dirLight);
-
-    const grid = new THREE.GridHelper(Math.max(lx, ly) * 2, 20, 0x334155, 0x1e293b);
-    grid.position.set(lx / 2, -1, ly / 2);
-    scene.add(grid);
 
     // Parametric Subdivided Surface Mesh
     const segmentsX = 40;
@@ -212,7 +206,7 @@ export default function SlabAnalysisTool() {
     const count = posAttr.count;
     const colors = new Float32Array(count * 3);
 
-    // Max physical deflection baseline scaled dynamically
+    // Physical Deflection Amplification Scale
     const maxDeflectionMeters = ((lx * 1000) / (result?.deflection?.actual_ratio || 250)) / 1000;
     const amp = Math.max(maxDeflectionMeters * deflectionScale, 0.05);
 
@@ -225,7 +219,7 @@ export default function SlabAnalysisTool() {
 
       let wNorm = 0;
 
-      // Analytical Elastic Deflection Shape Functions w(x,y)
+      // Elastic Deflection Shape Functions w(x,y)
       if (supportCondition === 'cantilever') {
         wNorm = Math.pow(normX, 2) * (3 - 2 * normX);
       } else if (supportCondition === 'continuous' || supportCondition === 'restrained_4edges') {
@@ -233,7 +227,6 @@ export default function SlabAnalysisTool() {
       } else if (slabSystem === 'one_way_solid') {
         wNorm = Math.sin(Math.PI * normX);
       } else {
-        // Simply supported two-way / flat plate deflection surface
         wNorm = Math.sin(Math.PI * normX) * Math.sin(Math.PI * normY);
       }
 
@@ -254,7 +247,6 @@ export default function SlabAnalysisTool() {
       side: THREE.DoubleSide,
       roughness: 0.3,
       metalness: 0.1,
-      wireframe: false,
     });
     const surfaceMesh = new THREE.Mesh(planeGeo, surfaceMat);
     scene.add(surfaceMesh);
@@ -270,33 +262,78 @@ export default function SlabAnalysisTool() {
       scene.add(wireMesh);
     }
 
-    // Support Elements (Columns / Beams Boundary Representations)
-    const suppMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.5 });
+    // --- SUPPORT STRUCTURE GEOMETRY & ELEVATION OFFSET CORRECTIONS ---
+    const slabH = thickness / 1000;
+    const dpT = slabSystem === 'flat_slab' ? dropPanelT / 1000 : 0;
+    const suppMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.4, roughness: 0.5 });
+    const dropMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.3 });
+
     const cW = (colW || 400) / 1000;
     const cH = (colH || 400) / 1000;
+    const colLength = 1.5; // Column height under slab
 
-    const addColumn = (xPos: number, zPos: number) => {
-      const colGeo = new THREE.BoxGeometry(cW, 1.2, cH);
-      const colMesh = new THREE.Mesh(colGeo, suppMat);
-      colMesh.position.set(xPos, -0.6, zPos);
-      scene.add(colMesh);
-    };
+    // Dynamic Grid Position to prevent mesh clipping during high deflection scaling
+    const lowestStructuralY = -(slabH + dpT + colLength + amp + 0.3);
+    const grid = new THREE.GridHelper(Math.max(lx, ly) * 2.2, 20, 0x334155, 0x1e293b);
+    grid.position.set(lx / 2, lowestStructuralY, ly / 2);
+    scene.add(grid);
 
     if (isPunchingRelevant) {
-      addColumn(0, 0);
-      addColumn(lx, 0);
-      addColumn(0, ly);
-      addColumn(lx, ly);
-      if (lx > 3 && ly > 3) addColumn(lx / 2, ly / 2);
-    } else {
-      const beamGeoX = new THREE.BoxGeometry(lx, 0.3, 0.2);
-      const beam1 = new THREE.Mesh(beamGeoX, suppMat);
-      beam1.position.set(lx / 2, -0.15, 0);
-      scene.add(beam1);
+      // Column & Drop Panel Construction
+      const addColumnWithDrop = (xPos: number, zPos: number) => {
+        // Drop Panel (Top positioned at bottom of slab Y = -slabH)
+        if (slabSystem === 'flat_slab' && dpT > 0) {
+          const dpWidth = Math.max(cW * 2.5, 1.0);
+          const dpHeight = Math.max(cH * 2.5, 1.0);
+          const dpGeo = new THREE.BoxGeometry(dpWidth, dpT, dpHeight);
+          const dpMesh = new THREE.Mesh(dpGeo, dropMat);
+          dpMesh.position.set(xPos, -slabH - dpT / 2, zPos);
+          scene.add(dpMesh);
+        }
 
-      const beam2 = new THREE.Mesh(beamGeoX, suppMat);
-      beam2.position.set(lx / 2, -0.15, ly);
-      scene.add(beam2);
+        // Column (Top positioned at bottom of drop panel or slab Y = -slabH - dpT)
+        const colGeo = new THREE.BoxGeometry(cW, colLength, cH);
+        const colMesh = new THREE.Mesh(colGeo, suppMat);
+        colMesh.position.set(xPos, -slabH - dpT - colLength / 2, zPos);
+        scene.add(colMesh);
+      };
+
+      addColumnWithDrop(0, 0);
+      addColumnWithDrop(lx, 0);
+      addColumnWithDrop(0, ly);
+      addColumnWithDrop(lx, ly);
+      if (lx > 3.5 && ly > 3.5) addColumnWithDrop(lx / 2, ly / 2);
+    } else {
+      // Beam Support Framing Alignment Fix
+      const bW = 0.25; // Beam width (m)
+      const bD = 0.45; // Beam depth (m)
+      const beamYCenter = -slabH - bD / 2;
+
+      const addBeamAlongX = (zPos: number) => {
+        const bGeo = new THREE.BoxGeometry(lx + bW, bD, bW);
+        const bMesh = new THREE.Mesh(bGeo, suppMat);
+        bMesh.position.set(lx / 2, beamYCenter, zPos);
+        scene.add(bMesh);
+      };
+
+      const addBeamAlongZ = (xPos: number) => {
+        const bGeo = new THREE.BoxGeometry(bW, bD, ly + bW);
+        const bMesh = new THREE.Mesh(bGeo, suppMat);
+        bMesh.position.set(xPos, beamYCenter, ly / 2);
+        scene.add(bMesh);
+      };
+
+      if (slabSystem === 'one_way_solid') {
+        // Beams supporting primary span X run along Z at X=0 and X=Lx
+        addBeamAlongZ(0);
+        addBeamAlongZ(lx);
+      } else {
+        // Two-Way Solid Slab on Perimeter Beams (All 4 Edges)
+        addBeamAlongZ(0);
+        addBeamAlongZ(lx);
+        addBeamAlongX(0);
+        addBeamAlongX(ly);
+      }
     }
 
     let animId: number;
@@ -312,7 +349,7 @@ export default function SlabAnalysisTool() {
         mount.removeChild(renderer.domElement);
       }
     };
-  }, [lx, ly, thickness, colW, colH, supportCondition, slabSystem, isPunchingRelevant, viewMode, result, deflectionScale, showWireframe]);
+  }, [lx, ly, thickness, colW, colH, dropPanelT, supportCondition, slabSystem, isPunchingRelevant, viewMode, result, deflectionScale, showWireframe]);
 
   const convertSvgToPng = (svgElement: SVGSVGElement, bgColor = '#0f172a'): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -389,7 +426,7 @@ export default function SlabAnalysisTool() {
       doc.setTextColor(226, 232, 240);
       doc.text(`Code Standard: ${designCode} | System: ${result.slab_type} | Date: ${dateStr}`, 12, 15);
 
-      // Section 1: Inputs & Design Summary Tables Side-by-Side
+      // Section 1: Inputs & Design Summary
       autoTable(doc, {
         startY: 22,
         margin: { left: 12 },
@@ -450,9 +487,7 @@ export default function SlabAnalysisTool() {
         bodyStyles: { fontSize: 7, cellPadding: 1.8 },
       });
 
-      // Section 2: Diagrams (Includes 3D WebGL Deflection Shape Snapshot & 2D Plan View)
       let currentY = 96;
-
       const planSvg = document.getElementById('slab-plan-svg') as unknown as SVGSVGElement;
       const canvas3D = mountRef.current?.querySelector('canvas');
 
@@ -480,7 +515,7 @@ export default function SlabAnalysisTool() {
         }
       }
 
-      // Section 3: Full-Width Compliance Verification Table
+      // Section 3: Verification Table
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
@@ -510,7 +545,6 @@ export default function SlabAnalysisTool() {
         bodyStyles: { fontSize: 7, cellPadding: 1.8 },
       });
 
-      // Section 4: Engineering Notes & Sign-Off Block
       const finalTableY = (doc as any).lastAutoTable.finalY + 6;
 
       doc.setFillColor(248, 250, 252);
@@ -584,7 +618,7 @@ export default function SlabAnalysisTool() {
       case 'EC2':
         return 'Eurocode 2 (EN 1992-1-1)';
       case 'BS8110':
-        return 'BS 8110:1997 (Ultimate Limit State)';
+        return 'BS 8110:1997 (ULS)';
     }
   };
 
@@ -595,7 +629,7 @@ export default function SlabAnalysisTool() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-950 p-6 rounded-2xl border border-slate-800 text-slate-100 font-sans">
-      {/* Control Input Panel */}
+      {/* Input Side Panel */}
       <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
           <h3 className="font-semibold text-slate-200">RC Slab Design Inputs</h3>
@@ -610,7 +644,6 @@ export default function SlabAnalysisTool() {
           </select>
         </div>
 
-        {/* Slab System Selector */}
         <div>
           <label className="block text-xs text-slate-400 mb-1">Structural Slab System</label>
           <select
@@ -625,7 +658,6 @@ export default function SlabAnalysisTool() {
           </select>
         </div>
 
-        {/* Boundary Support Conditions */}
         <div>
           <label className="block text-xs text-slate-400 mb-1">Boundary Support Condition</label>
           <select
@@ -640,7 +672,6 @@ export default function SlabAnalysisTool() {
           </select>
         </div>
 
-        {/* Dimensions & Thickness */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Short Span Lx (m)</label>
@@ -685,7 +716,6 @@ export default function SlabAnalysisTool() {
           </div>
         </div>
 
-        {/* Punching Shear Specific Parameters */}
         {isPunchingRelevant && (
           <div className="p-3 bg-cyan-950/30 border border-cyan-800/40 rounded-lg space-y-3">
             <h4 className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">Punching Shear Parameters</h4>
@@ -723,7 +753,6 @@ export default function SlabAnalysisTool() {
           </div>
         )}
 
-        {/* Material Specs */}
         <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
           <div>
             <label className="block text-xs text-slate-400 mb-1">{designCode === 'ACI318' ? "f'c (MPa)" : 'fck (MPa)'}</label>
@@ -745,7 +774,6 @@ export default function SlabAnalysisTool() {
           </div>
         </div>
 
-        {/* Loading Parameters */}
         <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Superimposed DL (kN/m²)</label>
@@ -769,9 +797,8 @@ export default function SlabAnalysisTool() {
           </div>
         </div>
 
-        {/* Reinforcement Configuration */}
         <div className="space-y-3 pt-2 border-t border-slate-800">
-          <h4 className="font-semibold text-slate-200 text-xs uppercase tracking-wider text-cyan-400">Primary Rebar (Short Span / Bottom X)</h4>
+          <h4 className="font-semibold text-slate-200 text-xs uppercase tracking-wider text-cyan-400">Primary Rebar (Short Span / X)</h4>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-slate-400 mb-1">Bar Diam Øx (mm)</label>
@@ -870,9 +897,8 @@ export default function SlabAnalysisTool() {
         )}
       </div>
 
-      {/* Visual Graphical & Detailed Verification Output */}
+      {/* Visual & Detailed Verification Viewport */}
       <div className="lg:col-span-7 space-y-6">
-        {/* Metric Cards Row */}
         {result && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl text-center">
@@ -912,7 +938,6 @@ export default function SlabAnalysisTool() {
           </div>
         )}
 
-        {/* 3D EXAGGERATED DEFLECTION SHAPE & 2D SECTION VIEWPORT */}
         <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
           <div className="flex flex-wrap justify-between items-center gap-2">
             <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
@@ -940,7 +965,6 @@ export default function SlabAnalysisTool() {
             </div>
           </div>
 
-          {/* Interactive Deflection Controls */}
           {(viewMode === '3d' || viewMode === 'split') && (
             <div className="flex flex-wrap items-center justify-between gap-4 p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-xs">
               <div className="flex items-center space-x-2 flex-1 min-w-[200px]">
@@ -967,7 +991,6 @@ export default function SlabAnalysisTool() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 min-h-[280px]">
-            {/* 3D WebGL Deflection Model Viewport */}
             {(viewMode === '3d' || viewMode === 'split') && (
               <div
                 ref={mountRef}
@@ -984,7 +1007,6 @@ export default function SlabAnalysisTool() {
               </div>
             )}
 
-            {/* 2D Plan & Reinforcement Detail SVG Viewport */}
             <div
               className={`w-full bg-slate-950 border border-slate-800 rounded-lg p-2 flex flex-col items-center justify-center relative ${
                 viewMode === '3d' ? 'hidden' : 'flex'
@@ -992,28 +1014,23 @@ export default function SlabAnalysisTool() {
             >
               <div className="absolute top-2 left-2 text-[10px] font-semibold text-slate-400">2D Structural Plan View</div>
               <svg id="slab-plan-svg" viewBox="0 0 500 300" className="w-full h-56 max-w-[380px]">
-                {/* Slab Outline */}
                 <rect x="50" y="30" width="400" height="220" fill="#1e293b" stroke="#38bdf8" strokeWidth="3" rx="4" />
 
-                {/* Column Layout */}
                 {isPunchingRelevant ? (
                   <>
                     <rect x="40" y="20" width="20" height="20" fill="#0284c7" stroke="#38bdf8" />
                     <rect x="440" y="20" width="20" height="20" fill="#0284c7" stroke="#38bdf8" />
                     <rect x="40" y="240" width="20" height="20" fill="#0284c7" stroke="#38bdf8" />
                     <rect x="440" y="240" width="20" height="20" fill="#0284c7" stroke="#38bdf8" />
-                    {/* Punching Shear Critical Perimeter bo */}
                     <rect x="30" y="10" width="40" height="40" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
                   </>
                 ) : (
                   <>
-                    {/* Support Beams */}
                     <rect x="40" y="20" width="420" height="10" fill="#475569" />
                     <rect x="40" y="250" width="420" height="10" fill="#475569" />
                   </>
                 )}
 
-                {/* Rebar Layout Indication */}
                 <line x1="70" y1="140" x2="430" y2="140" stroke="#ef4444" strokeWidth="3" />
                 <text x="250" y="132" fill="#ef4444" fontSize="11" textAnchor="middle" fontWeight="bold">
                   Primary X: T{barDiam} @ {barSpacing}mm
@@ -1024,25 +1041,11 @@ export default function SlabAnalysisTool() {
                   Secondary Y: T{barDiamY} @ {barSpacingY}mm
                 </text>
 
-                {/* Dimensions */}
                 <text x="250" y="275" fill="#94a3b8" fontSize="12" textAnchor="middle">
                   Lx = {lx} m
                 </text>
                 <text x="25" y="140" fill="#94a3b8" fontSize="12" textAnchor="middle" transform="rotate(-90 25 140)">
                   Ly = {ly} m
-                </text>
-              </svg>
-
-              {/* Hidden 2D Cross-Section SVG for PDF Export Capture */}
-              <svg id="slab-section-svg" viewBox="0 0 500 200" className="hidden">
-                <rect x="20" y="60" width="460" height="80" fill="#334155" stroke="#94a3b8" strokeWidth="3" />
-                <line x1="30" y1="120" x2="470" y2="120" stroke="#ef4444" strokeWidth="4" />
-                <circle cx="100" cy="110" r="5" fill="#38bdf8" />
-                <circle cx="200" cy="110" r="5" fill="#38bdf8" />
-                <circle cx="300" cy="110" r="5" fill="#38bdf8" />
-                <circle cx="400" cy="110" r="5" fill="#38bdf8" />
-                <text x="250" y="40" fill="#f8fafc" fontSize="14" textAnchor="middle" fontWeight="bold">
-                  Slab Thickness h = {thickness} mm (Cover = {cover} mm)
                 </text>
               </svg>
             </div>
