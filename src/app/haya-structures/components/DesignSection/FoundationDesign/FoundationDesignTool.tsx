@@ -12,7 +12,7 @@ import {
 } from '@/lib/structural/foundation';
 import { runFoundationDesign } from '@/lib/structural/foundation/autoSizer';
 import { generateFoundationPdfReport } from '@/lib/reports/foundationPdfReport';
-import { FoundationVisualizers } from './FoundationVisualizers';
+import { Foundation3DRenderer } from './Foundation3DRenderer';
 
 export default function FoundationDesignTool() {
   const [code, setCode] = useState<DesignCode>('BS8110');
@@ -85,11 +85,11 @@ export default function FoundationDesignTool() {
 
   return (
     <div className="space-y-6 text-slate-100 font-sans">
-      {/* Top Header Controls: Global Code Selector & PDF Exporter */}
+      {/* Header Controls */}
       <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-wrap justify-between items-center gap-4">
         <div className="flex items-center gap-3">
           <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-            Design Standard:
+            Design Code Standard:
           </label>
           <select
             value={code}
@@ -109,7 +109,7 @@ export default function FoundationDesignTool() {
           onClick={() => generateFoundationPdfReport(result)}
           className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition"
         >
-          📄 Generate Structural Calculation PDF
+          📄 Export Math Workflow PDF
         </button>
       </div>
 
@@ -139,7 +139,7 @@ export default function FoundationDesignTool() {
           </div>
 
           <div>
-            <label className="block text-[10px] text-slate-400 uppercase font-bold mb-2">Classification Type</label>
+            <label className="block text-[10px] text-slate-400 uppercase font-bold mb-2">Type Selection</label>
             {category === 'shallow' ? (
               <select
                 value={shallowType}
@@ -187,7 +187,7 @@ export default function FoundationDesignTool() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Soil q_allow (kPa)</label>
+              <label className="block text-xs text-slate-400 mb-1">Allowable Soil q_allow (kPa)</label>
               <input
                 type="number"
                 value={qAllow}
@@ -207,35 +207,34 @@ export default function FoundationDesignTool() {
           </div>
         </div>
 
-        {/* Right Output Panels */}
+        {/* Right Output Panel & 3D WebGL Canvas */}
         <div className="lg:col-span-7 space-y-4">
-          {/* Key Metrics Overview */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-slate-900 border border-cyan-500/30 p-3 rounded-xl text-center">
-              <span className="text-[10px] text-slate-400 block uppercase font-bold">Dimensions</span>
+              <span className="text-[10px] text-slate-400 block uppercase font-bold">Footing Dimension</span>
               <span className="text-base font-bold font-mono text-cyan-400">{result.geometry.B} x {result.geometry.L} mm</span>
             </div>
             <div className="bg-slate-900 border border-cyan-500/30 p-3 rounded-xl text-center">
-              <span className="text-[10px] text-slate-400 block uppercase font-bold">Depth (D)</span>
+              <span className="text-[10px] text-slate-400 block uppercase font-bold">Overall Depth (D)</span>
               <span className="text-base font-bold font-mono text-cyan-400">{result.geometry.D} mm</span>
             </div>
             <div className="bg-slate-900 border border-emerald-500/30 p-3 rounded-xl text-center">
-              <span className="text-[10px] text-slate-400 block uppercase font-bold">Rebar Steel Weight</span>
+              <span className="text-[10px] text-slate-400 block uppercase font-bold">Total Rebar Mass</span>
               <span className="text-base font-bold font-mono text-emerald-400">{result.totalSteelWeightKg} kg</span>
             </div>
           </div>
 
-          {/* Interactive 2D / 3D Render Viewport */}
-          <FoundationVisualizers result={result} c1={c1} c2={c2} cover={cover} />
+          {/* 3D WebGL Three.js Renderer Viewport */}
+          <Foundation3DRenderer result={result} />
 
           {/* Code Checks Summary */}
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2">
             <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-              {result.typeLabel} — Code Compliance Checks ({result.codeUsed})
+              {result.typeLabel} — Structural Checks ({result.codeUsed})
             </h4>
             <div className="grid grid-cols-4 gap-2 pt-2 text-center text-xs font-mono">
               <div className="p-2 bg-slate-950 rounded border border-slate-800">
-                <span className="text-[9px] text-slate-400 block">Bearing/Pile DCR</span>
+                <span className="text-[9px] text-slate-400 block">Bearing DCR</span>
                 <span className="font-bold text-slate-200">{result.structuralChecks.bearingOrPileDcr}</span>
               </div>
               <div className="p-2 bg-slate-950 rounded border border-slate-800">
