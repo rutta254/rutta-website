@@ -2,11 +2,12 @@ export type DesignCode = 'ACI318_19' | 'EC2_EN1992';
 export type FoundationCategory = 'shallow' | 'deep';
 export type ShallowType = 'isolated_pad' | 'wall_strip' | 'combined' | 'raft_mat';
 export type DeepType = 'single_pile' | 'pile_cap' | 'drilled_shaft';
+export type CombinedSubType = 'rectangular' | 'trapezoidal' | 'strap';
 
 export interface MathStep {
   id: string;
   title: string;
-  clauseRef: string; // e.g., "ACI 318-19 Cl. 22.6.5.2" or "BS EN 1992-1-1 Cl. 6.4.4"
+  clauseRef: string;
   formulaSymbolic: string;
   formulaSubstituted: string;
   resultValue: number;
@@ -40,13 +41,21 @@ export interface Section2DData {
 export interface BBSItem {
   mark: string;
   description: string;
-  shape: 'Straight' | 'L-Bend (90°)' | 'U-Stirrup';
+  shape: 'Straight' | 'L-Bend (90°)' | 'U-Stirrup' | 'Spiral Cage';
   barDiameter: number;
   spacing: number;
   count: number;
   cutLength: number;
   totalLength: number;
   totalWeight: number;
+}
+
+export interface StructuralChecks {
+  bearingOrPileDcr: number;
+  wideBeamShearDcr: number;
+  punchingShearDcr: number;
+  flexureDcr: number;
+  governingCheck: string;
 }
 
 export interface BaseDesignInput {
@@ -70,7 +79,13 @@ export interface BaseDesignInput {
 export interface ShallowDesignInput extends BaseDesignInput {
   category: 'shallow';
   shallowType: ShallowType;
+  combinedSubType?: CombinedSubType;
   qAllow: number;         // Allowable Bearing Pressure (kPa)
+  gammaSoil?: number;
+  embedmentDepth?: number;
+  p2Dead?: number;
+  p2Live?: number;
+  colSpacing?: number;    // Center-to-center spacing (mm)
 }
 
 export interface DeepDesignInput extends BaseDesignInput {
@@ -79,6 +94,7 @@ export interface DeepDesignInput extends BaseDesignInput {
   pileDiameter: number;   // mm
   pileCapacity: number;   // kN per pile
   numPiles?: number;
+  pileSpacing?: number;   // mm
 }
 
 export type FoundationDesignInput = ShallowDesignInput | DeepDesignInput;
@@ -88,9 +104,18 @@ export interface FoundationDesignResult {
   category: FoundationCategory;
   typeLabel: string;
   geometry: { B: number; L: number; D: number; d: number; numPiles?: number };
-  mathSteps: MathStep[];  // Step-by-step mathematical workflow trace
+  structuralChecks: StructuralChecks;
+  mathSteps: MathStep[];  
   geometry3D: Geometry3DData;
   section2D: Section2DData;
+  reinforcement: {
+    AsReqBot: number;
+    AsProvBot: number;
+    botBarDiam: number;
+    botBarSpacing: number;
+    AsReqTop?: number;
+    AsProvTop?: number;
+  };
   bbs: BBSItem[];
   totalSteelWeightKg: number;
   concreteVolumeM3: number;
