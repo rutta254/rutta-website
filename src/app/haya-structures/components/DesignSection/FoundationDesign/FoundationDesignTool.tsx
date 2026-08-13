@@ -225,7 +225,7 @@ export default function FoundationDesignTool() {
           </div>
 
           {/* 3D WebGL Three.js Renderer Viewport */}
-          <Foundation3DRenderer result={result} />
+          <Foundation3DRenderer data={result.geometry3D} />
 
           {/* Code Checks Summary */}
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2">
