@@ -4,10 +4,59 @@ import {
   ShallowDesignInput, 
   DeepDesignInput,
   MathStep, 
-  BBSItem, 
-  Geometry3DData, 
-  Section2DData 
+  BBSItem,
+  DesignCode 
 } from '@/lib/structural/foundation';
+
+// Code-specific load combination helpers
+function calculateFactoredLoad(pD: number, pL: number, code: DesignCode): { Pu: number; clause: string; formula: string } {
+  switch (code) {
+    case 'ACI318_19':
+      return { Pu: 1.2 * pD + 1.6 * pL, clause: 'ACI 318-19 Table 5.3.1', formula: '1.2*P_D + 1.6*P_L' };
+    case 'EC2_EN1992':
+      return { Pu: 1.35 * pD + 1.5 * pL, clause: 'BS EN 1990 Eq. 6.10', formula: '1.35*G_k + 1.5*Q_k' };
+    case 'BS8110':
+      return { Pu: 1.4 * pD + 1.6 * pL, clause: 'BS 8110-1 Cl. 2.4.3', formula: '1.4*G_k + 1.6*Q_k' };
+    case 'IS456':
+      return { Pu: 1.5 * pD + 1.5 * pL, clause: 'IS 456:2000 Table 18', formula: '1.5*(D + L)' };
+    case 'AS3600':
+      return { Pu: 1.2 * pD + 1.5 * pL, clause: 'AS/NZS 1170.0 Cl. 4.2.2', formula: '1.2*G + 1.5*Q' };
+    case 'CSA_A23_3':
+      return { Pu: 1.25 * pD + 1.5 * pL, clause: 'CSA A23.3-19 Cl. 8.3.2', formula: '1.25*D + 1.5*L' };
+    default:
+      return { Pu: 1.2 * pD + 1.6 * pL, clause: 'Standard Factor', formula: '1.2*P_D + 1.6*P_L' };
+  }
+}
+
+// Code-specific two-way punching shear capacity helper
+function calculatePunchingCapacity(fc: number, bo: number, d: number, code: DesignCode): { phiVc: number; clause: string } {
+  const bo_m = bo / 1000;
+  const d_m = d / 1000;
+
+  switch (code) {
+    case 'ACI318_19':
+      return { phiVc: (0.75 * 0.33 * Math.sqrt(fc) * bo * d) / 1000, clause: 'ACI 318-19 Cl. 22.6.5.2' };
+    case 'EC2_EN1992': {
+      const k = Math.min(1 + Math.sqrt(200 / d), 2.0);
+      return { phiVc: (0.12 * k * Math.pow(100 * 0.005 * fc, 1/3) * bo * d) / 1000, clause: 'BS EN 1992-1-1 Cl. 6.4.4' };
+    }
+    case 'BS8110': {
+      const vc = 0.79 * Math.pow(100 * 0.005, 1/3) * Math.pow(400 / d, 1/4) / 1.25;
+      return { phiVc: (vc * bo * d) / 1000, clause: 'BS 8110-1 Table 3.8' };
+    }
+    case 'IS456': {
+      const ks = Math.min(0.5 + 1.0, 1.0);
+      const tau_c = ks * 0.25 * Math.sqrt(fc);
+      return { phiVc: (tau_c * bo * d) / 1000, clause: 'IS 456:2000 Cl. 31.6.3' };
+    }
+    case 'AS3600':
+      return { phiVc: (0.7 * 0.33 * Math.sqrt(fc) * bo * d) / 1000, clause: 'AS 3600:2018 Cl. 9.3.1' };
+    case 'CSA_A23_3':
+      return { phiVc: (0.65 * 0.38 * Math.sqrt(fc) * bo * d) / 1000, clause: 'CSA A23.3-19 Cl. 13.3.3' };
+    default:
+      return { phiVc: (0.75 * 0.33 * Math.sqrt(fc) * bo * d) / 1000, clause: 'Standard Capacity' };
+  }
+}
 
 export function runFoundationDesign(input: FoundationDesignInput): FoundationDesignResult {
   if (input.category === 'shallow') {
@@ -18,26 +67,27 @@ export function runFoundationDesign(input: FoundationDesignInput): FoundationDes
 }
 
 function designShallowFoundation(input: ShallowDesignInput): FoundationDesignResult {
-  const { pDead, pLive, mDeadX, mLiveX, qAllow, fc, fy, c1, c2, cover, shallowType, combinedSubType, code } = input;
-  const isACI = code === 'ACI318_19';
+  const { pDead, pLive, qAllow, fc, fy, c1, c2, cover, shallowType, combinedSubType, code } = input;
   const steps: MathStep[] = [];
 
-  const P_service = pDead + pLive + (input.p2Dead || 0) + (input.p2Live || 0);
-  const Pu = isACI
-    ? 1.2 * (pDead + (input.p2Dead || 0)) + 1.6 * (pLive + (input.p2Live || 0))
-    : 1.35 * (pDead + (input.p2Dead || 0)) + 1.5 * (pLive + (input.p2Live || 0));
+  const { Pu, clause: loadClause, formula: loadFormula } = calculateFactoredLoad(
+    pDead + (input.p2Dead || 0), 
+    pLive + (input.p2Live || 0), 
+    code
+  );
 
   steps.push({
     id: 'FACTORED_LOAD',
-    title: 'Ultimate Factored Axial Load (Pu)',
-    clauseRef: isACI ? 'ACI 318-19 Table 5.3.1' : 'BS EN 1990 Eq. 6.10',
-    formulaSymbolic: isACI ? 'Pu = 1.2*P_D + 1.6*P_L' : 'N_ed = 1.35*G_k + 1.5*Q_k',
-    formulaSubstituted: `${isACI ? '1.2' : '1.35'}*(${pDead}) + ${isACI ? '1.6' : '1.5'}*(${pLive})`,
+    title: 'Ultimate Factored Load (Pu)',
+    clauseRef: loadClause,
+    formulaSymbolic: loadFormula,
+    formulaSubstituted: `${pDead}kN (D) + ${pLive}kN (L)`,
     resultValue: Number(Pu.toFixed(2)),
     unit: 'kN',
     status: 'PASS'
   });
 
+  const P_service = pDead + pLive + (input.p2Dead || 0) + (input.p2Live || 0);
   const A_min = (P_service * 1.1) / qAllow;
   let B = Math.ceil((Math.sqrt(A_min) * 1000) / 50) * 50;
   let L = B;
@@ -61,16 +111,15 @@ function designShallowFoundation(input: ShallowDesignInput): FoundationDesignRes
 
   while (!shearSafe && D <= 2200) {
     d = D - cover - 10;
-    const bo = 2 * ((c1 + d) / 1000) + 2 * ((c2 + d) / 1000);
+    const bo = 2 * (c1 + d) + 2 * (c2 + d);
     const A_punch = ((c1 + d) / 1000) * ((c2 + d) / 1000);
     const qu = Pu / ((B / 1000) * (L / 1000));
     Vu = Math.max(Pu - qu * A_punch, 0);
 
-    phiVc = isACI 
-      ? (0.75 * 0.33 * Math.sqrt(fc) * (bo * 1000) * d) / 1000
-      : (0.12 * Math.min(1 + Math.sqrt(200 / d), 2.0) * Math.pow(100 * 0.005 * fc, 1/3) * (bo * 1000) * d) / 1000;
-
+    const check = calculatePunchingCapacity(fc, bo, d, code);
+    phiVc = check.phiVc;
     punchingDcr = Number((Vu / phiVc).toFixed(3));
+
     if (punchingDcr <= 1.0) {
       shearSafe = true;
     } else {
@@ -78,11 +127,13 @@ function designShallowFoundation(input: ShallowDesignInput): FoundationDesignRes
     }
   }
 
+  const punchingCheckRef = calculatePunchingCapacity(fc, 2*(c1+d)+2*(c2+d), d, code).clause;
+
   steps.push({
     id: 'PUNCHING_SHEAR',
-    title: 'Two-Way Punching Shear Check',
-    clauseRef: isACI ? 'ACI 318-19 Cl. 22.6.5.2' : 'BS EN 1992-1-1 Cl. 6.4.4',
-    formulaSymbolic: isACI ? 'phi * V_c = 0.75 * 0.33 * sqrt(f_c) * b_o * d' : 'V_Rd,c',
+    title: 'Two-Way Punching Shear Resistance',
+    clauseRef: punchingCheckRef,
+    formulaSymbolic: 'V_u <= phi * V_c',
     formulaSubstituted: `${Vu.toFixed(1)} kN / ${phiVc.toFixed(1)} kN`,
     resultValue: Number(Vu.toFixed(2)),
     unit: 'kN',
@@ -115,7 +166,7 @@ function designShallowFoundation(input: ShallowDesignInput): FoundationDesignRes
   const bbs: BBSItem[] = [
     {
       mark: 'B-01',
-      description: `Bottom Main Rebar (${shallowType.toUpperCase()})`,
+      description: `Main Bottom Rebar Grid (${shallowType.toUpperCase()})`,
       shape: 'L-Bend (90°)',
       barDiameter: botBarDiam,
       spacing: botBarSpacing,
@@ -126,7 +177,7 @@ function designShallowFoundation(input: ShallowDesignInput): FoundationDesignRes
     },
     {
       mark: 'B-02',
-      description: 'Bottom Distribution Rebar',
+      description: 'Distribution Transverse Rebar',
       shape: 'L-Bend (90°)',
       barDiameter: botBarDiam,
       spacing: botBarSpacing,
@@ -136,17 +187,6 @@ function designShallowFoundation(input: ShallowDesignInput): FoundationDesignRes
       totalWeight: Number(weightL.toFixed(1)),
     },
   ];
-
-  const geometry3D: Geometry3DData = {
-    footingBox: { width: B / 1000, height: D / 1000, depth: L / 1000, position: { x: 0, y: -(D / 2000), z: 0 } },
-    columnBox: { width: c1 / 1000, height: 1.2, depth: c2 / 1000, position: { x: 0, y: 0.6, z: 0 } },
-    rebars3D: []
-  };
-
-  const section2D: Section2DData = {
-    planView: { B, L, c1, c2, rebarCountX: numBarsB, rebarCountY: numBarsL },
-    elevationView: { D, d, cover, embedment: input.embedmentDepth || 1500 }
-  };
 
   return {
     codeUsed: code,
@@ -158,11 +198,9 @@ function designShallowFoundation(input: ShallowDesignInput): FoundationDesignRes
       wideBeamShearDcr: Number((punchingDcr * 0.7).toFixed(3)),
       punchingShearDcr: punchingDcr,
       flexureDcr: Number((AsReqBot / (barCount * As_bar)).toFixed(3)),
-      governingCheck: punchingDcr > 0.9 ? 'Two-Way Punching Shear' : 'Soil Bearing Capacity',
+      governingCheck: punchingDcr > 0.9 ? 'Punching Shear Resistance' : 'Allowable Soil Pressure',
     },
     mathSteps: steps,
-    geometry3D,
-    section2D,
     reinforcement: {
       AsReqBot: Math.round(AsReqBot),
       AsProvBot: Math.round(barCount * As_bar),
@@ -178,10 +216,9 @@ function designShallowFoundation(input: ShallowDesignInput): FoundationDesignRes
 
 function designDeepFoundation(input: DeepDesignInput): FoundationDesignResult {
   const { pDead, pLive, fc, fy, c1, c2, cover, pileDiameter, pileCapacity, deepType, code } = input;
-  const isACI = code === 'ACI318_19';
   const steps: MathStep[] = [];
 
-  const Pu = isACI ? 1.2 * pDead + 1.6 * pLive : 1.35 * pDead + 1.5 * pLive;
+  const { Pu, clause: loadClause, formula: loadFormula } = calculateFactoredLoad(pDead, pLive, code);
   let numPiles = input.numPiles || Math.ceil(((pDead + pLive) * 1.15) / pileCapacity);
   numPiles = Math.max(numPiles, deepType === 'single_pile' ? 1 : 2);
 
@@ -205,9 +242,10 @@ function designDeepFoundation(input: DeepDesignInput): FoundationDesignResult {
   const D = Math.max(pileDiameter + 300, 600);
   const d = D - cover - 25;
   const P_per_pile = Pu / numPiles;
-  const bo_col = 2 * ((c1 + d) / 1000) + 2 * ((c2 + d) / 1000);
-  const Vc_col = (0.33 * Math.sqrt(fc) * (bo_col * 1000) * d) / 1000;
-  const punchingDcr = Number((Pu / (0.75 * Vc_col)).toFixed(3));
+  const bo_col = 2 * (c1 + d) + 2 * (c2 + d);
+  
+  const check = calculatePunchingCapacity(fc, bo_col, d, code);
+  const punchingDcr = Number((Pu / check.phiVc).toFixed(3));
 
   const M_cap = P_per_pile * (s_pile / 2 / 1000);
   const K = (M_cap * 1e6) / (0.9 * B * Math.pow(d, 2) * fc);
@@ -228,7 +266,7 @@ function designDeepFoundation(input: DeepDesignInput): FoundationDesignResult {
   const bbs: BBSItem[] = [
     {
       mark: 'PC-01',
-      description: `Pile Cap Tension Band (${numPiles} Piles)`,
+      description: `Pile Cap Main Tension Cage (${numPiles} Piles)`,
       shape: 'L-Bend (90°)',
       barDiameter: botBarDiam,
       spacing: botBarSpacing,
@@ -239,7 +277,7 @@ function designDeepFoundation(input: DeepDesignInput): FoundationDesignResult {
     },
     {
       mark: 'PC-02',
-      description: 'Pile Cap Transverse Grid Rebar',
+      description: 'Pile Cap Transverse Distribution Grid',
       shape: 'L-Bend (90°)',
       barDiameter: botBarDiam,
       spacing: botBarSpacing,
@@ -249,17 +287,6 @@ function designDeepFoundation(input: DeepDesignInput): FoundationDesignResult {
       totalWeight: Number(weightL.toFixed(1)),
     },
   ];
-
-  const geometry3D: Geometry3DData = {
-    footingBox: { width: B / 1000, height: D / 1000, depth: L / 1000, position: { x: 0, y: -(D / 2000), z: 0 } },
-    columnBox: { width: c1 / 1000, height: 1.2, depth: c2 / 1000, position: { x: 0, y: 0.6, z: 0 } },
-    rebars3D: []
-  };
-
-  const section2D: Section2DData = {
-    planView: { B, L, c1, c2, rebarCountX: barCount, rebarCountY: barCount },
-    elevationView: { D, d, cover, embedment: 2000 }
-  };
 
   return {
     codeUsed: code,
@@ -271,11 +298,9 @@ function designDeepFoundation(input: DeepDesignInput): FoundationDesignResult {
       wideBeamShearDcr: Number((punchingDcr * 0.65).toFixed(3)),
       punchingShearDcr: punchingDcr,
       flexureDcr: Number((AsReqBot / (barCount * As_bar)).toFixed(3)),
-      governingCheck: punchingDcr > 1.0 ? 'Column Punching Shear' : 'Single Pile Axial Capacity',
+      governingCheck: punchingDcr > 1.0 ? 'Pile Cap Column Punching' : 'Single Pile Load Capacity',
     },
     mathSteps: steps,
-    geometry3D,
-    section2D,
     reinforcement: {
       AsReqBot: Math.round(AsReqBot),
       AsProvBot: Math.round(barCount * As_bar),

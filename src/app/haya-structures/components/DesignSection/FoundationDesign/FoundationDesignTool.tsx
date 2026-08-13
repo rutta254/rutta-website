@@ -12,30 +12,31 @@ import {
 } from '@/lib/structural/foundation';
 import { runFoundationDesign } from '@/lib/structural/foundation/autoSizer';
 import { generateFoundationPdfReport } from '@/lib/reports/foundationPdfReport';
+import { FoundationVisualizers } from './FoundationVisualizers';
 
 export default function FoundationDesignTool() {
-  const [code, setCode] = useState<DesignCode>('ACI318_19');
+  const [code, setCode] = useState<DesignCode>('BS8110');
   const [category, setCategory] = useState<FoundationCategory>('shallow');
   const [shallowType, setShallowType] = useState<ShallowType>('isolated_pad');
   const [deepType, setDeepType] = useState<DeepType>('pile_cap');
   const [combinedSubType, setCombinedSubType] = useState<CombinedSubType>('strap');
 
-  const [fc, setFc] = useState<number>(28);
-  const [fy, setFy] = useState<number>(420);
-  const [cover, setCover] = useState<number>(75);
+  const [fc, setFc] = useState<number>(30);
+  const [fy, setFy] = useState<number>(460);
+  const [cover, setCover] = useState<number>(50);
   const [c1, setC1] = useState<number>(400);
   const [c2, setC2] = useState<number>(400);
 
-  const [pDead, setPDead] = useState<number>(900);
-  const [pLive, setPLive] = useState<number>(500);
-  const [mDeadX, setMDeadX] = useState<number>(80);
-  const [mLiveX, setMLiveX] = useState<number>(40);
+  const [pDead, setPDead] = useState<number>(950);
+  const [pLive, setPLive] = useState<number>(480);
+  const [mDeadX, setMDeadX] = useState<number>(75);
+  const [mLiveX, setMLiveX] = useState<number>(35);
 
-  const [qAllow, setQAllow] = useState<number>(220);
+  const [qAllow, setQAllow] = useState<number>(200);
   const [colSpacing, setColSpacing] = useState<number>(3500);
 
   const [pileDiameter, setPileDiameter] = useState<number>(500);
-  const [pileCapacity, setPileCapacity] = useState<number>(600);
+  const [pileCapacity, setPileCapacity] = useState<number>(650);
   const [numPiles, setNumPiles] = useState<number>(4);
 
   const constructPayload = (): FoundationDesignInput => {
@@ -84,45 +85,43 @@ export default function FoundationDesignTool() {
 
   return (
     <div className="space-y-6 text-slate-100 font-sans">
-      <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+      {/* Top Header Controls: Global Code Selector & PDF Exporter */}
+      <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-wrap justify-between items-center gap-4">
         <div className="flex items-center gap-3">
-          <label className="text-xs font-bold text-slate-400 uppercase">Design Code Standard:</label>
-          <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 font-mono text-xs">
-            <button
-              onClick={() => setCode('ACI318_19')}
-              className={`px-3 py-1 rounded font-bold transition ${
-                code === 'ACI318_19' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              ACI 318-19 (US)
-            </button>
-            <button
-              onClick={() => setCode('EC2_EN1992')}
-              className={`px-3 py-1 rounded font-bold transition ${
-                code === 'EC2_EN1992' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Eurocode 2 (EU/UK)
-            </button>
-          </div>
+          <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+            Design Standard:
+          </label>
+          <select
+            value={code}
+            onChange={(e) => setCode(e.target.value as DesignCode)}
+            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-cyan-400 focus:outline-none focus:border-cyan-500"
+          >
+            <option value="BS8110">BS 8110 (British Standard / Africa / Commonwealth)</option>
+            <option value="ACI318_19">ACI 318-19 (American Concrete Institute)</option>
+            <option value="EC2_EN1992">Eurocode 2 (BS EN 1992 / Europe)</option>
+            <option value="IS456">IS 456:2000 (Indian Standard)</option>
+            <option value="AS3600">AS 3600:2018 (Australian Standard)</option>
+            <option value="CSA_A23_3">CSA A23.3-19 (Canadian Standard)</option>
+          </select>
         </div>
 
         <button
           onClick={() => generateFoundationPdfReport(result)}
-          className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20"
+          className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition"
         >
-          📄 Export Math Workflow PDF
+          📄 Generate Structural Calculation PDF
         </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-xl">
+        {/* Left Inputs Panel */}
+        <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800">
           <div>
             <label className="block text-[10px] text-slate-400 uppercase font-bold mb-2">Category</label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setCategory('shallow')}
-                className={`py-2 rounded-lg text-xs font-bold border ${
+                className={`py-2 rounded-lg text-xs font-bold border transition ${
                   category === 'shallow' ? 'bg-cyan-500 text-slate-950 border-cyan-400' : 'bg-slate-950 text-slate-400 border-slate-800'
                 }`}
               >
@@ -130,7 +129,7 @@ export default function FoundationDesignTool() {
               </button>
               <button
                 onClick={() => setCategory('deep')}
-                className={`py-2 rounded-lg text-xs font-bold border ${
+                className={`py-2 rounded-lg text-xs font-bold border transition ${
                   category === 'deep' ? 'bg-cyan-500 text-slate-950 border-cyan-400' : 'bg-slate-950 text-slate-400 border-slate-800'
                 }`}
               >
@@ -140,7 +139,7 @@ export default function FoundationDesignTool() {
           </div>
 
           <div>
-            <label className="block text-[10px] text-slate-400 uppercase font-bold mb-2">Type</label>
+            <label className="block text-[10px] text-slate-400 uppercase font-bold mb-2">Classification Type</label>
             {category === 'shallow' ? (
               <select
                 value={shallowType}
@@ -185,9 +184,32 @@ export default function FoundationDesignTool() {
               />
             </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Soil q_allow (kPa)</label>
+              <input
+                type="number"
+                value={qAllow}
+                onChange={(e) => setQAllow(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Concrete f_cu/f'c (MPa)</label>
+              <input
+                type="number"
+                value={fc}
+                onChange={(e) => setFc(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
+              />
+            </div>
+          </div>
         </div>
 
+        {/* Right Output Panels */}
         <div className="lg:col-span-7 space-y-4">
+          {/* Key Metrics Overview */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-slate-900 border border-cyan-500/30 p-3 rounded-xl text-center">
               <span className="text-[10px] text-slate-400 block uppercase font-bold">Dimensions</span>
@@ -198,13 +220,19 @@ export default function FoundationDesignTool() {
               <span className="text-base font-bold font-mono text-cyan-400">{result.geometry.D} mm</span>
             </div>
             <div className="bg-slate-900 border border-emerald-500/30 p-3 rounded-xl text-center">
-              <span className="text-[10px] text-slate-400 block uppercase font-bold">Rebar Weight</span>
+              <span className="text-[10px] text-slate-400 block uppercase font-bold">Rebar Steel Weight</span>
               <span className="text-base font-bold font-mono text-emerald-400">{result.totalSteelWeightKg} kg</span>
             </div>
           </div>
 
+          {/* Interactive 2D / 3D Render Viewport */}
+          <FoundationVisualizers result={result} c1={c1} c2={c2} cover={cover} />
+
+          {/* Code Checks Summary */}
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2">
-            <h4 className="text-xs font-bold text-slate-300 uppercase">{result.typeLabel} — Structural Design Ratios</h4>
+            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              {result.typeLabel} — Code Compliance Checks ({result.codeUsed})
+            </h4>
             <div className="grid grid-cols-4 gap-2 pt-2 text-center text-xs font-mono">
               <div className="p-2 bg-slate-950 rounded border border-slate-800">
                 <span className="text-[9px] text-slate-400 block">Bearing/Pile DCR</span>
