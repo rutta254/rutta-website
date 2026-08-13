@@ -59,25 +59,25 @@ interface FootingResult {
 
 function getHeatmapColor(value: number): THREE.Color {
   const v = THREE.MathUtils.clamp(value, 0, 1);
-  const h = (1 - v) * 0.666; // Blue (0.0) -> Cyan -> Yellow -> Red (1.0)
+  const h = (1 - v) * 0.666;
   return new THREE.Color().setHSL(h, 1.0, 0.5);
 }
 
 export default function FootingAnalysisTool() {
   const [code, setCode] = useState<DesignCode>('ACI318');
   const [footingType, setFootingType] = useState<FootingType>('isolated_pad');
-  const [combinedSubType, setCombinedSubType] = useState<CombinedSubType>('rectangular');
+  const [combinedSubType, setCombinedSubType] = useState<CombinedSubType>('strap');
   const [meshType, setMeshType] = useState<MeshType>('single_mesh');
 
   // Footing Geometry (mm)
-  const [footingB, setFootingB] = useState<number>(2500);
+  const [footingB, setFootingB] = useState<number>(2200);
   const [footingB2, setFootingB2] = useState<number>(1800);
-  const [footingL, setFootingL] = useState<number>(2500);
+  const [footingL, setFootingL] = useState<number>(2200);
   const [footingD, setFootingD] = useState<number>(550);
   const [cover, setCover] = useState<number>(75);
 
   // Combined / Strap Geometry (mm)
-  const [colSpacing, setColSpacing] = useState<number>(3500);
+  const [colSpacing, setColSpacing] = useState<number>(4000);
   const [strapW, setStrapW] = useState<number>(450);
   const [strapH, setStrapH] = useState<number>(750);
 
@@ -122,7 +122,7 @@ export default function FootingAnalysisTool() {
 
   const mountRef = useRef<HTMLDivElement>(null);
 
-  // Auto-adjust footing length L when switching to combined footings if L <= S
+  // Auto-adjust length L when switching to combined footings
   useEffect(() => {
     if (footingType === 'combined' && footingL <= colSpacing) {
       setFootingL(colSpacing + colC1 + 1000);
@@ -166,8 +166,8 @@ export default function FootingAnalysisTool() {
       if (combinedSubType === 'trapezoidal') {
         A_footing = ((B + B2) / 2) * L;
       } else if (combinedSubType === 'strap') {
-        const L1 = L * 0.35;
-        const L2 = L * 0.35;
+        const L1 = (L - S_m) + c1;
+        const L2 = (L - S_m) + c1;
         A_footing = B * L1 + B2 * L2;
       }
     }
@@ -317,7 +317,7 @@ export default function FootingAnalysisTool() {
     setResult(calculateFoundation());
   }, [code, footingType, combinedSubType, meshType, footingB, footingB2, footingL, footingD, cover, colC1, colC2, colSpacing, strapW, strapH, qAllow, gammaSoil, embedmentDepth, barDiam, barSpacing, topBarDiam, topBarSpacing, fc, fy, P_Dead, P_Live, M_Dead, M_Live, P2_Dead, P2_Live]);
 
-  // --- 3D THREE.JS WEBGL ENGINE ---
+  // --- 3D THREE.JS WEBGL RENDER ENGINE ---
   useEffect(() => {
     if (viewMode === '2d_composite') return;
     const mount = mountRef.current;
@@ -331,6 +331,7 @@ export default function FootingAnalysisTool() {
 
     const isStrip = footingType === 'wall_strip';
     const isCombined = footingType === 'combined';
+    const isStrap = isCombined && combinedSubType === 'strap';
 
     const fB_m = footingB / 1000;
     const fB2_m = footingB2 / 1000;
@@ -341,7 +342,7 @@ export default function FootingAnalysisTool() {
     const S_m = colSpacing / 1000;
 
     const camera = new THREE.PerspectiveCamera(45, widthVal / heightVal, 0.1, 1000);
-    camera.position.set(fB_m * 1.8, fD_m * 4 + 2.0, fL_m * 1.6);
+    camera.position.set(fB_m * 2.2, fD_m * 4 + 2.5, S_m * 1.5);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setSize(widthVal, heightVal);
@@ -357,7 +358,7 @@ export default function FootingAnalysisTool() {
     dirLight.position.set(fB_m * 2, fD_m * 10, fL_m * 2);
     scene.add(dirLight);
 
-    const grid = new THREE.GridHelper(Math.max(fB_m, fL_m) * 2.5, 20, 0x334155, 0x1e293b);
+    const grid = new THREE.GridHelper(Math.max(fB_m, S_m + 2) * 2.2, 20, 0x334155, 0x1e293b);
     grid.position.set(0, -0.05, 0);
     scene.add(grid);
 
@@ -369,7 +370,7 @@ export default function FootingAnalysisTool() {
     });
     const colMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3 });
 
-    // 1. Footing Concrete Geometries
+    // 1. Concrete Footing Geometries
     if (!isCombined || combinedSubType === 'rectangular') {
       const slabGeo = new THREE.BoxGeometry(fB_m, fD_m, fL_m);
       const slabMesh = new THREE.Mesh(slabGeo, slabMat);
@@ -404,20 +405,24 @@ export default function FootingAnalysisTool() {
         wireMesh.position.set(0, fD_m, 0);
         scene.add(wireMesh);
       }
-    } else if (combinedSubType === 'strap') {
-      const L1_m = fL_m * 0.35;
-      const L2_m = fL_m * 0.35;
+    } else if (isStrap) {
+      // --- CORRECTED STRAP FOOTING ASSEMBLY ---
+      const pad1L = 1.6;
+      const pad2L = 1.6;
 
-      const pad1Geo = new THREE.BoxGeometry(fB_m, fD_m, L1_m);
+      // Pad 1 under Column 1 (at Z = -S_m / 2)
+      const pad1Geo = new THREE.BoxGeometry(fB_m, fD_m, pad1L);
       const pad1Mesh = new THREE.Mesh(pad1Geo, slabMat);
       pad1Mesh.position.set(0, fD_m / 2, -S_m / 2);
       scene.add(pad1Mesh);
 
-      const pad2Geo = new THREE.BoxGeometry(fB2_m, fD_m, L2_m);
+      // Pad 2 under Column 2 (at Z = +S_m / 2)
+      const pad2Geo = new THREE.BoxGeometry(fB2_m, fD_m, pad2L);
       const pad2Mesh = new THREE.Mesh(pad2Geo, slabMat);
       pad2Mesh.position.set(0, fD_m / 2, S_m / 2);
       scene.add(pad2Mesh);
 
+      // Connecting Strap Beam Spanning Column Center-to-Center
       const stW_m = strapW / 1000;
       const stH_m = strapH / 1000;
       const strapGeo = new THREE.BoxGeometry(stW_m, stH_m, S_m);
@@ -425,9 +430,20 @@ export default function FootingAnalysisTool() {
       const strapMesh = new THREE.Mesh(strapGeo, strapMat);
       strapMesh.position.set(0, fD_m + stH_m / 2 - 0.1, 0);
       scene.add(strapMesh);
+
+      if (showWireframe) {
+        [pad1Geo, pad2Geo, strapGeo].forEach((geo, idx) => {
+          const wireGeo = new THREE.EdgesGeometry(geo);
+          const wireMesh = new THREE.LineSegments(wireGeo, new THREE.LineBasicMaterial({ color: 0x38bdf8 }));
+          if (idx === 0) wireMesh.position.set(0, fD_m / 2, -S_m / 2);
+          if (idx === 1) wireMesh.position.set(0, fD_m / 2, S_m / 2);
+          if (idx === 2) wireMesh.position.set(0, fD_m + stH_m / 2 - 0.1, 0);
+          scene.add(wireMesh);
+        });
+      }
     }
 
-    // 2. Columns Placement
+    // 2. Columns / Piers Placement
     const colH_m = 0.6;
     if (!isCombined) {
       const colGeo = new THREE.BoxGeometry(c2_m, colH_m, c1_m);
@@ -435,14 +451,15 @@ export default function FootingAnalysisTool() {
       colMesh.position.set(0, fD_m + colH_m / 2, 0);
       scene.add(colMesh);
     } else {
+      const stH_m = isStrap ? strapH / 1000 - 0.1 : 0;
+      
       const col1Geo = new THREE.BoxGeometry(c1_m, colH_m, c1_m);
       const col1Mesh = new THREE.Mesh(col1Geo, colMat);
-      col1Mesh.position.set(0, fD_m + colH_m / 2, -S_m / 2);
+      col1Mesh.position.set(0, fD_m + stH_m + colH_m / 2, -S_m / 2);
       scene.add(col1Mesh);
 
       const col2Geo = new THREE.BoxGeometry(c1_m, colH_m, c1_m);
       const col2Mesh = new THREE.Mesh(col2Geo, colMat);
-      const stH_m = combinedSubType === 'strap' ? strapH / 1000 : 0;
       col2Mesh.position.set(0, fD_m + stH_m + colH_m / 2, S_m / 2);
       scene.add(col2Mesh);
     }
@@ -456,7 +473,7 @@ export default function FootingAnalysisTool() {
       const rebarMatBot = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.8, roughness: 0.2 });
       const rebarMatTop = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.8, roughness: 0.2 });
 
-      if (combinedSubType !== 'strap') {
+      if (!isStrap) {
         const segZ = 12;
         for (let j = 0; j <= segZ; j++) {
           const zPos = -fL_m / 2 + cov_m + (j * (fL_m - 2 * cov_m)) / segZ;
@@ -482,13 +499,13 @@ export default function FootingAnalysisTool() {
           }
         }
       } else {
-        // Strap Footing Rebar
-        const L1_m = fL_m * 0.35;
-        const L2_m = fL_m * 0.35;
+        // --- STRAP BEAM & PADS REBAR CAGE ---
+        const pad1L = 1.6;
+        const pad2L = 1.6;
 
-        // Pad 1 Bot Mesh
-        for (let j = 0; j <= 6; j++) {
-          const zPos = -S_m / 2 - L1_m / 2 + cov_m + (j * (L1_m - 2 * cov_m)) / 6;
+        // Pad 1 Rebar
+        for (let j = 0; j <= 5; j++) {
+          const zPos = -S_m / 2 - pad1L / 2 + cov_m + (j * (pad1L - 2 * cov_m)) / 5;
           const barGeo = new THREE.CylinderGeometry(db_bot_m / 2, db_bot_m / 2, fB_m - 2 * cov_m, 8);
           barGeo.rotateZ(Math.PI / 2);
           const barMesh = new THREE.Mesh(barGeo, rebarMatBot);
@@ -496,15 +513,33 @@ export default function FootingAnalysisTool() {
           scene.add(barMesh);
         }
 
-        // Pad 2 Bot Mesh
-        for (let j = 0; j <= 6; j++) {
-          const zPos = S_m / 2 - L2_m / 2 + cov_m + (j * (L2_m - 2 * cov_m)) / 6;
+        // Pad 2 Rebar
+        for (let j = 0; j <= 5; j++) {
+          const zPos = S_m / 2 - pad2L / 2 + cov_m + (j * (pad2L - 2 * cov_m)) / 5;
           const barGeo = new THREE.CylinderGeometry(db_bot_m / 2, db_bot_m / 2, fB2_m - 2 * cov_m, 8);
           barGeo.rotateZ(Math.PI / 2);
           const barMesh = new THREE.Mesh(barGeo, rebarMatBot);
           barMesh.position.set(0, cov_m + db_bot_m / 2, zPos);
           scene.add(barMesh);
         }
+
+        // Continuous Strap Beam Longitudinal Bars
+        const stH_m = strapH / 1000;
+        [-0.15, 0.15].forEach((xOff) => {
+          // Bottom Strap Bars
+          const sBarBotGeo = new THREE.CylinderGeometry(db_bot_m / 2, db_bot_m / 2, S_m + pad1L / 2, 8);
+          sBarBotGeo.rotateX(Math.PI / 2);
+          const sBarBotMesh = new THREE.Mesh(sBarBotGeo, rebarMatBot);
+          sBarBotMesh.position.set(xOff, cov_m + db_bot_m, 0);
+          scene.add(sBarBotMesh);
+
+          // Top Strap Bars
+          const sBarTopGeo = new THREE.CylinderGeometry(db_top_m / 2, db_top_m / 2, S_m + pad1L / 2, 8);
+          sBarTopGeo.rotateX(Math.PI / 2);
+          const sBarTopMesh = new THREE.Mesh(sBarTopGeo, rebarMatTop);
+          sBarTopMesh.position.set(xOff, fD_m + stH_m - cov_m, 0);
+          scene.add(sBarTopMesh);
+        });
       }
     }
 
@@ -514,7 +549,7 @@ export default function FootingAnalysisTool() {
       const qMin = result.geotechnical.q_min;
       const qAllowVal = result.geotechnical.q_allow;
 
-      if (combinedSubType !== 'strap') {
+      if (!isStrap) {
         const segX = 20;
         const segZ = 20;
         const soilGeo = new THREE.PlaneGeometry(1, 1, segX, segZ);
@@ -526,7 +561,7 @@ export default function FootingAnalysisTool() {
 
         for (let i = 0; i < count; i++) {
           const normX = posAttr.getX(i);
-          const normZ = posAttr.getY(i); // Z axis on plane after rotation
+          const normZ = posAttr.getY(i);
 
           const actualZ = normZ * fL_m;
           const zRatio = normZ + 0.5;
@@ -557,11 +592,11 @@ export default function FootingAnalysisTool() {
         const soilMesh = new THREE.Mesh(soilGeo, soilMat);
         scene.add(soilMesh);
       } else {
-        // Dual Heatmaps for Strap Footing Pads
-        const L1_m = fL_m * 0.35;
-        const L2_m = fL_m * 0.35;
+        // --- DUAL GROUND HEATMAPS UNDER STRAP PADS ONLY ---
+        const pad1L = 1.6;
+        const pad2L = 1.6;
 
-        [ { width: fB_m, len: L1_m, posZ: -S_m / 2 }, { width: fB2_m, len: L2_m, posZ: S_m / 2 } ].forEach((pad) => {
+        [ { width: fB_m, len: pad1L, posZ: -S_m / 2 }, { width: fB2_m, len: pad2L, posZ: S_m / 2 } ].forEach((pad) => {
           const padGeo = new THREE.PlaneGeometry(pad.width, pad.len, 10, 10);
           padGeo.rotateX(-Math.PI / 2);
 
@@ -780,7 +815,7 @@ export default function FootingAnalysisTool() {
 
     const planCx = 110;
     const planCy = 110;
-    const scale = 120 / Math.max(footingB, footingB2, footingL);
+    const scale = 110 / Math.max(footingB, footingB2, colSpacing + 1000);
 
     const pB = footingB * scale;
     const pB2 = footingB2 * scale;
@@ -812,38 +847,14 @@ export default function FootingAnalysisTool() {
 
         {footingType !== 'combined' && (
           <g>
-            <rect
-              x={planCx - pB / 2}
-              y={planCy - pL / 2}
-              width={pB}
-              height={pL}
-              fill="#1e293b"
-              stroke="#94a3b8"
-              strokeWidth="1.5"
-            />
-            <rect
-              x={planCx - (footingType === 'wall_strip' ? pB / 2 : pC2 / 2)}
-              y={planCy - pC1 / 2}
-              width={footingType === 'wall_strip' ? pB : pC2}
-              height={pC1}
-              fill="#38bdf8"
-              stroke="#0284c7"
-              strokeWidth="1.5"
-            />
+            <rect x={planCx - pB / 2} y={planCy - pL / 2} width={pB} height={pL} fill="#1e293b" stroke="#94a3b8" strokeWidth="1.5" />
+            <rect x={planCx - (footingType === 'wall_strip' ? pB / 2 : pC2 / 2)} y={planCy - pC1 / 2} width={footingType === 'wall_strip' ? pB : pC2} height={pC1} fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
           </g>
         )}
 
         {footingType === 'combined' && combinedSubType === 'rectangular' && (
           <g>
-            <rect
-              x={planCx - pB / 2}
-              y={planCy - pL / 2}
-              width={pB}
-              height={pL}
-              fill="#1e293b"
-              stroke="#94a3b8"
-              strokeWidth="1.5"
-            />
+            <rect x={planCx - pB / 2} y={planCy - pL / 2} width={pB} height={pL} fill="#1e293b" stroke="#94a3b8" strokeWidth="1.5" />
             <rect x={planCx - pC2 / 2} y={planCy - pS / 2 - pC1 / 2} width={pC2} height={pC1} fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
             <rect x={planCx - pC2 / 2} y={planCy + pS / 2 - pC1 / 2} width={pC2} height={pC1} fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
           </g>
@@ -851,12 +862,7 @@ export default function FootingAnalysisTool() {
 
         {footingType === 'combined' && combinedSubType === 'trapezoidal' && (
           <g>
-            <polygon
-              points={`${planCx - pB / 2},${planCy - pL / 2} ${planCx + pB / 2},${planCy - pL / 2} ${planCx + pB2 / 2},${planCy + pL / 2} ${planCx - pB2 / 2},${planCy + pL / 2}`}
-              fill="#1e293b"
-              stroke="#f59e0b"
-              strokeWidth="1.5"
-            />
+            <polygon points={`${planCx - pB / 2},${planCy - pL / 2} ${planCx + pB / 2},${planCy - pL / 2} ${planCx + pB2 / 2},${planCy + pL / 2} ${planCx - pB2 / 2},${planCy + pL / 2}`} fill="#1e293b" stroke="#f59e0b" strokeWidth="1.5" />
             <rect x={planCx - pC2 / 2} y={planCy - pS / 2 - pC1 / 2} width={pC2} height={pC1} fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
             <rect x={planCx - pC2 / 2} y={planCy + pS / 2 - pC1 / 2} width={pC2} height={pC1} fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
           </g>
@@ -864,8 +870,8 @@ export default function FootingAnalysisTool() {
 
         {footingType === 'combined' && combinedSubType === 'strap' && (
           <g>
-            <rect x={planCx - pB / 2} y={planCy - pS / 2 - (pL * 0.35) / 2} width={pB} height={pL * 0.35} fill="#1e293b" stroke="#94a3b8" strokeWidth="1.5" />
-            <rect x={planCx - pB2 / 2} y={planCy + pS / 2 - (pL * 0.35) / 2} width={pB2} height={pL * 0.35} fill="#1e293b" stroke="#94a3b8" strokeWidth="1.5" />
+            <rect x={planCx - pB / 2} y={planCy - pS / 2 - 25} width={pB} height="50" fill="#1e293b" stroke="#94a3b8" strokeWidth="1.5" />
+            <rect x={planCx - pB2 / 2} y={planCy + pS / 2 - 25} width={pB2} height="50" fill="#1e293b" stroke="#94a3b8" strokeWidth="1.5" />
             <rect x={planCx - (strapW * scale) / 2} y={planCy - pS / 2} width={strapW * scale} height={pS} fill="#0284c7" opacity="0.6" stroke="#38bdf8" strokeWidth="1.2" />
             <rect x={planCx - pC2 / 2} y={planCy - pS / 2 - pC1 / 2} width={pC2} height={pC1} fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
             <rect x={planCx - pC2 / 2} y={planCy + pS / 2 - pC1 / 2} width={pC2} height={pC1} fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
@@ -891,15 +897,15 @@ export default function FootingAnalysisTool() {
           </g>
         ) : (
           <g>
-            <rect x={elevX + 10} y={elevY + 15} width="45" height={elevH - 15} fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
-            <rect x={elevX + elevW - 55} y={elevY + 15} width="45" height={elevH - 15} fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
-            <rect x={elevX + 55} y={elevY + 5} width={elevW - 110} height="25" fill="#0284c7" opacity="0.6" stroke="#38bdf8" strokeWidth="1.2" />
-            <rect x={elevX + 20} y={elevY - 15} width="25" height="30" fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
-            <rect x={elevX + elevW - 45} y={elevY - 15} width="25" height="30" fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
+            <rect x={elevX + 10} y={elevY + 20} width="45" height={elevH - 20} fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
+            <rect x={elevX + elevW - 55} y={elevY + 20} width="45" height={elevH - 20} fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
+            <rect x={elevX + 32.5} y={elevY + 5} width={elevW - 65} height="25" fill="#0284c7" opacity="0.6" stroke="#38bdf8" strokeWidth="1.2" />
+            <rect x={elevX + 20} y={elevY - 15} width="25" height="35" fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
+            <rect x={elevX + elevW - 45} y={elevY - 15} width="25" height="35" fill="#38bdf8" stroke="#0284c7" strokeWidth="1.5" />
           </g>
         )}
 
-        {/* Soil Heatmap Trapezoid */}
+        {/* Soil Heatmap Polygon */}
         <polygon
           points={`${elevX},${elevY + elevH + 4} ${elevX + elevW},${elevY + elevH + 4} ${elevX + elevW},${elevY + elevH + 4 + hQMax} ${elevX},${elevY + elevH + 4 + hQMin}`}
           fill="#f59e0b"
@@ -982,13 +988,13 @@ export default function FootingAnalysisTool() {
                   className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200 font-mono"
                 />
               </div>
-              {combinedSubType === 'trapezoidal' && (
+              {combinedSubType === 'strap' && (
                 <div>
-                  <label className="block text-[10px] text-slate-400">Width B2 (mm)</label>
+                  <label className="block text-[10px] text-slate-400">Strap Depth (mm)</label>
                   <input
                     type="number"
-                    value={footingB2}
-                    onChange={(e) => setFootingB2(Number(e.target.value))}
+                    value={strapH}
+                    onChange={(e) => setStrapH(Number(e.target.value))}
                     className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200 font-mono"
                   />
                 </div>
