@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -73,6 +75,13 @@ interface SlabResult {
   };
 }
 
+// Turbo/Rainbow Color Map Generator for Normalized Deflection Heatmap
+function getHeatmapColor(value: number): THREE.Color {
+  const v = THREE.MathUtils.clamp(value, 0, 1);
+  const h = (1 - v) * 0.666; // 0.666 = Blue (min deflection), 0.0 = Red (max deflection)
+  return new THREE.Color().setHSL(h, 1.0, 0.5);
+}
+
 export default function SlabAnalysisTool() {
   const [designCode, setDesignCode] = useState<DesignCode>('ACI318');
   const [slabSystem, setSlabSystem] = useState<SlabSystem>('flat_plate');
@@ -105,10 +114,16 @@ export default function SlabAnalysisTool() {
   const [barDiamY, setBarDiamY] = useState<number>(10);
   const [barSpacingY, setBarSpacingY] = useState<number>(200);
 
+  // Visualization View Controls
+  const [viewMode, setViewMode] = useState<'3d' | '2d' | 'split'>('split');
+  const [deflectionScale, setDeflectionScale] = useState<number>(150);
+  const [showWireframe, setShowWireframe] = useState<boolean>(true);
+
   const [result, setResult] = useState<SlabResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
+  const mountRef = useRef<HTMLDivElement>(null);
   const isPunchingRelevant = slabSystem === 'flat_plate' || slabSystem === 'flat_slab';
 
   const handleAnalyze = async () => {
@@ -152,6 +167,152 @@ export default function SlabAnalysisTool() {
       setLoading(false);
     }
   };
+
+  // --- 3D EXAGGERATED DEFLECTED SHAPE WEBGL ENGINE ---
+  useEffect(() => {
+    if (viewMode === '2d') return;
+    const mount = mountRef.current;
+    if (!mount) return;
+
+    const widthVal = mount.clientWidth || 400;
+    const heightVal = mount.clientHeight || 280;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0f172a);
+
+    const camera = new THREE.PerspectiveCamera(45, widthVal / heightVal, 0.1, 1000);
+    camera.position.set(lx * 0.9, Math.max(lx, ly) * 1.1, ly * 1.2);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setSize(widthVal, heightVal);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    mount.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(lx / 2, 0, ly / 2);
+    controls.update();
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(lx * 2, ly * 2, lx * 2);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(Math.max(lx, ly) * 2, 20, 0x334155, 0x1e293b);
+    grid.position.set(lx / 2, -1, ly / 2);
+    scene.add(grid);
+
+    // Parametric Subdivided Surface Mesh
+    const segmentsX = 40;
+    const segmentsY = 40;
+    const planeGeo = new THREE.PlaneGeometry(lx, ly, segmentsX, segmentsY);
+    planeGeo.rotateX(-Math.PI / 2);
+    planeGeo.translate(lx / 2, 0, ly / 2);
+
+    const posAttr = planeGeo.attributes.position;
+    const count = posAttr.count;
+    const colors = new Float32Array(count * 3);
+
+    // Max physical deflection baseline scaled dynamically
+    const maxDeflectionMeters = ((lx * 1000) / (result?.deflection?.actual_ratio || 250)) / 1000;
+    const amp = Math.max(maxDeflectionMeters * deflectionScale, 0.05);
+
+    for (let i = 0; i < count; i++) {
+      const x = posAttr.getX(i);
+      const z = posAttr.getZ(i);
+
+      const normX = x / lx;
+      const normY = z / ly;
+
+      let wNorm = 0;
+
+      // Analytical Elastic Deflection Shape Functions w(x,y)
+      if (supportCondition === 'cantilever') {
+        wNorm = Math.pow(normX, 2) * (3 - 2 * normX);
+      } else if (supportCondition === 'continuous' || supportCondition === 'restrained_4edges') {
+        wNorm = Math.pow(Math.sin(Math.PI * normX), 2) * Math.pow(Math.sin(Math.PI * normY), 2);
+      } else if (slabSystem === 'one_way_solid') {
+        wNorm = Math.sin(Math.PI * normX);
+      } else {
+        // Simply supported two-way / flat plate deflection surface
+        wNorm = Math.sin(Math.PI * normX) * Math.sin(Math.PI * normY);
+      }
+
+      const dispY = -wNorm * amp;
+      posAttr.setY(i, dispY);
+
+      const vertexColor = getHeatmapColor(wNorm);
+      colors[i * 3] = vertexColor.r;
+      colors[i * 3 + 1] = vertexColor.g;
+      colors[i * 3 + 2] = vertexColor.b;
+    }
+
+    planeGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    planeGeo.computeVertexNormals();
+
+    const surfaceMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      side: THREE.DoubleSide,
+      roughness: 0.3,
+      metalness: 0.1,
+      wireframe: false,
+    });
+    const surfaceMesh = new THREE.Mesh(planeGeo, surfaceMat);
+    scene.add(surfaceMesh);
+
+    if (showWireframe) {
+      const wireMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.2,
+      });
+      const wireMesh = new THREE.Mesh(planeGeo, wireMat);
+      scene.add(wireMesh);
+    }
+
+    // Support Elements (Columns / Beams Boundary Representations)
+    const suppMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.5 });
+    const cW = (colW || 400) / 1000;
+    const cH = (colH || 400) / 1000;
+
+    const addColumn = (xPos: number, zPos: number) => {
+      const colGeo = new THREE.BoxGeometry(cW, 1.2, cH);
+      const colMesh = new THREE.Mesh(colGeo, suppMat);
+      colMesh.position.set(xPos, -0.6, zPos);
+      scene.add(colMesh);
+    };
+
+    if (isPunchingRelevant) {
+      addColumn(0, 0);
+      addColumn(lx, 0);
+      addColumn(0, ly);
+      addColumn(lx, ly);
+      if (lx > 3 && ly > 3) addColumn(lx / 2, ly / 2);
+    } else {
+      const beamGeoX = new THREE.BoxGeometry(lx, 0.3, 0.2);
+      const beam1 = new THREE.Mesh(beamGeoX, suppMat);
+      beam1.position.set(lx / 2, -0.15, 0);
+      scene.add(beam1);
+
+      const beam2 = new THREE.Mesh(beamGeoX, suppMat);
+      beam2.position.set(lx / 2, -0.15, ly);
+      scene.add(beam2);
+    }
+
+    let animId: number;
+    const animate = () => {
+      animId = requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    return () => {
+      cancelAnimationFrame(animId);
+      if (mount.contains(renderer.domElement)) {
+        mount.removeChild(renderer.domElement);
+      }
+    };
+  }, [lx, ly, thickness, colW, colH, supportCondition, slabSystem, isPunchingRelevant, viewMode, result, deflectionScale, showWireframe]);
 
   const convertSvgToPng = (svgElement: SVGSVGElement, bgColor = '#0f172a'): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -214,7 +375,7 @@ export default function SlabAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
-      // Top Banner Header (0 - 18mm)
+      // Top Banner Header
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, 210, 18, 'F');
 
@@ -228,7 +389,7 @@ export default function SlabAnalysisTool() {
       doc.setTextColor(226, 232, 240);
       doc.text(`Code Standard: ${designCode} | System: ${result.slab_type} | Date: ${dateStr}`, 12, 15);
 
-      // Section 1: Inputs & Design Summary Tables Side-by-Side (22mm - 92mm)
+      // Section 1: Inputs & Design Summary Tables Side-by-Side
       autoTable(doc, {
         startY: 22,
         margin: { left: 12 },
@@ -289,33 +450,37 @@ export default function SlabAnalysisTool() {
         bodyStyles: { fontSize: 7, cellPadding: 1.8 },
       });
 
-      // Section 2: Diagrams (96mm - 150mm)
+      // Section 2: Diagrams (Includes 3D WebGL Deflection Shape Snapshot & 2D Plan View)
       let currentY = 96;
 
       const planSvg = document.getElementById('slab-plan-svg') as unknown as SVGSVGElement;
-      const secSvg = document.getElementById('slab-section-svg') as unknown as SVGSVGElement;
+      const canvas3D = mountRef.current?.querySelector('canvas');
 
-      if (planSvg && secSvg) {
+      if (planSvg || canvas3D) {
         try {
-          const planPng = await convertSvgToPng(planSvg, '#0f172a');
-          const secPng = await convertSvgToPng(secSvg, '#0f172a');
-
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(9);
           doc.setTextColor(15, 23, 42);
-          doc.text('STRUCTURAL PLAN VIEW & REINFORCEMENT DETAILS', 12, currentY);
+          doc.text('3D EXAGGERATED DEFLECTION SHAPE & STRUCTURAL PLAN', 12, currentY);
           currentY += 4;
 
-          doc.addImage(planPng, 'PNG', 12, currentY, 90, 50);
-          doc.addImage(secPng, 'PNG', 108, currentY, 90, 50);
+          if (canvas3D) {
+            const img3D = canvas3D.toDataURL('image/png');
+            doc.addImage(img3D, 'PNG', 12, currentY, 90, 50);
+          }
+
+          if (planSvg) {
+            const planPng = await convertSvgToPng(planSvg, '#0f172a');
+            doc.addImage(planPng, 'PNG', 108, currentY, 90, 50);
+          }
           currentY += 54;
         } catch (e) {
-          console.warn('SVG PDF rendering failed:', e);
+          console.warn('Diagram PDF rendering failed:', e);
           currentY += 10;
         }
       }
 
-      // Section 3: Full-Width Compliance Verification Table (156mm - 202mm)
+      // Section 3: Full-Width Compliance Verification Table
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
@@ -345,10 +510,9 @@ export default function SlabAnalysisTool() {
         bodyStyles: { fontSize: 7, cellPadding: 1.8 },
       });
 
-      // Section 4: Engineering Notes & Sign-Off Block (208mm - 278mm)
+      // Section 4: Engineering Notes & Sign-Off Block
       const finalTableY = (doc as any).lastAutoTable.finalY + 6;
 
-      // Notes Box
       doc.setFillColor(248, 250, 252);
       doc.setDrawColor(203, 213, 225);
       doc.roundedRect(12, finalTableY, 110, 52, 2, 2, 'FD');
@@ -372,7 +536,6 @@ export default function SlabAnalysisTool() {
         doc.text(note, 16, finalTableY + 13 + idx * 7);
       });
 
-      // Formal Approval Block
       doc.setFillColor(248, 250, 252);
       doc.setDrawColor(203, 213, 225);
       doc.roundedRect(128, finalTableY, 70, 52, 2, 2, 'FD');
@@ -399,7 +562,6 @@ export default function SlabAnalysisTool() {
       doc.setTextColor(100, 116, 139);
       doc.text('Authorized Structural Stamp & Signature', 132, finalTableY + 48);
 
-      // Footer Page Number & Legal Disclaimer (285mm)
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6.5);
       doc.setTextColor(148, 163, 184);
@@ -426,28 +588,13 @@ export default function SlabAnalysisTool() {
     }
   };
 
-  const getFailureModeBadge = (mode?: string) => {
-    switch (mode) {
-      case 'PUNCHING_SHEAR':
-        return { label: 'CRITICAL: Punching Shear Failure', color: 'bg-rose-500/20 text-rose-400 border-rose-500/40' };
-      case 'FLEXURAL_YIELDING':
-        return { label: 'CRITICAL: Flexural Yielding', color: 'bg-amber-500/20 text-amber-400 border-amber-500/40' };
-      case 'ONE_WAY_SHEAR':
-        return { label: 'CRITICAL: One-Way Beam Shear', color: 'bg-orange-500/20 text-orange-400 border-orange-500/40' };
-      case 'EXCESSIVE_DEFLECTION':
-        return { label: 'WARNING: Excessive Deflection (L/d Exceeded)', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40' };
-      default:
-        return { label: 'OPTIMAL: All Design Checks Passed', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' };
-    }
-  };
-
   const flexDcr = result?.verification?.flexure_dcr ?? result?.dcr?.flexure_dcr ?? 0;
   const shearDcr = result?.verification?.shear_dcr ?? result?.dcr?.shear_dcr ?? 0;
   const punchDcr = result?.verification?.punching_dcr ?? result?.dcr?.punching_dcr ?? 0;
   const overallDcr = result?.verification?.overall_dcr ?? result?.dcr?.overall_dcr ?? 0;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-950 p-6 rounded-2xl border border-slate-800 text-slate-100 font-sans">
       {/* Control Input Panel */}
       <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
@@ -757,212 +904,150 @@ export default function SlabAnalysisTool() {
             )}
 
             <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl text-center">
-              <span className="text-xs text-slate-400 block mb-1">Deflection (L/d)</span>
-              <span
-                className={`text-lg font-bold font-mono ${
-                  result.deflection?.status === 'PASS' ? 'text-emerald-400' : 'text-amber-400'
-                }`}
-              >
-                {result.deflection?.actual_ratio} / {result.deflection?.max_ratio}
+              <span className="text-xs text-slate-400 block mb-1">Deflection L/d</span>
+              <span className="text-lg font-bold font-mono text-cyan-400">
+                {result.deflection?.actual_ratio ?? 0}
               </span>
             </div>
           </div>
         )}
 
-        {/* Failure Mode Banner */}
-        {result && (
-          <div className={`p-3 rounded-xl border flex items-center justify-between ${getFailureModeBadge(result.verification?.failure_mode).color}`}>
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider block">Governing Structural Behavior</span>
-              <span className="text-sm font-semibold">{getFailureModeBadge(result.verification?.failure_mode).label}</span>
+        {/* 3D EXAGGERATED DEFLECTION SHAPE & 2D SECTION VIEWPORT */}
+        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+          <div className="flex flex-wrap justify-between items-center gap-2">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              EXAGGERATED 3D DEFLECTION SURFACE & STRUCTURAL DETAIL
+            </h3>
+            <div className="flex items-center space-x-1 bg-slate-950 p-0.5 rounded border border-slate-800">
+              <button
+                onClick={() => setViewMode('2d')}
+                className={`px-2 py-1 text-[10px] font-bold rounded ${viewMode === '2d' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                2D Plan
+              </button>
+              <button
+                onClick={() => setViewMode('3d')}
+                className={`px-2 py-1 text-[10px] font-bold rounded ${viewMode === '3d' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                3D Deflection
+              </button>
+              <button
+                onClick={() => setViewMode('split')}
+                className={`px-2 py-1 text-[10px] font-bold rounded ${viewMode === 'split' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Dual View
+              </button>
             </div>
-            <span className="text-xs font-mono font-bold bg-slate-950/60 px-2.5 py-1 rounded border border-slate-800">
-              Max DCR: {overallDcr}
-            </span>
           </div>
-        )}
 
-        {/* Plan & Section Graphical Diagrams */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800">
-            <h4 className="text-xs font-bold text-slate-300 mb-2 border-b border-slate-800 pb-1 flex justify-between">
-              <span>SLAB PLAN VIEW</span>
-              <span className="text-cyan-400">{ly / lx > 2 ? 'One-Way Action' : 'Two-Way Action'}</span>
-            </h4>
-            <div className="bg-slate-950/60 p-3 rounded border border-slate-800 flex justify-center">
-              <svg id="slab-plan-svg" viewBox="0 0 280 200" className="w-full h-44 drop-shadow-md">
-                <rect x="20" y="20" width="240" height="160" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="4" />
+          {/* Interactive Deflection Controls */}
+          {(viewMode === '3d' || viewMode === 'split') && (
+            <div className="flex flex-wrap items-center justify-between gap-4 p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-xs">
+              <div className="flex items-center space-x-2 flex-1 min-w-[200px]">
+                <span className="text-slate-400 text-[11px] whitespace-nowrap">Deflection Scale ({deflectionScale}x):</span>
+                <input
+                  type="range"
+                  min="10"
+                  max="500"
+                  value={deflectionScale}
+                  onChange={(e) => setDeflectionScale(Number(e.target.value))}
+                  className="w-full accent-cyan-400"
+                />
+              </div>
+              <label className="flex items-center space-x-2 text-slate-300 text-[11px] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showWireframe}
+                  onChange={(e) => setShowWireframe(e.target.checked)}
+                  className="rounded accent-cyan-500"
+                />
+                <span>Curvature Mesh</span>
+              </label>
+            </div>
+          )}
 
-                {/* Primary Spanning Axis Arrow */}
-                <line x1="20" y1="100" x2="260" y2="100" stroke="#f59e0b" strokeWidth="2.5" strokeDasharray="5 3" />
-                <polygon points="260,100 250,95 250,105" fill="#f59e0b" />
-                <polygon points="20,100 30,95 30,105" fill="#f59e0b" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 min-h-[280px]">
+            {/* 3D WebGL Deflection Model Viewport */}
+            {(viewMode === '3d' || viewMode === 'split') && (
+              <div
+                ref={mountRef}
+                className={`w-full h-full min-h-[260px] bg-slate-950 border border-slate-800 rounded-lg overflow-hidden relative ${
+                  viewMode === '3d' ? 'md:col-span-2' : ''
+                }`}
+              >
+                <div className="absolute bottom-2 left-2 bg-slate-950/80 px-2 py-1 rounded text-[10px] text-slate-400 pointer-events-none z-10 border border-slate-800">
+                  Orbit: Drag | Zoom: Scroll
+                </div>
+                <div className="absolute top-2 right-2 bg-slate-950/80 px-2 py-1 rounded text-[9px] text-cyan-400 pointer-events-none z-10 border border-slate-800 font-mono">
+                  Heatmap: Blue (Zero) → Red (Max δ)
+                </div>
+              </div>
+            )}
 
-                {/* Secondary Axis Arrow if Two-Way */}
-                {ly / lx <= 2 && (
+            {/* 2D Plan & Reinforcement Detail SVG Viewport */}
+            <div
+              className={`w-full bg-slate-950 border border-slate-800 rounded-lg p-2 flex flex-col items-center justify-center relative ${
+                viewMode === '3d' ? 'hidden' : 'flex'
+              } ${viewMode === '2d' ? 'md:col-span-2' : ''}`}
+            >
+              <div className="absolute top-2 left-2 text-[10px] font-semibold text-slate-400">2D Structural Plan View</div>
+              <svg id="slab-plan-svg" viewBox="0 0 500 300" className="w-full h-56 max-w-[380px]">
+                {/* Slab Outline */}
+                <rect x="50" y="30" width="400" height="220" fill="#1e293b" stroke="#38bdf8" strokeWidth="3" rx="4" />
+
+                {/* Column Layout */}
+                {isPunchingRelevant ? (
                   <>
-                    <line x1="140" y1="20" x2="140" y2="180" stroke="#10b981" strokeWidth="2" strokeDasharray="4 2" />
-                    <polygon points="140,180 135,170 145,170" fill="#10b981" />
-                    <polygon points="140,20 135,30 145,30" fill="#10b981" />
+                    <rect x="40" y="20" width="20" height="20" fill="#0284c7" stroke="#38bdf8" />
+                    <rect x="440" y="20" width="20" height="20" fill="#0284c7" stroke="#38bdf8" />
+                    <rect x="40" y="240" width="20" height="20" fill="#0284c7" stroke="#38bdf8" />
+                    <rect x="440" y="240" width="20" height="20" fill="#0284c7" stroke="#38bdf8" />
+                    {/* Punching Shear Critical Perimeter bo */}
+                    <rect x="30" y="10" width="40" height="40" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
+                  </>
+                ) : (
+                  <>
+                    {/* Support Beams */}
+                    <rect x="40" y="20" width="420" height="10" fill="#475569" />
+                    <rect x="40" y="250" width="420" height="10" fill="#475569" />
                   </>
                 )}
 
-                {/* Punching Shear Column & Critical Perimeter Overlay */}
-                {isPunchingRelevant && (
-                  <g>
-                    {/* Punching Perimeter d/2 */}
-                    <rect
-                      x="115"
-                      y="75"
-                      width="50"
-                      height="50"
-                      fill="none"
-                      stroke={punchDcr > 1.0 ? '#f43f5e' : '#f59e0b'}
-                      strokeWidth="1.5"
-                      strokeDasharray="3 3"
-                    />
-                    {/* Column */}
-                    <rect x="125" y="85" width="30" height="30" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
-                    <text x="140" y="103" fill="#f8fafc" fontSize="7" textAnchor="middle" fontWeight="bold">
-                      COL
-                    </text>
-                  </g>
-                )}
-
-                <text x="140" y="40" fill="#fbbf24" fontSize="10" textAnchor="middle" fontWeight="bold">
-                  Lx = {lx}m (Primary)
+                {/* Rebar Layout Indication */}
+                <line x1="70" y1="140" x2="430" y2="140" stroke="#ef4444" strokeWidth="3" />
+                <text x="250" y="132" fill="#ef4444" fontSize="11" textAnchor="middle" fontWeight="bold">
+                  Primary X: T{barDiam} @ {barSpacing}mm
                 </text>
-                <text x="140" y="170" fill="#cbd5e1" fontSize="9" textAnchor="middle">
-                  Ly = {ly}m
+
+                <line x1="250" y1="50" x2="250" y2="230" stroke="#38bdf8" strokeWidth="3" />
+                <text x="260" y="180" fill="#38bdf8" fontSize="11" textAnchor="start" fontWeight="bold">
+                  Secondary Y: T{barDiamY} @ {barSpacingY}mm
+                </text>
+
+                {/* Dimensions */}
+                <text x="250" y="275" fill="#94a3b8" fontSize="12" textAnchor="middle">
+                  Lx = {lx} m
+                </text>
+                <text x="25" y="140" fill="#94a3b8" fontSize="12" textAnchor="middle" transform="rotate(-90 25 140)">
+                  Ly = {ly} m
                 </text>
               </svg>
-            </div>
-          </div>
 
-          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800">
-            <h4 className="text-xs font-bold text-slate-300 mb-2 border-b border-slate-800 pb-1 flex justify-between">
-              <span>SECTION VIEW (1000mm Strip)</span>
-              <span className="text-cyan-400">h = {thickness}mm</span>
-            </h4>
-            <div className="bg-slate-950/60 p-3 rounded border border-slate-800 flex justify-center">
-              <svg id="slab-section-svg" viewBox="0 0 280 140" className="w-full h-44 drop-shadow-md">
-                {/* Drop Panel Render */}
-                {slabSystem === 'flat_slab' && (
-                  <rect x="90" y="100" width="100" height="15" fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
-                )}
-
-                {/* Main Slab Body */}
-                <rect x="20" y="30" width="240" height="70" fill="#334155" stroke="#94a3b8" strokeWidth="2" rx="2" />
-
-                {/* Bottom Rebar X Line */}
-                <line x1="30" y1="85" x2="250" y2="85" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" />
-
-                {/* Bottom Rebar Y Dots */}
-                <circle cx="50" cy="81" r="3" fill="#10b981" />
-                <circle cx="90" cy="81" r="3" fill="#10b981" />
-                <circle cx="130" cy="81" r="3" fill="#10b981" />
-                <circle cx="170" cy="81" r="3" fill="#10b981" />
-                <circle cx="210" cy="81" r="3" fill="#10b981" />
-
-                {/* Punching Shear Failure Crack Visualization */}
-                {result?.verification?.failure_mode === 'PUNCHING_SHEAR' && (
-                  <g>
-                    <line x1="100" y1="30" x2="130" y2="100" stroke="#f43f5e" strokeWidth="2.5" strokeDasharray="3 2" />
-                    <line x1="180" y1="30" x2="150" y2="100" stroke="#f43f5e" strokeWidth="2.5" strokeDasharray="3 2" />
-                  </g>
-                )}
-
-                <text x="140" y="20" fill="#38bdf8" fontSize="9" textAnchor="middle" fontWeight="bold">
-                  Top Surface (Compression Zone)
-                </text>
-                <text x="140" y="125" fill="#f59e0b" fontSize="8" textAnchor="middle">
-                  Bottom Rebar: T{barDiam}@{barSpacing}mm (X) + T{barDiamY}@{barSpacingY}mm (Y)
+              {/* Hidden 2D Cross-Section SVG for PDF Export Capture */}
+              <svg id="slab-section-svg" viewBox="0 0 500 200" className="hidden">
+                <rect x="20" y="60" width="460" height="80" fill="#334155" stroke="#94a3b8" strokeWidth="3" />
+                <line x1="30" y1="120" x2="470" y2="120" stroke="#ef4444" strokeWidth="4" />
+                <circle cx="100" cy="110" r="5" fill="#38bdf8" />
+                <circle cx="200" cy="110" r="5" fill="#38bdf8" />
+                <circle cx="300" cy="110" r="5" fill="#38bdf8" />
+                <circle cx="400" cy="110" r="5" fill="#38bdf8" />
+                <text x="250" y="40" fill="#f8fafc" fontSize="14" textAnchor="middle" fontWeight="bold">
+                  Slab Thickness h = {thickness} mm (Cover = {cover} mm)
                 </text>
               </svg>
             </div>
           </div>
         </div>
-
-        {/* Detailed Design Verification Table */}
-        {result && (
-          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2">
-              Detailed Structural Compliance Breakdown
-            </h4>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-400">
-                    <th className="pb-2 font-semibold">Check Parameter</th>
-                    <th className="pb-2 font-semibold">Demand / Value</th>
-                    <th className="pb-2 font-semibold">Capacity / Limit</th>
-                    <th className="pb-2 font-semibold">DCR / Ratio</th>
-                    <th className="pb-2 font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/50 text-slate-300 font-mono">
-                  <tr>
-                    <td className="py-2 text-slate-200 font-sans font-medium">Flexural Bending (X)</td>
-                    <td className="py-2">{result.moments?.Mu_x} kN·m/m</td>
-                    <td className="py-2 text-emerald-400">{result.capacity?.phiMn} kN·m/m</td>
-                    <td className="py-2 font-bold">{flexDcr}</td>
-                    <td className="py-2 font-sans font-bold">
-                      <span className={flexDcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}>
-                        {flexDcr <= 1.0 ? 'PASS' : 'FAIL'}
-                      </span>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 text-slate-200 font-sans font-medium">One-Way Beam Shear</td>
-                    <td className="py-2">{result.moments?.Vu} kN/m</td>
-                    <td className="py-2 text-emerald-400">{result.capacity?.phiVc} kN/m</td>
-                    <td className="py-2 font-bold">{shearDcr}</td>
-                    <td className="py-2 font-sans font-bold">
-                      <span className={shearDcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}>
-                        {shearDcr <= 1.0 ? 'PASS' : 'FAIL'}
-                      </span>
-                    </td>
-                  </tr>
-                  {isPunchingRelevant && (
-                    <tr>
-                      <td className="py-2 text-slate-200 font-sans font-medium">Two-Way Punching Shear</td>
-                      <td className="py-2 text-rose-300">{result.moments?.Vu_punch ?? 0} kN</td>
-                      <td className="py-2 text-emerald-400">{result.capacity?.phiVc_punch ?? 0} kN</td>
-                      <td className="py-2 font-bold">{punchDcr}</td>
-                      <td className="py-2 font-sans font-bold">
-                        <span className={punchDcr <= 1.0 ? 'text-emerald-400' : 'text-rose-400'}>
-                          {punchDcr <= 1.0 ? 'PASS' : 'FAIL'}
-                        </span>
-                      </td>
-                    </tr>
-                  )}
-                  <tr>
-                    <td className="py-2 text-slate-200 font-sans font-medium">Minimum Reinforcement (As,min)</td>
-                    <td className="py-2">{result.capacity?.As_provided} mm²/m</td>
-                    <td className="py-2 text-emerald-400">{result.capacity?.As_min} mm²/m</td>
-                    <td className="py-2">-</td>
-                    <td className="py-2 font-sans font-bold">
-                      <span className={result.verification?.rebar_status === 'ADEQUATE' ? 'text-emerald-400' : 'text-rose-400'}>
-                        {result.verification?.rebar_status}
-                      </span>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 text-slate-200 font-sans font-medium">Deflection Span/Depth Ratio (L/d)</td>
-                    <td className="py-2">{result.deflection?.actual_ratio}</td>
-                    <td className="py-2 text-emerald-400">Max {result.deflection?.max_ratio}</td>
-                    <td className="py-2">-</td>
-                    <td className="py-2 font-sans font-bold">
-                      <span className={result.deflection?.status === 'PASS' ? 'text-emerald-400' : 'text-amber-400'}>
-                        {result.deflection?.status}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
