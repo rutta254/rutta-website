@@ -30,44 +30,37 @@ interface ElementToggleOption {
 const DESIGN_ELEMENTS: ElementToggleOption[] = [
   { 
     id: 'foundation', 
-    label: 'Foundations', 
-    badge: 'AUTO-SIZER + BBS',
+    label: 'Foundations',
     description: 'Direct soil pressure optimization, punching depth solver & rebar schedule.'
   },
   { 
     id: 'beam', 
-    label: 'Beams', 
-    badge: 'FLEXURE + SHEAR',
+    label: 'Beams',
     description: 'Optimal b x d depth solver, tension steel & stirrup spacing.'
   },
   { 
     id: 'column', 
-    label: 'Columns', 
-    badge: 'P-M INTERACTION',
+    label: 'Columns',
     description: 'Biaxial bending capacity, longitudinal bar arrangement & tie sizing.'
   },
   { 
     id: 'slab', 
-    label: 'Slabs', 
-    badge: 'DEFLECTION + A_s',
+    label: 'Slabs',
     description: 'Minimum thickness checks, top/bottom mesh spacing & crack control.'
   },
   { 
     id: 'wall', 
-    label: 'Walls', 
-    badge: 'AXIAL + SHEAR',
+    label: 'Walls',
     description: 'Boundary element detailing, horizontal/vertical shear rebar.'
   },
   { 
     id: 'truss', 
-    label: 'Trusses', 
-    badge: 'SECTION SELECTOR',
+    label: 'Trusses',
     description: 'Automatic RHS/CHS/Angle section selection based on LRFD capacity.'
   },
   { 
     id: 'frame', 
-    label: 'Frames', 
-    badge: 'OPTIMIZER',
+    label: 'Frames',
     description: 'Integrated moment frame beam-column joint & drift designer.'
   },
 ];
