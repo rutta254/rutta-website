@@ -8,19 +8,23 @@ import autoTable from 'jspdf-autotable';
 
 type DesignCode = 'ACI318' | 'EC2';
 type FootingType = 'isolated_pad' | 'wall_strip' | 'combined';
+type CombinedSubType = 'rectangular' | 'trapezoidal' | 'strap';
 type MeshType = 'single_mesh' | 'double_mesh';
 
 interface FootingResult {
   code: DesignCode;
   footing_type: FootingType;
+  combined_subtype?: CombinedSubType;
   mesh_type: MeshType;
   geometry: {
     B: number;
+    B2?: number;
     L: number;
     D: number;
     d: number;
     c1: number;
     c2: number;
+    S?: number;
   };
   geotechnical: {
     q_max: number;
@@ -62,13 +66,20 @@ function getHeatmapColor(value: number): THREE.Color {
 export default function FootingAnalysisTool() {
   const [code, setCode] = useState<DesignCode>('ACI318');
   const [footingType, setFootingType] = useState<FootingType>('isolated_pad');
+  const [combinedSubType, setCombinedSubType] = useState<CombinedSubType>('rectangular');
   const [meshType, setMeshType] = useState<MeshType>('single_mesh');
 
   // Footing Geometry (mm)
   const [footingB, setFootingB] = useState<number>(2500);
+  const [footingB2, setFootingB2] = useState<number>(1800);
   const [footingL, setFootingL] = useState<number>(2500);
   const [footingD, setFootingD] = useState<number>(550);
   const [cover, setCover] = useState<number>(75);
+
+  // Combined / Strap Geometry (mm)
+  const [colSpacing, setColSpacing] = useState<number>(4500);
+  const [strapW, setStrapW] = useState<number>(450);
+  const [strapH, setStrapH] = useState<number>(750);
 
   // Column / Pier Geometry (mm)
   const [colC1, setColC1] = useState<number>(400);
@@ -89,11 +100,15 @@ export default function FootingAnalysisTool() {
   const [fc, setFc] = useState<number>(28);
   const [fy, setFy] = useState<number>(420);
 
-  // Unfactored Service Loads
+  // Loads - Col 1 / Single Footing
   const [P_Dead, setP_Dead] = useState<number>(700);
   const [P_Live, setP_Live] = useState<number>(400);
   const [M_Dead, setM_Dead] = useState<number>(90);
   const [M_Live, setM_Live] = useState<number>(50);
+
+  // Loads - Col 2 (For Combined Footings)
+  const [P2_Dead, setP2_Dead] = useState<number>(900);
+  const [P2_Live, setP2_Live] = useState<number>(550);
 
   // 3D Visualization States
   const [viewMode, setViewMode] = useState<'3d' | '2d_composite' | 'split'>('split');
@@ -107,61 +122,82 @@ export default function FootingAnalysisTool() {
 
   const mountRef = useRef<HTMLDivElement>(null);
 
-  // --- ANALYSIS ENGINE ---
+  // --- COMPREHENSIVE FOUNDATION ANALYSIS ENGINE ---
   const calculateFoundation = (): FootingResult => {
+    const isStrip = footingType === 'wall_strip';
+    const isCombined = footingType === 'combined';
+
     const B = Math.max(Number(footingB), 400) / 1000;
-    const L = Math.max(Number(footingL), 400) / 1000;
+    const B2 = isCombined && combinedSubType !== 'rectangular' ? Math.max(Number(footingB2), 400) / 1000 : B;
+    const L = isStrip ? 1.0 : Math.max(Number(footingL), 400) / 1000;
     const D = Math.max(Number(footingD), 200) / 1000;
     const c = Number(cover) / 1000;
     const db = Number(barDiam) / 1000;
     const d = D - c - db / 2;
 
     const c1 = Math.max(Number(colC1), 100) / 1000;
-    const c2 = Math.max(Number(colC2), 100) / 1000;
+    const c2 = isStrip ? B : Math.max(Number(colC2), 100) / 1000;
+    const S_m = colSpacing / 1000;
 
     const f_c = Number(fc);
     const f_y = Number(fy);
     const q_all = Number(qAllow);
 
-    // 1. Service Soil Bearing Pressure
-    const P_service = Number(P_Dead) + Number(P_Live);
-    const M_service = Number(M_Dead) + Number(M_Live);
+    // Load Aggregations
+    let P_service = Number(P_Dead) + Number(P_Live);
+    let M_service = Number(M_Dead) + Number(M_Live);
+    let Pu = 1.2 * Number(P_Dead) + 1.6 * Number(P_Live);
+    let Mux = 1.2 * Number(M_Dead) + 1.6 * Number(M_Live);
 
-    const b_eff = footingType === 'wall_strip' ? 1.0 : B;
-    const A_footing = b_eff * L;
-    const S_footing = (b_eff * Math.pow(L, 2)) / 6;
+    if (isCombined) {
+      const P2_service = Number(P2_Dead) + Number(P2_Live);
+      P_service += P2_service;
+      Pu += 1.2 * Number(P2_Dead) + 1.6 * Number(P2_Live);
+    }
 
-    const footingWeight = b_eff * L * D * 24;
-    const soilWeight = b_eff * L * (Number(embedmentDepth) / 1000 - D) * Number(gammaSoil);
+    // Geotechnical Surface & Section Modulus
+    let A_footing = B * L;
+    if (isCombined) {
+      if (combinedSubType === 'trapezoidal') {
+        A_footing = ((B + B2) / 2) * L;
+      } else if (combinedSubType === 'strap') {
+        const L1 = L * 0.4;
+        const L2 = L * 0.4;
+        A_footing = B * L1 + B2 * L2;
+      }
+    }
+
+    const S_footing = (L * Math.pow(B, 2)) / 6;
+
+    const footingWeight = A_footing * D * 24;
+    const soilWeight = A_footing * (Number(embedmentDepth) / 1000 - D) * Number(gammaSoil);
     const P_total_service = P_service + footingWeight + soilWeight;
 
     const q_avg = P_total_service / A_footing;
-    const q_flexure = M_service / S_footing;
+    const q_flexure = isStrip ? 0 : M_service / S_footing;
 
     const q_max = q_avg + q_flexure;
-    const q_min = q_avg - q_flexure;
-    const uplift = q_min < 0;
-
-    // 2. Factored Ultimate Loads
-    const Pu = 1.2 * Number(P_Dead) + 1.6 * Number(P_Live);
-    const Mux = 1.2 * Number(M_Dead) + 1.6 * Number(M_Live);
+    const q_min = Math.max(q_avg - q_flexure, 0);
+    const uplift = q_avg - q_flexure < 0;
 
     const qu_avg = Pu / A_footing;
-    const qu_flex = Mux / S_footing;
+    const qu_flex = isStrip ? 0 : Mux / S_footing;
     const qu_max = qu_avg + qu_flex;
 
-    // 3. One-Way Shear
-    const dist_to_d = (L - c1) / 2 - d;
-    const Vu_1way = dist_to_d > 0 ? qu_max * b_eff * dist_to_d : 0;
+    // Cantilever Bending & Shear Checks
+    const cantilever = (B - c1) / 2;
+    const dist_to_d = cantilever - d;
+    const Vu_1way = dist_to_d > 0 ? qu_max * L * dist_to_d : 0;
+    
     const phi_shear = 0.75;
-    const Vc_1way = (0.17 * Math.sqrt(f_c) * (b_eff * 1000) * (d * 1000)) / 1000;
+    const Vc_1way = (0.17 * Math.sqrt(f_c) * (L * 1000) * (d * 1000)) / 1000;
     const phiVc_1way = phi_shear * Vc_1way;
 
-    // 4. Two-Way Punching Shear
+    // Two-Way Punching Shear
     let Vu_2way = 0;
     let phiVc_2way = 1.0;
 
-    if (footingType !== 'wall_strip') {
+    if (!isStrip) {
       const bo = 2 * (c1 + d) + 2 * (c2 + d);
       const A_punching = (c1 + d) * (c2 + d);
       Vu_2way = Math.max(Pu - qu_max * A_punching, 0);
@@ -171,16 +207,13 @@ export default function FootingAnalysisTool() {
       const Vc_2way_2 = 0.33 * Math.sqrt(f_c) * (bo * 1000) * (d * 1000);
       phiVc_2way = phi_shear * (Math.min(Vc_2way_1, Vc_2way_2) / 1000);
     } else {
-      Vu_2way = 0;
       phiVc_2way = 9999;
     }
 
-    // 5. Bottom Flexural Reinforcement
-    const cantilever = (L - c1) / 2;
-    const Mu_flexure = (qu_max * b_eff * Math.pow(cantilever, 2)) / 2;
-
+    // Flexural Design
+    const Mu_flexure = (qu_max * L * Math.pow(cantilever, 2)) / 2;
     const phi_flex = 0.90;
-    const b_mm = b_eff * 1000;
+    const b_mm = L * 1000;
     const d_mm = d * 1000;
 
     const K_val = (Mu_flexure * 1e6) / (phi_flex * b_mm * Math.pow(d_mm, 2) * f_c);
@@ -188,30 +221,34 @@ export default function FootingAnalysisTool() {
     const As_req_bot = Math.max(rho_req * b_mm * d_mm, 0.0018 * b_mm * (D * 1000));
 
     const s_bar_bot = Math.max(Number(barSpacing), 50);
-    const num_bars_bot = Math.floor((b_mm - 2 * Number(cover)) / s_bar_bot) + 1;
     const As_bar_bot = (Math.PI / 4) * Math.pow(Number(barDiam), 2);
-    const As_prov_bot = num_bars_bot * As_bar_bot;
+    
+    // Correct Provided Steel for Unit Strip vs Pad
+    const As_prov_bot = isStrip 
+      ? (1000 / s_bar_bot) * As_bar_bot 
+      : (Math.floor((b_mm - 2 * Number(cover)) / s_bar_bot) + 1) * As_bar_bot;
 
     const a_block_bot = (As_prov_bot * f_y) / (0.85 * f_c * b_mm);
     const Mn_bot = (As_prov_bot * f_y * (d_mm - a_block_bot / 2)) / 1e6;
     const phiMn = phi_flex * Mn_bot;
 
-    // 6. Top Reinforcement
+    // Top Reinforcement
     let As_req_top = 0;
     let As_prov_top = 0;
 
-    if (meshType === 'double_mesh') {
+    if (meshType === 'double_mesh' || isCombined) {
       As_req_top = 0.0018 * b_mm * (D * 1000);
       const s_bar_top = Math.max(Number(topBarSpacing), 50);
-      const num_bars_top = Math.floor((b_mm - 2 * Number(cover)) / s_bar_top) + 1;
       const As_bar_top = (Math.PI / 4) * Math.pow(Number(topBarDiam), 2);
-      As_prov_top = num_bars_top * As_bar_top;
+      As_prov_top = isStrip 
+        ? (1000 / s_bar_top) * As_bar_top 
+        : (Math.floor((b_mm - 2 * Number(cover)) / s_bar_top) + 1) * As_bar_top;
     }
 
-    // DCR Calculations
+    // Capacity Demand Ratios (DCR)
     const bearing_dcr = q_max / q_all;
     const shear_1way_dcr = Vu_1way / phiVc_1way;
-    const shear_2way_dcr = footingType === 'wall_strip' ? 0 : Vu_2way / phiVc_2way;
+    const shear_2way_dcr = isStrip ? 0 : Vu_2way / phiVc_2way;
     const flexure_dcr = Mu_flexure / phiMn;
 
     const max_dcr = Math.max(bearing_dcr, shear_1way_dcr, shear_2way_dcr, flexure_dcr);
@@ -224,14 +261,17 @@ export default function FootingAnalysisTool() {
     return {
       code,
       footing_type: footingType,
+      combined_subtype: isCombined ? combinedSubType : undefined,
       mesh_type: meshType,
       geometry: {
         B: Math.round(B * 1000),
+        B2: Math.round(B2 * 1000),
         L: Math.round(L * 1000),
         D: Math.round(D * 1000),
         d: Math.round(d_mm),
         c1: Math.round(c1 * 1000),
         c2: Math.round(c2 * 1000),
+        S: Math.round(S_m * 1000),
       },
       geotechnical: {
         q_max: Number(q_max.toFixed(1)),
@@ -276,9 +316,9 @@ export default function FootingAnalysisTool() {
 
   useEffect(() => {
     setResult(calculateFoundation());
-  }, [code, footingType, meshType, footingB, footingL, footingD, cover, colC1, colC2, qAllow, gammaSoil, embedmentDepth, barDiam, barSpacing, topBarDiam, topBarSpacing, fc, fy, P_Dead, P_Live, M_Dead, M_Live]);
+  }, [code, footingType, combinedSubType, meshType, footingB, footingB2, footingL, footingD, cover, colC1, colC2, colSpacing, strapW, strapH, qAllow, gammaSoil, embedmentDepth, barDiam, barSpacing, topBarDiam, topBarSpacing, fc, fy, P_Dead, P_Live, M_Dead, M_Live, P2_Dead, P2_Live]);
 
-  // --- 3D THREE.JS WEBGL RENDER ENGINE ---
+  // --- 3D THREE.JS DYNAMIC MESH RENDER ENGINE ---
   useEffect(() => {
     if (viewMode === '2d_composite') return;
     const mount = mountRef.current;
@@ -290,14 +330,19 @@ export default function FootingAnalysisTool() {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0f172a);
 
+    const isStrip = footingType === 'wall_strip';
+    const isCombined = footingType === 'combined';
+
     const fB_m = footingB / 1000;
-    const fL_m = footingL / 1000;
+    const fB2_m = footingB2 / 1000;
+    const fL_m = isStrip ? 2.5 : footingL / 1000; // Render representative length for strip
     const fD_m = footingD / 1000;
     const c1_m = colC1 / 1000;
-    const c2_m = footingType === 'wall_strip' ? fB_m : colC2 / 1000;
+    const c2_m = isStrip ? fB_m : colC2 / 1000;
+    const S_m = colSpacing / 1000;
 
     const camera = new THREE.PerspectiveCamera(45, widthVal / heightVal, 0.1, 1000);
-    camera.position.set(fB_m * 1.5, fD_m * 4 + 1.5, fL_m * 1.5);
+    camera.position.set(fB_m * 1.8, fD_m * 4 + 1.5, fL_m * 1.5);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setSize(widthVal, heightVal);
@@ -313,40 +358,97 @@ export default function FootingAnalysisTool() {
     dirLight.position.set(fB_m * 2, fD_m * 10, fL_m * 2);
     scene.add(dirLight);
 
-    // Grid Floor
     const grid = new THREE.GridHelper(Math.max(fB_m, fL_m) * 2.5, 20, 0x334155, 0x1e293b);
     grid.position.set(0, -0.05, 0);
     scene.add(grid);
 
-    // 1. Concrete Slab Geometry (Translucent)
-    const slabGeo = new THREE.BoxGeometry(fB_m, fD_m, fL_m);
     const slabMat = new THREE.MeshStandardMaterial({
       color: 0x334155,
       transparent: true,
       opacity: 0.45,
       roughness: 0.4,
     });
-    const slabMesh = new THREE.Mesh(slabGeo, slabMat);
-    slabMesh.position.set(0, fD_m / 2, 0);
-    scene.add(slabMesh);
+    const colMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3 });
 
-    if (showWireframe) {
-      const wireGeo = new THREE.EdgesGeometry(slabGeo);
-      const wireMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 1.5 });
-      const wireMesh = new THREE.LineSegments(wireGeo, wireMat);
-      wireMesh.position.set(0, fD_m / 2, 0);
-      scene.add(wireMesh);
+    // --- 1. SLAB GEOMETRY CREATION ---
+    if (!isCombined || combinedSubType === 'rectangular') {
+      const slabGeo = new THREE.BoxGeometry(fB_m, fD_m, fL_m);
+      const slabMesh = new THREE.Mesh(slabGeo, slabMat);
+      slabMesh.position.set(0, fD_m / 2, 0);
+      scene.add(slabMesh);
+
+      if (showWireframe) {
+        const wireGeo = new THREE.EdgesGeometry(slabGeo);
+        const wireMesh = new THREE.LineSegments(wireGeo, new THREE.LineBasicMaterial({ color: 0x38bdf8 }));
+        wireMesh.position.set(0, fD_m / 2, 0);
+        scene.add(wireMesh);
+      }
+    } else if (combinedSubType === 'trapezoidal') {
+      const shape = new THREE.Shape();
+      shape.moveTo(-fB_m / 2, -fL_m / 2);
+      shape.lineTo(fB_m / 2, -fL_m / 2);
+      shape.lineTo(fB2_m / 2, fL_m / 2);
+      shape.lineTo(-fB2_m / 2, fL_m / 2);
+      shape.closePath();
+
+      const extrudeSettings = { depth: fD_m, bevelEnabled: false };
+      const trapGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+      trapGeo.rotateX(Math.PI / 2);
+
+      const trapMesh = new THREE.Mesh(trapGeo, slabMat);
+      trapMesh.position.set(0, fD_m, 0);
+      scene.add(trapMesh);
+
+      if (showWireframe) {
+        const wireGeo = new THREE.EdgesGeometry(trapGeo);
+        const wireMesh = new THREE.LineSegments(wireGeo, new THREE.LineBasicMaterial({ color: 0xf59e0b }));
+        wireMesh.position.set(0, fD_m, 0);
+        scene.add(wireMesh);
+      }
+    } else if (combinedSubType === 'strap') {
+      const L1_m = fL_m * 0.4;
+      const L2_m = fL_m * 0.4;
+
+      const pad1Geo = new THREE.BoxGeometry(fB_m, fD_m, L1_m);
+      const pad1Mesh = new THREE.Mesh(pad1Geo, slabMat);
+      pad1Mesh.position.set(0, fD_m / 2, -S_m / 2);
+      scene.add(pad1Mesh);
+
+      const pad2Geo = new THREE.BoxGeometry(fB2_m, fD_m, L2_m);
+      const pad2Mesh = new THREE.Mesh(pad2Geo, slabMat);
+      pad2Mesh.position.set(0, fD_m / 2, S_m / 2);
+      scene.add(pad2Mesh);
+
+      const stW_m = strapW / 1000;
+      const stH_m = strapH / 1000;
+      const strapGeo = new THREE.BoxGeometry(stW_m, stH_m, S_m);
+      const strapMat = new THREE.MeshStandardMaterial({ color: 0xef4444, transparent: true, opacity: 0.6 });
+      const strapMesh = new THREE.Mesh(strapGeo, strapMat);
+      strapMesh.position.set(0, fD_m + stH_m / 2 - 0.1, 0);
+      scene.add(strapMesh);
     }
 
-    // 2. Pier / Column Stub
+    // --- 2. COLUMN PIERS ---
     const colH_m = 0.6;
-    const colGeo = new THREE.BoxGeometry(c2_m, colH_m, c1_m);
-    const colMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3 });
-    const colMesh = new THREE.Mesh(colGeo, colMat);
-    colMesh.position.set(0, fD_m + colH_m / 2, 0);
-    scene.add(colMesh);
+    if (!isCombined) {
+      const colGeo = new THREE.BoxGeometry(c2_m, colH_m, c1_m);
+      const colMesh = new THREE.Mesh(colGeo, colMat);
+      colMesh.position.set(0, fD_m + colH_m / 2, 0);
+      scene.add(colMesh);
+    } else {
+      // Dual Columns for Combined Footings
+      const col1Geo = new THREE.BoxGeometry(c1_m, colH_m, c1_m);
+      const col1Mesh = new THREE.Mesh(col1Geo, colMat);
+      col1Mesh.position.set(0, fD_m + colH_m / 2, -S_m / 2);
+      scene.add(col1Mesh);
 
-    // 3. Rebar Mesh Cage (CORRECTED GEOMETRY & ROTATION)
+      const col2Geo = new THREE.BoxGeometry(c1_m, colH_m, c1_m);
+      const col2Mesh = new THREE.Mesh(col2Geo, colMat);
+      col2Mesh.position.set(0, fD_m + colH_m / 2, S_m / 2);
+      scene.add(col2Mesh);
+    }
+
+    // --- 3. REBAR CAGE ---
     if (showRebarCage) {
       const cov_m = cover / 1000;
       const db_bot_m = Math.max(barDiam / 1000, 0.012);
@@ -354,94 +456,34 @@ export default function FootingAnalysisTool() {
 
       const rebarMatBot = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.8, roughness: 0.2 });
       const rebarMatTop = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.8, roughness: 0.2 });
-      const dowelMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.8, roughness: 0.2 });
 
-      // --- BOTTOM REBAR MESH ---
-      // Longitudinal Bars (Along Z-axis)
+      // Bottom Mesh
       const numBarsX_bot = Math.floor((footingB - 2 * cover) / barSpacing);
       for (let i = 0; i <= numBarsX_bot; i++) {
         const xPos = -fB_m / 2 + cov_m + (i * (fB_m - 2 * cov_m)) / Math.max(numBarsX_bot, 1);
         const barGeo = new THREE.CylinderGeometry(db_bot_m / 2, db_bot_m / 2, fL_m - 2 * cov_m, 8);
-        barGeo.rotateX(Math.PI / 2); // Rotate horizontal along Z
+        barGeo.rotateX(Math.PI / 2);
         const barMesh = new THREE.Mesh(barGeo, rebarMatBot);
         barMesh.position.set(xPos, cov_m + db_bot_m / 2, 0);
         scene.add(barMesh);
       }
 
-      // Transverse Bars (Along X-axis)
-      const numBarsZ_bot = Math.floor((footingL - 2 * cover) / barSpacing);
-      for (let j = 0; j <= numBarsZ_bot; j++) {
-        const zPos = -fL_m / 2 + cov_m + (j * (fL_m - 2 * cov_m)) / Math.max(numBarsZ_bot, 1);
-        const barGeo = new THREE.CylinderGeometry(db_bot_m / 2, db_bot_m / 2, fB_m - 2 * cov_m, 8);
-        barGeo.rotateZ(Math.PI / 2); // Rotate horizontal along X
-        const barMesh = new THREE.Mesh(barGeo, rebarMatBot);
-        barMesh.position.set(0, cov_m + db_bot_m + db_bot_m / 2, zPos);
-        scene.add(barMesh);
-      }
-
-      // --- TOP REBAR MESH (IF DOUBLE MESH) ---
-      if (meshType === 'double_mesh') {
+      // Top Mesh (Required for Double Mesh or Combined Footings)
+      if (meshType === 'double_mesh' || isCombined) {
         const topY = fD_m - cov_m;
-
-        // Top Longitudinal Bars (Along Z-axis)
         const numBarsX_top = Math.floor((footingB - 2 * cover) / topBarSpacing);
         for (let i = 0; i <= numBarsX_top; i++) {
           const xPos = -fB_m / 2 + cov_m + (i * (fB_m - 2 * cov_m)) / Math.max(numBarsX_top, 1);
           const barGeo = new THREE.CylinderGeometry(db_top_m / 2, db_top_m / 2, fL_m - 2 * cov_m, 8);
-          barGeo.rotateX(Math.PI / 2); // Rotate horizontal along Z
+          barGeo.rotateX(Math.PI / 2);
           const barMesh = new THREE.Mesh(barGeo, rebarMatTop);
           barMesh.position.set(xPos, topY - db_top_m / 2, 0);
           scene.add(barMesh);
         }
-
-        // Top Transverse Bars (Along X-axis)
-        const numBarsZ_top = Math.floor((footingL - 2 * cover) / topBarSpacing);
-        for (let j = 0; j <= numBarsZ_top; j++) {
-          const zPos = -fL_m / 2 + cov_m + (j * (fL_m - 2 * cov_m)) / Math.max(numBarsZ_top, 1);
-          const barGeo = new THREE.CylinderGeometry(db_top_m / 2, db_top_m / 2, fB_m - 2 * cov_m, 8);
-          barGeo.rotateZ(Math.PI / 2); // Rotate horizontal along X
-          const barMesh = new THREE.Mesh(barGeo, rebarMatTop);
-          barMesh.position.set(0, topY - db_top_m - db_top_m / 2, zPos);
-          scene.add(barMesh);
-        }
       }
-
-      // --- VERTICAL COLUMN STARTER DOWELS ---
-      const dowelH = fD_m * 0.75 + colH_m * 0.5;
-      const dowelOffset2 = Math.min(c2_m / 3, 0.15);
-      const dowelOffset1 = Math.min(c1_m / 3, 0.15);
-
-      const dowelCorners = [
-        [-dowelOffset2, dowelH / 2 + cov_m, -dowelOffset1],
-        [dowelOffset2, dowelH / 2 + cov_m, -dowelOffset1],
-        [-dowelOffset2, dowelH / 2 + cov_m, dowelOffset1],
-        [dowelOffset2, dowelH / 2 + cov_m, dowelOffset1],
-      ];
-
-      dowelCorners.forEach(([dx, dy, dz]) => {
-        const dGeo = new THREE.CylinderGeometry(0.008, 0.008, dowelH, 8);
-        const dMesh = new THREE.Mesh(dGeo, dowelMat);
-        dMesh.position.set(dx, dy, dz);
-        scene.add(dMesh);
-      });
     }
 
-    // 4. Punching Shear Perimeter Wireframe
-    if (footingType !== 'wall_strip' && result) {
-      const d_m = result.geometry.d / 1000;
-      const punchW_m = c2_m + d_m;
-      const punchL_m = c1_m + d_m;
-
-      const punchGeo = new THREE.BoxGeometry(punchW_m, fD_m * 1.02, punchL_m);
-      const punchEdges = new THREE.EdgesGeometry(punchGeo);
-      const punchMat = new THREE.LineDashedMaterial({ color: 0xf59e0b, dashSize: 0.1, gapSize: 0.05 });
-      const punchMesh = new THREE.LineSegments(punchEdges, punchMat);
-      punchMesh.computeLineDistances();
-      punchMesh.position.set(0, fD_m / 2, 0);
-      scene.add(punchMesh);
-    }
-
-    // 5. Soil Contact Stress Pressure Surface Heatmap (Bottom Plane)
+    // --- 4. SOIL STRESS HEATMAP ---
     if (result) {
       const segX = 20;
       const segZ = 20;
@@ -474,11 +516,7 @@ export default function FootingAnalysisTool() {
       soilGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       soilGeo.computeVertexNormals();
 
-      const soilMat = new THREE.MeshBasicMaterial({
-        vertexColors: true,
-        side: THREE.DoubleSide,
-        wireframe: false,
-      });
+      const soilMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
       const soilMesh = new THREE.Mesh(soilGeo, soilMat);
       scene.add(soilMesh);
     }
@@ -496,7 +534,7 @@ export default function FootingAnalysisTool() {
         mount.removeChild(renderer.domElement);
       }
     };
-  }, [footingB, footingL, footingD, cover, colC1, colC2, footingType, meshType, barSpacing, topBarSpacing, barDiam, topBarDiam, viewMode, result, showWireframe, showRebarCage, soilPressureExag]);
+  }, [footingB, footingB2, footingL, footingD, cover, colC1, colC2, colSpacing, strapW, strapH, footingType, combinedSubType, meshType, barSpacing, topBarSpacing, barDiam, topBarDiam, viewMode, result, showWireframe, showRebarCage, soilPressureExag]);
 
   // --- SVG CONVERSION FOR PDF REPORT ---
   const convertSvgToPng = (svgElement: SVGSVGElement, bgColor = '#0f172a'): Promise<string> => {
@@ -561,7 +599,6 @@ export default function FootingAnalysisTool() {
       const doc = new jsPDF('p', 'mm', 'a4');
       const dateStr = new Date().toLocaleDateString();
 
-      // Banner Header
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, 210, 18, 'F');
 
@@ -575,7 +612,6 @@ export default function FootingAnalysisTool() {
       doc.setTextColor(226, 232, 240);
       doc.text(`Code: ${code} | Type: ${footingType.toUpperCase()} | Mesh: ${meshType.toUpperCase()} | Date: ${dateStr}`, 12, 15);
 
-      // Section 1: Tables
       autoTable(doc, {
         startY: 22,
         margin: { left: 12 },
@@ -583,7 +619,7 @@ export default function FootingAnalysisTool() {
         head: [['Input Parameter', 'Value / Unit']],
         body: [
           ['Footing Type', footingType.replace(/_/g, ' ').toUpperCase()],
-          ['Mesh Layout', meshType.replace(/_/g, ' ').toUpperCase()],
+          ['Sub-Type / Layout', combinedSubType ? combinedSubType.toUpperCase() : meshType.toUpperCase()],
           ['Footing Size (B x L)', `${result.geometry.B} x ${result.geometry.L} mm`],
           ['Thickness (D) / Depth (d)', `${result.geometry.D} / ${result.geometry.d} mm`],
           ['Column Size (c1 x c2)', `${result.geometry.c1} x ${result.geometry.c2} mm`],
@@ -591,7 +627,7 @@ export default function FootingAnalysisTool() {
           ['Service Load (P / M)', `${Number(P_Dead) + Number(P_Live)} kN / ${Number(M_Dead) + Number(M_Live)} kN·m`],
           ['Concrete / Steel Strength', `${fc} / ${fy} MPa`],
           ['Bottom Mesh Rebar', `Ø${barDiam} @ ${barSpacing}mm (${result.structural.As_prov_bot} mm²)`],
-          ['Top Mesh Rebar', meshType === 'double_mesh' ? `Ø${topBarDiam} @ ${topBarSpacing}mm (${result.structural.As_prov_top} mm²)` : 'None (Single Mesh)'],
+          ['Top Mesh Rebar', meshType === 'double_mesh' || footingType === 'combined' ? `Ø${topBarDiam} @ ${topBarSpacing}mm (${result.structural.As_prov_top} mm²)` : 'None (Single Mesh)'],
         ],
         theme: 'grid',
         headStyles: { fillColor: [14, 116, 144], fontSize: 7.5, cellPadding: 2, fontStyle: 'bold' },
@@ -621,7 +657,6 @@ export default function FootingAnalysisTool() {
         bodyStyles: { fontSize: 7, cellPadding: 1.8 },
       });
 
-      // Section 2: Diagrams
       let currentY = 104;
       const footingSvg = document.getElementById('footing-composite-svg') as unknown as SVGSVGElement;
       const canvas3D = mountRef.current?.querySelector('canvas');
@@ -650,7 +685,6 @@ export default function FootingAnalysisTool() {
         }
       }
 
-      // Section 3: Engineering Sign-off Box
       doc.setFillColor(248, 250, 252);
       doc.setDrawColor(203, 213, 225);
       doc.roundedRect(12, currentY, 186, 26, 2, 2, 'FD');
@@ -784,7 +818,7 @@ export default function FootingAnalysisTool() {
         />
 
         {/* Top Rebar Mesh (Orange) */}
-        {meshType === 'double_mesh' && (
+        {(meshType === 'double_mesh' || footingType === 'combined') && (
           <line
             x1={elevX + 8}
             y1={elevY + 8}
@@ -859,6 +893,43 @@ export default function FootingAnalysisTool() {
           </div>
         </div>
 
+        {footingType === 'combined' && (
+          <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+            <label className="block text-xs text-cyan-400 font-semibold">Combined Sub-Type</label>
+            <select
+              value={combinedSubType}
+              onChange={(e) => setCombinedSubType(e.target.value as CombinedSubType)}
+              className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200"
+            >
+              <option value="rectangular">Rectangular Combined</option>
+              <option value="trapezoidal">Trapezoidal Combined</option>
+              <option value="strap">Strap (Cantilever) Footing</option>
+            </select>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div>
+                <label className="block text-[10px] text-slate-400">Col Spacing S (mm)</label>
+                <input
+                  type="number"
+                  value={colSpacing}
+                  onChange={(e) => setColSpacing(Number(e.target.value))}
+                  className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200 font-mono"
+                />
+              </div>
+              {combinedSubType === 'strap' && (
+                <div>
+                  <label className="block text-[10px] text-slate-400">Strap Depth (mm)</label>
+                  <input
+                    type="number"
+                    value={strapH}
+                    onChange={(e) => setStrapH(Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded p-1 text-xs text-slate-200 font-mono"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Width B (mm)</label>
@@ -870,12 +941,15 @@ export default function FootingAnalysisTool() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Length L (mm)</label>
+            <label className="block text-xs text-slate-400 mb-1">
+              {footingType === 'wall_strip' ? 'Unit (1000mm)' : 'Length L (mm)'}
+            </label>
             <input
               type="number"
+              disabled={footingType === 'wall_strip'}
               value={footingL}
               onChange={(e) => setFootingL(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono"
+              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 font-mono disabled:opacity-30"
             />
           </div>
           <div>
@@ -956,7 +1030,7 @@ export default function FootingAnalysisTool() {
             </div>
           </div>
 
-          {meshType === 'double_mesh' && (
+          {(meshType === 'double_mesh' || footingType === 'combined') && (
             <div className="grid grid-cols-2 gap-3 p-2.5 bg-slate-950 rounded border border-slate-800">
               <div>
                 <label className="block text-xs text-amber-400 mb-1">Top Bar Ø (mm)</label>
@@ -982,7 +1056,7 @@ export default function FootingAnalysisTool() {
 
         <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
           <div>
-            <label className="block text-xs text-slate-400 mb-1">P_Dead / P_Live (kN)</label>
+            <label className="block text-xs text-slate-400 mb-1">P1_Dead / P1_Live (kN)</label>
             <div className="flex gap-1">
               <input
                 type="number"
@@ -999,7 +1073,7 @@ export default function FootingAnalysisTool() {
             </div>
           </div>
           <div>
-            <label className="block text-xs text-slate-400 mb-1">M_Dead / M_Live (kN·m)</label>
+            <label className="block text-xs text-slate-400 mb-1">M1_Dead / M1_Live (kN·m)</label>
             <div className="flex gap-1">
               <input
                 type="number"
@@ -1127,9 +1201,6 @@ export default function FootingAnalysisTool() {
               >
                 <div className="absolute bottom-2 left-2 bg-slate-950/80 px-2 py-1 rounded text-[10px] text-slate-400 pointer-events-none z-10 border border-slate-800">
                   Orbit: Drag | Zoom: Scroll
-                </div>
-                <div className="absolute top-2 right-2 bg-slate-950/80 px-2 py-1 rounded text-[9px] text-cyan-400 pointer-events-none z-10 border border-slate-800 font-mono">
-                  Red = Bot Mesh | Amber = Top Mesh | Blue = Dowels
                 </div>
               </div>
             )}
