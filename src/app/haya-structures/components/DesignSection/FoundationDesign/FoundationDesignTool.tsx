@@ -20,6 +20,9 @@ export default function FoundationDesignTool() {
   const [shallowType, setShallowType] = useState<ShallowType>('isolated_pad');
   const [deepType, setDeepType] = useState<DeepType>('pile_cap');
   const [combinedSubType, setCombinedSubType] = useState<CombinedSubType>('strap');
+  
+  // NEW: Single Mesh vs Double Mesh configuration state
+  const [meshMode, setMeshMode] = useState<'single' | 'double'>('single');
 
   const [fc, setFc] = useState<number>(30);
   const [fy, setFy] = useState<number>(460);
@@ -164,6 +167,37 @@ export default function FoundationDesignTool() {
             )}
           </div>
 
+          {/* Rebar Mesh Selection */}
+          <div>
+            <label className="block text-[10px] text-slate-400 uppercase font-bold mb-2">
+              Reinforcement Mesh Configuration
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setMeshMode('single')}
+                className={`py-2 rounded-lg text-xs font-bold border transition ${
+                  meshMode === 'single'
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                    : 'bg-slate-950 text-slate-400 border-slate-800'
+                }`}
+              >
+                Single Mesh (Bottom Only)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMeshMode('double')}
+                className={`py-2 rounded-lg text-xs font-bold border transition ${
+                  meshMode === 'double'
+                    ? 'bg-amber-500 text-slate-950 border-amber-400'
+                    : 'bg-slate-950 text-slate-400 border-slate-800'
+                }`}
+              >
+                Double Mesh (Top & Bottom)
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-slate-400 mb-1">Axial Dead P_Dead (kN)</label>
@@ -220,12 +254,14 @@ export default function FoundationDesignTool() {
             </div>
             <div className="bg-slate-900 border border-emerald-500/30 p-3 rounded-xl text-center">
               <span className="text-[10px] text-slate-400 block uppercase font-bold">Total Rebar Mass</span>
-              <span className="text-base font-bold font-mono text-emerald-400">{result.totalSteelWeightKg} kg</span>
+              <span className="text-base font-bold font-mono text-emerald-400">
+                {meshMode === 'double' ? (result.totalSteelWeightKg * 1.85).toFixed(0) : result.totalSteelWeightKg} kg
+              </span>
             </div>
           </div>
 
           {/* 3D WebGL Three.js Renderer Viewport */}
-          <Foundation3DRenderer data={result.geometry3D} />
+          <Foundation3DRenderer data={result.geometry3D} meshMode={meshMode} />
 
           {/* Code Checks Summary */}
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2">
