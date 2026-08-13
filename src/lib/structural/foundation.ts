@@ -1,4 +1,4 @@
-export type DesignCode = 'ACI318' | 'EC2';
+export type DesignCode = 'ACI318' | 'EC2' | 'BS8110' | 'IS456' | 'AS3600' | 'CSA A23.3';
 
 export type FoundationCategory = 'shallow' | 'deep';
 
