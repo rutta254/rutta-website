@@ -15,33 +15,33 @@ interface FootingResult {
   footing_type: FootingType;
   mesh_type: MeshType;
   geometry: {
-    B: number; // Width (mm)
-    L: number; // Length (mm)
-    D: number; // Thickness (mm)
-    d: number; // Effective depth (mm)
-    c1: number; // Column length / Wall thickness (mm)
-    c2: number; // Column width (mm)
+    B: number;
+    L: number;
+    D: number;
+    d: number;
+    c1: number;
+    c2: number;
   };
   geotechnical: {
-    q_max: number; // Max bearing pressure (kPa)
-    q_min: number; // Min bearing pressure (kPa)
-    q_allow: number; // Allowable soil pressure (kPa)
-    uplift: boolean; // Uplift condition status
+    q_max: number;
+    q_min: number;
+    q_allow: number;
+    uplift: boolean;
   };
   structural: {
     Pu: number;
     Mux: number;
-    qu_max: number; // Factored soil pressure for design (kPa)
-    Vu_1way: number; // One-way shear demand (kN)
-    phiVc_1way: number; // One-way shear capacity (kN)
-    Vu_2way: number; // Two-way shear demand (kN)
-    phiVc_2way: number; // Two-way shear capacity (kN)
-    Mu_flexure: number; // Flexural moment demand (kN·m)
-    phiMn: number; // Moment capacity (kN·m)
-    As_req_bot: number; // Required bottom steel (mm²)
-    As_prov_bot: number; // Provided bottom steel (mm²)
-    As_req_top: number; // Required top steel (mm²)
-    As_prov_top: number; // Provided top steel (mm²)
+    qu_max: number;
+    Vu_1way: number;
+    phiVc_1way: number;
+    Vu_2way: number;
+    phiVc_2way: number;
+    Mu_flexure: number;
+    phiMn: number;
+    As_req_bot: number;
+    As_prov_bot: number;
+    As_req_top: number;
+    As_prov_top: number;
   };
   dcr: {
     bearing_dcr: number;
@@ -75,9 +75,9 @@ export default function FootingAnalysisTool() {
   const [colC2, setColC2] = useState<number>(400);
 
   // Soil Properties
-  const [qAllow, setQAllow] = useState<number>(220); // kPa
-  const [gammaSoil, setGammaSoil] = useState<number>(18); // kN/m³
-  const [embedmentDepth, setEmbedmentDepth] = useState<number>(1500); // mm
+  const [qAllow, setQAllow] = useState<number>(220);
+  const [gammaSoil, setGammaSoil] = useState<number>(18);
+  const [embedmentDepth, setEmbedmentDepth] = useState<number>(1500);
 
   // Rebar Details
   const [barDiam, setBarDiam] = useState<number>(16);
@@ -90,10 +90,10 @@ export default function FootingAnalysisTool() {
   const [fy, setFy] = useState<number>(420);
 
   // Unfactored Service Loads
-  const [P_Dead, setP_Dead] = useState<number>(700); // kN
-  const [P_Live, setP_Live] = useState<number>(400); // kN
-  const [M_Dead, setM_Dead] = useState<number>(90); // kN·m
-  const [M_Live, setM_Live] = useState<number>(50); // kN·m
+  const [P_Dead, setP_Dead] = useState<number>(700);
+  const [P_Live, setP_Live] = useState<number>(400);
+  const [M_Dead, setM_Dead] = useState<number>(90);
+  const [M_Live, setM_Live] = useState<number>(50);
 
   // 3D Visualization States
   const [viewMode, setViewMode] = useState<'3d' | '2d_composite' | 'split'>('split');
@@ -114,7 +114,7 @@ export default function FootingAnalysisTool() {
     const D = Math.max(Number(footingD), 200) / 1000;
     const c = Number(cover) / 1000;
     const db = Number(barDiam) / 1000;
-    const d = D - c - db / 2; // Effective depth (m)
+    const d = D - c - db / 2;
 
     const c1 = Math.max(Number(colC1), 100) / 1000;
     const c2 = Math.max(Number(colC2), 100) / 1000;
@@ -142,7 +142,7 @@ export default function FootingAnalysisTool() {
     const q_min = q_avg - q_flexure;
     const uplift = q_min < 0;
 
-    // 2. Factored Ultimate Loads (1.2D + 1.6L)
+    // 2. Factored Ultimate Loads
     const Pu = 1.2 * Number(P_Dead) + 1.6 * Number(P_Live);
     const Mux = 1.2 * Number(M_Dead) + 1.6 * Number(M_Live);
 
@@ -150,14 +150,14 @@ export default function FootingAnalysisTool() {
     const qu_flex = Mux / S_footing;
     const qu_max = qu_avg + qu_flex;
 
-    // 3. One-Way Shear Check (Wide Beam Shear at distance d)
+    // 3. One-Way Shear
     const dist_to_d = (L - c1) / 2 - d;
     const Vu_1way = dist_to_d > 0 ? qu_max * b_eff * dist_to_d : 0;
     const phi_shear = 0.75;
     const Vc_1way = (0.17 * Math.sqrt(f_c) * (b_eff * 1000) * (d * 1000)) / 1000;
     const phiVc_1way = phi_shear * Vc_1way;
 
-    // 4. Two-Way Punching Shear Check
+    // 4. Two-Way Punching Shear
     let Vu_2way = 0;
     let phiVc_2way = 1.0;
 
@@ -175,7 +175,7 @@ export default function FootingAnalysisTool() {
       phiVc_2way = 9999;
     }
 
-    // 5. Bottom Flexural Reinforcement (Positive Moment at Column Face)
+    // 5. Bottom Flexural Reinforcement
     const cantilever = (L - c1) / 2;
     const Mu_flexure = (qu_max * b_eff * Math.pow(cantilever, 2)) / 2;
 
@@ -196,7 +196,7 @@ export default function FootingAnalysisTool() {
     const Mn_bot = (As_prov_bot * f_y * (d_mm - a_block_bot / 2)) / 1e6;
     const phiMn = phi_flex * Mn_bot;
 
-    // 6. Top Flexural Reinforcement
+    // 6. Top Reinforcement
     let As_req_top = 0;
     let As_prov_top = 0;
 
@@ -318,12 +318,12 @@ export default function FootingAnalysisTool() {
     grid.position.set(0, -0.05, 0);
     scene.add(grid);
 
-    // 1. Concrete Slab Geometry
+    // 1. Concrete Slab Geometry (Translucent)
     const slabGeo = new THREE.BoxGeometry(fB_m, fD_m, fL_m);
     const slabMat = new THREE.MeshStandardMaterial({
       color: 0x334155,
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.45,
       roughness: 0.4,
     });
     const slabMesh = new THREE.Mesh(slabGeo, slabMat);
@@ -346,47 +346,87 @@ export default function FootingAnalysisTool() {
     colMesh.position.set(0, fD_m + colH_m / 2, 0);
     scene.add(colMesh);
 
-    // 3. Rebar Mesh Cage
+    // 3. Rebar Mesh Cage (CORRECTED GEOMETRY & ROTATION)
     if (showRebarCage) {
       const cov_m = cover / 1000;
+      const db_bot_m = Math.max(barDiam / 1000, 0.012);
+      const db_top_m = Math.max(topBarDiam / 1000, 0.01);
+
       const rebarMatBot = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.8, roughness: 0.2 });
       const rebarMatTop = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.8, roughness: 0.2 });
+      const dowelMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.8, roughness: 0.2 });
 
-      // Bottom Rebar Grid
-      const numBarsX = Math.floor(footingB / barSpacing);
-      const numBarsZ = Math.floor(footingL / barSpacing);
-
-      for (let i = 0; i <= numBarsX; i++) {
-        const xPos = -fB_m / 2 + cov_m + (i * (fB_m - 2 * cov_m)) / Math.max(numBarsX, 1);
-        const barGeo = new THREE.CylinderGeometry(0.008, 0.008, fL_m - 2 * cov_m, 8);
+      // --- BOTTOM REBAR MESH ---
+      // Longitudinal Bars (Along Z-axis)
+      const numBarsX_bot = Math.floor((footingB - 2 * cover) / barSpacing);
+      for (let i = 0; i <= numBarsX_bot; i++) {
+        const xPos = -fB_m / 2 + cov_m + (i * (fB_m - 2 * cov_m)) / Math.max(numBarsX_bot, 1);
+        const barGeo = new THREE.CylinderGeometry(db_bot_m / 2, db_bot_m / 2, fL_m - 2 * cov_m, 8);
+        barGeo.rotateX(Math.PI / 2); // Rotate horizontal along Z
         const barMesh = new THREE.Mesh(barGeo, rebarMatBot);
-        barMesh.position.set(xPos, cov_m, 0);
+        barMesh.position.set(xPos, cov_m + db_bot_m / 2, 0);
         scene.add(barMesh);
       }
 
-      for (let j = 0; j <= numBarsZ; j++) {
-        const zPos = -fL_m / 2 + cov_m + (j * (fL_m - 2 * cov_m)) / Math.max(numBarsZ, 1);
-        const barGeo = new THREE.CylinderGeometry(0.008, 0.008, fB_m - 2 * cov_m, 8);
+      // Transverse Bars (Along X-axis)
+      const numBarsZ_bot = Math.floor((footingL - 2 * cover) / barSpacing);
+      for (let j = 0; j <= numBarsZ_bot; j++) {
+        const zPos = -fL_m / 2 + cov_m + (j * (fL_m - 2 * cov_m)) / Math.max(numBarsZ_bot, 1);
+        const barGeo = new THREE.CylinderGeometry(db_bot_m / 2, db_bot_m / 2, fB_m - 2 * cov_m, 8);
+        barGeo.rotateZ(Math.PI / 2); // Rotate horizontal along X
         const barMesh = new THREE.Mesh(barGeo, rebarMatBot);
-        barMesh.rotateZ(Math.PI / 2);
-        barMesh.position.set(0, cov_m + 0.01, zPos);
+        barMesh.position.set(0, cov_m + db_bot_m + db_bot_m / 2, zPos);
         scene.add(barMesh);
       }
 
-      // Top Rebar Grid (if double mesh)
+      // --- TOP REBAR MESH (IF DOUBLE MESH) ---
       if (meshType === 'double_mesh') {
         const topY = fD_m - cov_m;
-        for (let i = 0; i <= numBarsX; i++) {
-          const xPos = -fB_m / 2 + cov_m + (i * (fB_m - 2 * cov_m)) / Math.max(numBarsX, 1);
-          const barGeo = new THREE.CylinderGeometry(0.006, 0.006, fL_m - 2 * cov_m, 8);
+
+        // Top Longitudinal Bars (Along Z-axis)
+        const numBarsX_top = Math.floor((footingB - 2 * cover) / topBarSpacing);
+        for (let i = 0; i <= numBarsX_top; i++) {
+          const xPos = -fB_m / 2 + cov_m + (i * (fB_m - 2 * cov_m)) / Math.max(numBarsX_top, 1);
+          const barGeo = new THREE.CylinderGeometry(db_top_m / 2, db_top_m / 2, fL_m - 2 * cov_m, 8);
+          barGeo.rotateX(Math.PI / 2); // Rotate horizontal along Z
           const barMesh = new THREE.Mesh(barGeo, rebarMatTop);
-          barMesh.position.set(xPos, topY, 0);
+          barMesh.position.set(xPos, topY - db_top_m / 2, 0);
+          scene.add(barMesh);
+        }
+
+        // Top Transverse Bars (Along X-axis)
+        const numBarsZ_top = Math.floor((footingL - 2 * cover) / topBarSpacing);
+        for (let j = 0; j <= numBarsZ_top; j++) {
+          const zPos = -fL_m / 2 + cov_m + (j * (fL_m - 2 * cov_m)) / Math.max(numBarsZ_top, 1);
+          const barGeo = new THREE.CylinderGeometry(db_top_m / 2, db_top_m / 2, fB_m - 2 * cov_m, 8);
+          barGeo.rotateZ(Math.PI / 2); // Rotate horizontal along X
+          const barMesh = new THREE.Mesh(barGeo, rebarMatTop);
+          barMesh.position.set(0, topY - db_top_m - db_top_m / 2, zPos);
           scene.add(barMesh);
         }
       }
+
+      // --- VERTICAL COLUMN STARTER DOWELS ---
+      const dowelH = fD_m * 0.75 + colH_m * 0.5;
+      const dowelOffset2 = Math.min(c2_m / 3, 0.15);
+      const dowelOffset1 = Math.min(c1_m / 3, 0.15);
+
+      const dowelCorners = [
+        [-dowelOffset2, dowelH / 2 + cov_m, -dowelOffset1],
+        [dowelOffset2, dowelH / 2 + cov_m, -dowelOffset1],
+        [-dowelOffset2, dowelH / 2 + cov_m, dowelOffset1],
+        [dowelOffset2, dowelH / 2 + cov_m, dowelOffset1],
+      ];
+
+      dowelCorners.forEach(([dx, dy, dz]) => {
+        const dGeo = new THREE.CylinderGeometry(0.008, 0.008, dowelH, 8);
+        const dMesh = new THREE.Mesh(dGeo, dowelMat);
+        dMesh.position.set(dx, dy, dz);
+        scene.add(dMesh);
+      });
     }
 
-    // 4. Punching Shear Perimeter Wireframe (b0 at d/2 from column face)
+    // 4. Punching Shear Perimeter Wireframe
     if (footingType !== 'wall_strip' && result) {
       const d_m = result.geometry.d / 1000;
       const punchW_m = c2_m + d_m;
@@ -418,7 +458,7 @@ export default function FootingAnalysisTool() {
 
       for (let i = 0; i < count; i++) {
         const z = posAttr.getZ(i);
-        const normZ = (z + fL_m / 2) / fL_m; // 0.0 to 1.0 along footing length
+        const normZ = (z + fL_m / 2) / fL_m;
 
         const qLocal = qMin + normZ * (qMax - qMin);
         const ratio = qLocal / Math.max(qAllowVal, 1);
@@ -428,7 +468,6 @@ export default function FootingAnalysisTool() {
         colors[i * 3 + 1] = color.g;
         colors[i * 3 + 2] = color.b;
 
-        // Displace vertices vertically downwards to visually reflect soil pressure intensity
         posAttr.setY(i, -0.02 - (qLocal / Math.max(qMax, 1)) * 0.2 * soilPressureExag);
       }
 
@@ -457,7 +496,7 @@ export default function FootingAnalysisTool() {
         mount.removeChild(renderer.domElement);
       }
     };
-  }, [footingB, footingL, footingD, cover, colC1, colC2, footingType, meshType, barSpacing, viewMode, result, showWireframe, showRebarCage, soilPressureExag]);
+  }, [footingB, footingL, footingD, cover, colC1, colC2, footingType, meshType, barSpacing, topBarSpacing, barDiam, topBarDiam, viewMode, result, showWireframe, showRebarCage, soilPressureExag]);
 
   // --- SVG CONVERSION FOR PDF REPORT ---
   const convertSvgToPng = (svgElement: SVGSVGElement, bgColor = '#0f172a'): Promise<string> => {
@@ -513,7 +552,7 @@ export default function FootingAnalysisTool() {
     });
   };
 
-  // --- PDF REPORT GENERATION WITH SVG & 3D DRAWING EMBEDDED ---
+  // --- PDF REPORT GENERATION ---
   const generatePDF = async () => {
     if (!result) return;
     setPdfGenerating(true);
@@ -641,7 +680,6 @@ export default function FootingAnalysisTool() {
     const w = 440;
     const h = 210;
 
-    // Plan View Parameters (Left Side)
     const planCx = 110;
     const planCy = 110;
     const scalePlan = 110 / Math.max(footingB, footingL);
@@ -651,18 +689,15 @@ export default function FootingAnalysisTool() {
     const planC1 = colC1 * scalePlan;
     const planC2 = colC2 * scalePlan;
 
-    // Punching Shear Perimeter
     const d_est = (footingD - cover) * scalePlan;
     const punchW = planC2 + d_est;
     const punchL = planC1 + d_est;
 
-    // Elevation View Parameters (Right Side)
     const elevX = 240;
     const elevY = 60;
     const elevW = 170;
     const elevH = 70;
 
-    // Trapezoid Pressure
     const qMaxVal = result ? result.geotechnical.q_max : 200;
     const qMinVal = result ? Math.max(result.geotechnical.q_min, 0) : 100;
     const pScale = 35 / Math.max(qMaxVal, 100);
@@ -673,15 +708,13 @@ export default function FootingAnalysisTool() {
       <svg id="footing-composite-svg" viewBox={`0 0 ${w} ${h}`} className="w-full h-56 drop-shadow-md">
         <rect width="100%" height="100%" fill="#0f172a" rx="6" />
 
-        {/* Divider Line */}
         <line x1="220" y1="15" x2="220" y2="195" stroke="#334155" strokeWidth="1" strokeDasharray="4 2" />
 
-        {/* --- PLAN VIEW (LEFT) --- */}
+        {/* PLAN VIEW */}
         <text x={planCx} y="22" fill="#cbd5e1" fontSize="9" textAnchor="middle" fontWeight="bold">
           PLAN VIEW (B = {footingB}mm × L = {footingL}mm)
         </text>
 
-        {/* Footing Slab */}
         <rect
           x={planCx - planB / 2}
           y={planCy - planL / 2}
@@ -692,7 +725,6 @@ export default function FootingAnalysisTool() {
           strokeWidth="1.5"
         />
 
-        {/* Punching Perimeter b0 */}
         {footingType !== 'wall_strip' && (
           <rect
             x={planCx - punchW / 2}
@@ -706,7 +738,6 @@ export default function FootingAnalysisTool() {
           />
         )}
 
-        {/* Column Stub / Wall */}
         <rect
           x={planCx - (footingType === 'wall_strip' ? planB / 2 : planC2 / 2)}
           y={planCy - planC1 / 2}
@@ -717,12 +748,11 @@ export default function FootingAnalysisTool() {
           strokeWidth="1.5"
         />
 
-        {/* --- ELEVATION VIEW (RIGHT) --- */}
+        {/* ELEVATION VIEW */}
         <text x={elevX + elevW / 2} y="22" fill="#cbd5e1" fontSize="9" textAnchor="middle" fontWeight="bold">
           ELEVATION & SOIL STRESS PROFILE
         </text>
 
-        {/* Concrete Footing Cross-Section */}
         <rect
           x={elevX}
           y={elevY}
@@ -733,7 +763,6 @@ export default function FootingAnalysisTool() {
           strokeWidth="1.5"
         />
 
-        {/* Column Stub on Top */}
         <rect
           x={elevX + elevW / 2 - 20}
           y={elevY - 25}
@@ -754,7 +783,7 @@ export default function FootingAnalysisTool() {
           strokeWidth="2.5"
         />
 
-        {/* Top Rebar Mesh (Orange) - If Double Mesh selected */}
+        {/* Top Rebar Mesh (Orange) */}
         {meshType === 'double_mesh' && (
           <line
             x1={elevX + 8}
@@ -766,7 +795,6 @@ export default function FootingAnalysisTool() {
           />
         )}
 
-        {/* Soil Pressure Trapezoid */}
         <polygon
           points={`${elevX},${elevY + elevH + 4} ${elevX + elevW},${elevY + elevH + 4} ${elevX + elevW},${elevY + elevH + 4 + hQMax} ${elevX},${elevY + elevH + 4 + hQMin}`}
           fill="#f59e0b"
@@ -775,7 +803,6 @@ export default function FootingAnalysisTool() {
           strokeWidth="1.5"
         />
 
-        {/* Pressure Labels */}
         <text x={elevX - 2} y={elevY + elevH + 18} fill="#f59e0b" fontSize="7.5" textAnchor="end" fontWeight="bold">
           q_min={result ? result.geotechnical.q_min : 0}
         </text>
@@ -792,7 +819,6 @@ export default function FootingAnalysisTool() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-950 p-6 rounded-2xl border border-slate-800 text-slate-100 font-sans">
-      {/* Control Inputs Panel */}
       <div className="lg:col-span-5 space-y-4 bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-xl">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
           <h3 className="font-semibold text-slate-200 text-sm">Foundation Config</h3>
@@ -806,7 +832,6 @@ export default function FootingAnalysisTool() {
           </select>
         </div>
 
-        {/* Foundation Type & Mesh Selection */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Foundation Type</label>
@@ -834,7 +859,6 @@ export default function FootingAnalysisTool() {
           </div>
         </div>
 
-        {/* Geometry Dimensions */}
         <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Width B (mm)</label>
@@ -865,7 +889,6 @@ export default function FootingAnalysisTool() {
           </div>
         </div>
 
-        {/* Column Geometry */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-slate-400 mb-1">
@@ -890,7 +913,6 @@ export default function FootingAnalysisTool() {
           </div>
         </div>
 
-        {/* Soil & Reinforcement Details */}
         <div className="space-y-3 pt-2 border-t border-slate-800">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -958,7 +980,6 @@ export default function FootingAnalysisTool() {
           )}
         </div>
 
-        {/* Loads */}
         <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
           <div>
             <label className="block text-xs text-slate-400 mb-1">P_Dead / P_Live (kN)</label>
@@ -1015,7 +1036,6 @@ export default function FootingAnalysisTool() {
         )}
       </div>
 
-      {/* Visualizations & Output Metrics */}
       <div className="lg:col-span-7 space-y-6">
         {result && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1098,7 +1118,6 @@ export default function FootingAnalysisTool() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 min-h-[280px]">
-            {/* 3D WebGL Soil Contact Heatmap Viewport */}
             {(viewMode === '3d' || viewMode === 'split') && (
               <div
                 ref={mountRef}
@@ -1110,12 +1129,11 @@ export default function FootingAnalysisTool() {
                   Orbit: Drag | Zoom: Scroll
                 </div>
                 <div className="absolute top-2 right-2 bg-slate-950/80 px-2 py-1 rounded text-[9px] text-cyan-400 pointer-events-none z-10 border border-slate-800 font-mono">
-                  Soil Pressure: Blue (0) → Red (q_max)
+                  Red = Bot Mesh | Amber = Top Mesh | Blue = Dowels
                 </div>
               </div>
             )}
 
-            {/* 2D Composite SVG CAD Visualizer */}
             {(viewMode === '2d_composite' || viewMode === 'split') && (
               <div
                 className={`w-full bg-slate-950 border border-slate-800 rounded-lg p-2 flex flex-col items-center justify-center relative ${
