@@ -1,3 +1,5 @@
+// src/lib/structural/foundation.ts
+
 export type DesignCode = 
   | 'BS8110'       // British Standard (Commonwealth, East/West Africa, Caribbean)
   | 'ACI318_19'   // US / International
@@ -8,8 +10,8 @@ export type DesignCode =
 
 export type FoundationCategory = 'shallow' | 'deep';
 export type ShallowType = 'isolated_pad' | 'wall_strip' | 'combined' | 'raft_mat';
-export type DeepType = 'single_pile' | 'pile_cap' | 'drilled_shaft';
 export type CombinedSubType = 'rectangular' | 'trapezoidal' | 'strap';
+export type DeepType = 'single_pile' | 'pile_cap' | 'drilled_shaft';
 
 export interface MathStep {
   id: string;
@@ -34,7 +36,7 @@ export interface RebarPolyline3D {
 }
 
 export interface Geometry3DData {
-  // Legacy single-box support (prevents breaking existing 3D viewers)
+  // Legacy single-box support (for backwards compatibility with simple 3D viewers)
   footingBox?: { width: number; height: number; depth: number; position: Vector3D };
   columnBox?: { width: number; height: number; depth: number; position: Vector3D };
   
@@ -57,6 +59,7 @@ export interface Section2DData {
     rebarCountY: number;
     B2?: number;          // For trapezoidal footings
     strapWidth?: number;  // For strap footings
+    colSpacing?: number;  // Center-to-center distance for combined footings
   };
   elevationView: { D: number; d: number; cover: number; embedment: number };
 }
@@ -90,7 +93,7 @@ export interface BaseDesignInput {
   gammaConcrete?: number; // Concrete Unit Weight (kN/m³) - default 24
   cover: number;          // Clear cover (mm)
   
-  // Primary Column (Column 1)
+  // Primary Column (Column 1 / Exterior Column)
   c1: number;             // Column 1 Dimension X (mm)
   c2: number;             // Column 1 Dimension Y (mm)
   pDead: number;          // Column 1 Axial Dead Load (kN)
@@ -112,7 +115,7 @@ export interface ShallowDesignInput extends BaseDesignInput {
   qSurcharge?: number;    // Soil Surcharge Load (kPa)
   embedmentDepth?: number;// Embedment Depth below NGL (mm)
   
-  // Secondary Column (Column 2) for Combined / Strap Footings
+  // Secondary Column (Column 2 / Interior Column) for Combined Footings
   c2_1?: number;          // Column 2 Dimension X (mm)
   c2_2?: number;          // Column 2 Dimension Y (mm)
   p2Dead?: number;        // Column 2 Axial Dead Load (kN)
@@ -120,8 +123,9 @@ export interface ShallowDesignInput extends BaseDesignInput {
   m2DeadX?: number;       // Column 2 Moment Dead X-axis (kN·m)
   m2LiveX?: number;       // Column 2 Moment Live X-axis (kN·m)
   colSpacing?: number;    // Center-to-center column distance (mm)
+  edgeDistance1?: number; // Distance from Col 1 center to property boundary line (mm)
   
-  // Geometric constraints
+  // Geometric & Structural Constraints
   maxL?: number;          // Maximum allowable footing length (mm)
   strapWidth?: number;    // Strap beam width (mm) for Strap Footings
   strapDepth?: number;    // Strap beam depth (mm) for Strap Footings
@@ -140,10 +144,22 @@ export interface DeepDesignInput extends BaseDesignInput {
 
 export type FoundationDesignInput = ShallowDesignInput | DeepDesignInput;
 
+export interface RebarDetailsSummary {
+  As_req_x: number;
+  As_prov_x: number;
+  barCalloutX: string;
+  As_req_y?: number;
+  As_prov_y?: number;
+  barCalloutY?: string;
+  topAsReq?: number;
+  topBarCallout?: string;
+}
+
 export interface FoundationDesignResult {
   codeUsed: DesignCode;
   category: FoundationCategory;
   typeLabel: string;
+  inputs: FoundationDesignInput; // Fully typed input copy for direct PDF generation and UI bindings
   geometry: { 
     B: number; 
     L: number; 
@@ -173,6 +189,7 @@ export interface FoundationDesignResult {
     topBarSpacing?: number;
     strapLinks?: string;  // Strap stirrup specification
   };
+  rebarDetails: RebarDetailsSummary; // Explicit rebar details for PDF exports & tabular views
   bbs: BBSItem[];
   totalSteelWeightKg: number;
   concreteVolumeM3: number;
