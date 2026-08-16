@@ -3,7 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { Geometry3DData, Vector3D } from '@/lib/structural/foundation';
+import { 
+  Geometry3DData, 
+  Vector3D, 
+  FootingBox3D, 
+  ColumnBox3D 
+} from '@/lib/structural/foundation';
 
 // Extend JSX IntrinsicElements for React Three Fiber
 declare global {
@@ -78,7 +83,7 @@ const RebarGrid3D: React.FC<{
   return (
     <group>
       {/* Longitudinal X-Bars */}
-      {xBarPositions.map((zPos, idx) => (
+      {xBarPositions.map((zPos: number, idx: number) => (
         <mesh 
           key={`x-bar-${isTopMat ? 'top' : 'bot'}-${idx}`}
           position={[position.x, yOffset, zPos]}
@@ -90,7 +95,7 @@ const RebarGrid3D: React.FC<{
       ))}
 
       {/* Transverse Z-Bars */}
-      {zBarPositions.map((xPos, idx) => (
+      {zBarPositions.map((xPos: number, idx: number) => (
         <mesh 
           key={`z-bar-${isTopMat ? 'top' : 'bot'}-${idx}`}
           position={[xPos, yOffset + (isTopMat ? -0.02 : 0.02), position.z]}
@@ -130,7 +135,7 @@ const Foundation3DScene: React.FC<{
       {/* Concrete Rendering for ALL Footings & Columns */}
       {showConcrete && (
         <>
-          {footingBoxes.map((box, idx) => (
+          {footingBoxes.map((box: FootingBox3D, idx: number) => (
             <mesh key={`footing-${idx}`} position={[box.position.x, box.position.y, box.position.z]}>
               <boxGeometry args={[box.width, box.height, box.depth]} />
               <meshStandardMaterial 
@@ -142,7 +147,7 @@ const Foundation3DScene: React.FC<{
             </mesh>
           ))}
 
-          {columnBoxes.map((col, idx) => (
+          {columnBoxes.map((col: ColumnBox3D, idx: number) => (
             <mesh key={`column-${idx}`} position={[col.position.x, col.position.y, col.position.z]}>
               <boxGeometry args={[col.width, col.height, col.depth]} />
               <meshStandardMaterial 
@@ -158,7 +163,7 @@ const Foundation3DScene: React.FC<{
       {/* Rebar Mesh Rendering across ALL Footing Elements */}
       {showRebar && (
         <group>
-          {footingBoxes.map((box, idx) => (
+          {footingBoxes.map((box: FootingBox3D, idx: number) => (
             <React.Fragment key={`rebar-group-${idx}`}>
               {/* Bottom Rebar Mat */}
               <RebarGrid3D 
@@ -183,10 +188,10 @@ const Foundation3DScene: React.FC<{
           ))}
 
           {/* Column Starter Dowels for ALL Columns */}
-          {columnBoxes.map((col, colIdx) => (
+          {columnBoxes.map((col: ColumnBox3D, colIdx: number) => (
             <group key={`column-dowels-${colIdx}`}>
-              {[-0.12, 0.12].map((x, i) =>
-                [-0.12, 0.12].map((z, j) => (
+              {[-0.12, 0.12].map((x: number, i: number) =>
+                [-0.12, 0.12].map((z: number, j: number) => (
                   <mesh 
                     key={`dowel-${colIdx}-${i}-${j}`} 
                     position={[col.position.x + x, col.position.y - 0.2, col.position.z + z]}
