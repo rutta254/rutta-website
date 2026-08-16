@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { 
@@ -57,7 +57,7 @@ const defaultGeometryData: Geometry3DData = {
   rebars3D: [],
 };
 
-// Parametric 3D Rebar Grid Component
+// Parametric 3D Rebar Grid Component (Memoized for optimal WebGL performance)
 const RebarGrid3D: React.FC<{
   width: number;
   height: number;
@@ -77,27 +77,31 @@ const RebarGrid3D: React.FC<{
   barDiamMm = 16,
   coverMm = 50
 }) => {
-  const cover = coverMm / 1000;
-  const barRadius = (barDiamMm / 2) / 1000;
-  const spacing = spacingMm / 1000;
-  const barColor = isTopMat ? '#f59e0b' : '#ef4444'; // Amber for Top, Red for Bottom
+  const { xBarPositions, zBarPositions, yOffset, barRadius, cover, barColor } = useMemo(() => {
+    const cover = coverMm / 1000;
+    const barRadius = (barDiamMm / 2) / 1000;
+    const spacing = spacingMm / 1000;
+    const barColor = isTopMat ? '#f59e0b' : '#ef4444'; // Amber for Top, Red for Bottom
 
-  // Elevation offset based on top vs bottom mat placement
-  const yOffset = isTopMat 
-    ? position.y + height / 2 - cover - barRadius
-    : position.y - height / 2 + cover + barRadius;
+    // Elevation offset based on top vs bottom mat placement
+    const yOffset = isTopMat 
+      ? position.y + height / 2 - cover - barRadius
+      : position.y - height / 2 + cover + barRadius;
 
-  // X-direction bars (longitudinal)
-  const numXBars = Math.max(1, Math.floor((depth - 2 * cover) / spacing));
-  const xBarPositions = Array.from({ length: numXBars }, (_, i) => 
-    position.z - (depth - 2 * cover) / 2 + i * spacing
-  );
+    // X-direction bars (longitudinal)
+    const numXBars = Math.max(1, Math.floor((depth - 2 * cover) / spacing));
+    const xBarPositions = Array.from({ length: numXBars }, (_, i) => 
+      position.z - (depth - 2 * cover) / 2 + i * spacing
+    );
 
-  // Z-direction bars (transverse)
-  const numZBars = Math.max(1, Math.floor((width - 2 * cover) / spacing));
-  const zBarPositions = Array.from({ length: numZBars }, (_, i) => 
-    position.x - (width - 2 * cover) / 2 + i * spacing
-  );
+    // Z-direction bars (transverse)
+    const numZBars = Math.max(1, Math.floor((width - 2 * cover) / spacing));
+    const zBarPositions = Array.from({ length: numZBars }, (_, i) => 
+      position.x - (width - 2 * cover) / 2 + i * spacing
+    );
+
+    return { xBarPositions, zBarPositions, yOffset, barRadius, cover, barColor };
+  }, [width, height, depth, position, isTopMat, spacingMm, barDiamMm, coverMm]);
 
   return (
     <group>

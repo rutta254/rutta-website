@@ -94,6 +94,10 @@ function generate3DGeometryAndRebars(
   c2: number,
   cover: number,
   isDoubleMesh: boolean,
+  botBarDiam: number,
+  botSpacing: number,
+  topBarDiam: number,
+  topSpacing: number,
   piles: Pile3D[] = []
 ) {
   const bMeters = B / 1000;
@@ -125,13 +129,14 @@ function generate3DGeometryAndRebars(
   const botZMin = -lMeters / 2 + coverMeters;
   const botZMax = lMeters / 2 - coverMeters;
   const botY = -dMeters / 2 + coverMeters;
+  const botSpacingMeters = Math.max(0.05, botSpacing / 1000);
 
   // Bottom Mat - Main (X-Dir)
-  for (let z = botZMin; z <= botZMax; z += 0.2) {
+  for (let z = botZMin; z <= botZMax; z += botSpacingMeters) {
     rebars3D.push({
       mark: 'B1',
       color: '#3b82f6',
-      radius: 0.008,
+      radius: (botBarDiam / 2) / 1000,
       points: [
         { x: botXMin, y: botY + (dMeters - 2 * coverMeters), z },
         { x: botXMin, y: botY, z },
@@ -144,11 +149,13 @@ function generate3DGeometryAndRebars(
   // Top Mesh Polylines (Generated if double mesh is triggered)
   if (isDoubleMesh) {
     const topY = dMeters / 2 - coverMeters;
-    for (let z = botZMin; z <= botZMax; z += 0.2) {
+    const topSpacingMeters = Math.max(0.05, topSpacing / 1000);
+
+    for (let z = botZMin; z <= botZMax; z += topSpacingMeters) {
       rebars3D.push({
         mark: 'T1',
         color: '#ef4444',
-        radius: 0.006,
+        radius: (topBarDiam / 2) / 1000,
         points: [
           { x: botXMin, y: topY - (dMeters - 2 * coverMeters), z },
           { x: botXMin, y: topY, z },
@@ -172,6 +179,12 @@ export function runFoundationDesign(input: FoundationDesignInput): FoundationDes
   const shallowInput = input as ShallowDesignInput;
   const deepInput = input as DeepDesignInput;
   const configuredMeshMode: MeshMode = input.meshMode || 'auto';
+
+  // Extract User Configuration or Apply Defaults
+  const botBarDiam = input.botBarDiam || 16;
+  const botSpacing = input.botBarSpacing || 150;
+  const topBarDiam = input.topBarDiam || 12;
+  const topSpacing = input.topBarSpacing || 200;
 
   // Step 1: Load Factoring
   const { pu, muX, muY } = calculateFactoredLoads(input);
@@ -198,8 +211,6 @@ export function runFoundationDesign(input: FoundationDesignInput): FoundationDes
 
   // Step 3: Depth Sizing & Punching Shear Optimization Loop
   const cover = input.cover || 50;
-  const botBarDiam = 16;
-  const topBarDiam = 12;
   let d = 250;
   let D = d + cover + botBarDiam;
 
@@ -282,7 +293,6 @@ export function runFoundationDesign(input: FoundationDesignInput): FoundationDes
     0.0018 * B * D
   );
 
-  const botSpacing = 150;
   const botBarArea = (Math.PI * Math.pow(botBarDiam, 2)) / 4;
   const botBarsCountX = Math.ceil((B - 2 * cover) / botSpacing) + 1;
   const botBarsCountY = Math.ceil((L - 2 * cover) / botSpacing) + 1;
@@ -293,7 +303,6 @@ export function runFoundationDesign(input: FoundationDesignInput): FoundationDes
   let topBarsCountX = 0;
   let topBarsCountY = 0;
   let asProvTop = 0;
-  const topSpacing = 200;
   const topBarArea = (Math.PI * Math.pow(topBarDiam, 2)) / 4;
 
   if (isDoubleMesh) {
@@ -336,10 +345,13 @@ export function runFoundationDesign(input: FoundationDesignInput): FoundationDes
     totalWeight: Number(weightBotY.toFixed(2)),
   });
 
+  let weightTopX = 0;
+  let weightTopY = 0;
+
   // Top Mesh Bars (If Enabled)
   if (isDoubleMesh) {
     const cutLenTopX = (B - 2 * cover + 2 * (D - 2 * cover)) / 1000;
-    const weightTopX = topBarsCountX * cutLenTopX * (topBarArea * 1e-6) * steelDensity;
+    weightTopX = topBarsCountX * cutLenTopX * (topBarArea * 1e-6) * steelDensity;
     bbs.push({
       mark: 'T1',
       description: 'Top Mat Reinforcement (X-Dir)',
@@ -353,7 +365,7 @@ export function runFoundationDesign(input: FoundationDesignInput): FoundationDes
     });
 
     const cutLenTopY = (L - 2 * cover + 2 * (D - 2 * cover)) / 1000;
-    const weightTopY = topBarsCountY * cutLenTopY * (topBarArea * 1e-6) * steelDensity;
+    weightTopY = topBarsCountY * cutLenTopY * (topBarArea * 1e-6) * steelDensity;
     bbs.push({
       mark: 'T2',
       description: 'Top Mat Reinforcement (Y-Dir)',
@@ -383,11 +395,16 @@ export function runFoundationDesign(input: FoundationDesignInput): FoundationDes
     totalWeight: Number(weightDowels.toFixed(2)),
   });
 
+  const botWeightKg = weightBotX + weightBotY;
+  const topWeightKg = weightTopX + weightTopY;
   const totalSteelWeightKg = bbs.reduce((sum, item) => sum + item.totalWeight, 0);
   const concreteVolumeM3 = (B * L * D) / 1e9;
 
   // Step 7: 3D Visualization Data
-  const geometry3D = generate3DGeometryAndRebars(B, L, D, input.c1, input.c2, cover, isDoubleMesh);
+  const geometry3D = generate3DGeometryAndRebars(
+    B, L, D, input.c1, input.c2, cover, isDoubleMesh,
+    botBarDiam, botSpacing, topBarDiam, topSpacing
+  );
 
   // Step 8: Math Steps Audit Trail
   const mathSteps: MathStep[] = [
@@ -467,10 +484,12 @@ export function runFoundationDesign(input: FoundationDesignInput): FoundationDes
       AsProvBot: Math.round(asProvBot),
       botBarDiam,
       botBarSpacing: botSpacing,
+      botWeightKg: Number(botWeightKg.toFixed(2)),
       AsReqTop: isDoubleMesh ? Math.round(0.0018 * B * D) : 0,
       AsProvTop: Math.round(asProvTop),
       topBarDiam: isDoubleMesh ? topBarDiam : 0,
       topBarSpacing: isDoubleMesh ? topSpacing : 0,
+      topWeightKg: Number(topWeightKg.toFixed(2)),
     },
     rebarDetails: {
       As_req_x: Math.round(asReqBot),

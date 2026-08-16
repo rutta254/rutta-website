@@ -58,23 +58,33 @@ export default function FoundationDesignTool() {
   const [pileCapacity, setPileCapacity] = useState<number>(650);
   const [numPiles, setNumPiles] = useState<number>(4);
 
+  // Helper for safe numerical state updates
+  const parseNum = (val: string): number => {
+    const parsed = parseFloat(val);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
   const payload: FoundationDesignInput = useMemo(() => {
+    const base = {
+      code,
+      meshMode,
+      fc,
+      fy,
+      cover,
+      c1,
+      c2,
+      pDead,
+      pLive,
+      mDeadX,
+      mLiveX,
+    };
+
     if (category === 'shallow') {
       return {
-        code,
+        ...base,
         category: 'shallow',
         shallowType,
         combinedSubType: shallowType === 'combined' ? combinedSubType : undefined,
-        meshMode,
-        fc,
-        fy,
-        cover,
-        c1,
-        c2,
-        pDead,
-        pLive,
-        mDeadX,
-        mLiveX,
         qAllow,
         gammaSoil,
         embedmentDepth,
@@ -94,19 +104,9 @@ export default function FoundationDesignTool() {
     }
 
     return {
-      code,
+      ...base,
       category: 'deep',
       deepType,
-      meshMode,
-      fc,
-      fy,
-      cover,
-      c1,
-      c2,
-      pDead,
-      pLive,
-      mDeadX,
-      mLiveX,
       pileDiameter,
       pileCapacity,
       numPiles,
@@ -203,7 +203,6 @@ export default function FoundationDesignTool() {
                   <option value="raft_mat">Raft / Mat Foundation</option>
                 </select>
 
-                {/* Subtype Dropdown for Combined Footings */}
                 {shallowType === 'combined' && (
                   <div className="mt-3 p-3 bg-slate-950/80 rounded-lg border border-cyan-500/30 space-y-1.5">
                     <label className="block text-[10px] text-cyan-400 uppercase font-bold">
@@ -276,7 +275,7 @@ export default function FoundationDesignTool() {
                 <input
                   type="number"
                   value={qAllow}
-                  onChange={(e) => setQAllow(Number(e.target.value))}
+                  onChange={(e) => setQAllow(parseNum(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                 />
               </div>
@@ -285,7 +284,7 @@ export default function FoundationDesignTool() {
                 <input
                   type="number"
                   value={fc}
-                  onChange={(e) => setFc(Number(e.target.value))}
+                  onChange={(e) => setFc(parseNum(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                 />
               </div>
@@ -296,7 +295,7 @@ export default function FoundationDesignTool() {
                 <input
                   type="number"
                   value={fy}
-                  onChange={(e) => setFy(Number(e.target.value))}
+                  onChange={(e) => setFy(parseNum(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                 />
               </div>
@@ -305,7 +304,7 @@ export default function FoundationDesignTool() {
                 <input
                   type="number"
                   value={cover}
-                  onChange={(e) => setCover(Number(e.target.value))}
+                  onChange={(e) => setCover(parseNum(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                 />
               </div>
@@ -314,7 +313,7 @@ export default function FoundationDesignTool() {
                 <input
                   type="number"
                   value={embedmentDepth}
-                  onChange={(e) => setEmbedmentDepth(Number(e.target.value))}
+                  onChange={(e) => setEmbedmentDepth(parseNum(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                 />
               </div>
@@ -332,7 +331,7 @@ export default function FoundationDesignTool() {
                 <input
                   type="number"
                   value={c1}
-                  onChange={(e) => setC1(Number(e.target.value))}
+                  onChange={(e) => setC1(parseNum(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                 />
               </div>
@@ -341,7 +340,7 @@ export default function FoundationDesignTool() {
                 <input
                   type="number"
                   value={c2}
-                  onChange={(e) => setC2(Number(e.target.value))}
+                  onChange={(e) => setC2(parseNum(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                 />
               </div>
@@ -352,7 +351,7 @@ export default function FoundationDesignTool() {
                 <input
                   type="number"
                   value={pDead}
-                  onChange={(e) => setPDead(Number(e.target.value))}
+                  onChange={(e) => setPDead(parseNum(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                 />
               </div>
@@ -361,7 +360,7 @@ export default function FoundationDesignTool() {
                 <input
                   type="number"
                   value={pLive}
-                  onChange={(e) => setPLive(Number(e.target.value))}
+                  onChange={(e) => setPLive(parseNum(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                 />
               </div>
@@ -372,7 +371,7 @@ export default function FoundationDesignTool() {
                 <input
                   type="number"
                   value={mDeadX}
-                  onChange={(e) => setMDeadX(Number(e.target.value))}
+                  onChange={(e) => setMDeadX(parseNum(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                 />
               </div>
@@ -381,7 +380,7 @@ export default function FoundationDesignTool() {
                 <input
                   type="number"
                   value={mLiveX}
-                  onChange={(e) => setMLiveX(Number(e.target.value))}
+                  onChange={(e) => setMLiveX(parseNum(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                 />
               </div>
@@ -395,14 +394,13 @@ export default function FoundationDesignTool() {
                 Column 2 & Footing Spacing Parameters
               </span>
 
-              {/* Column 2 Dimensions */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Col 2 Width c2_1 (mm)</label>
                   <input
                     type="number"
                     value={c21}
-                    onChange={(e) => setC21(Number(e.target.value))}
+                    onChange={(e) => setC21(parseNum(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                   />
                 </div>
@@ -411,20 +409,19 @@ export default function FoundationDesignTool() {
                   <input
                     type="number"
                     value={c22}
-                    onChange={(e) => setC22(Number(e.target.value))}
+                    onChange={(e) => setC22(parseNum(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                   />
                 </div>
               </div>
 
-              {/* Column 2 Loads */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">P2 Dead (kN)</label>
                   <input
                     type="number"
                     value={p2Dead}
-                    onChange={(e) => setP2Dead(Number(e.target.value))}
+                    onChange={(e) => setP2Dead(parseNum(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                   />
                 </div>
@@ -433,20 +430,19 @@ export default function FoundationDesignTool() {
                   <input
                     type="number"
                     value={p2Live}
-                    onChange={(e) => setP2Live(Number(e.target.value))}
+                    onChange={(e) => setP2Live(parseNum(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                   />
                 </div>
               </div>
 
-              {/* Geometry Distances */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Col Spacing S (mm)</label>
                   <input
                     type="number"
                     value={colSpacing}
-                    onChange={(e) => setColSpacing(Number(e.target.value))}
+                    onChange={(e) => setColSpacing(parseNum(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                   />
                 </div>
@@ -455,7 +451,7 @@ export default function FoundationDesignTool() {
                   <input
                     type="number"
                     value={edgeDistance1}
-                    onChange={(e) => setEdgeDistance1(Number(e.target.value))}
+                    onChange={(e) => setEdgeDistance1(parseNum(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                   />
                 </div>
@@ -467,7 +463,7 @@ export default function FoundationDesignTool() {
                   <input
                     type="number"
                     value={edgeDistance2}
-                    onChange={(e) => setEdgeDistance2(Number(e.target.value))}
+                    onChange={(e) => setEdgeDistance2(parseNum(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                   />
                 </div>
@@ -477,7 +473,7 @@ export default function FoundationDesignTool() {
                     type="number"
                     placeholder="Auto"
                     value={maxL ?? ''}
-                    onChange={(e) => setMaxL(e.target.value ? Number(e.target.value) : undefined)}
+                    onChange={(e) => setMaxL(e.target.value ? parseNum(e.target.value) : undefined)}
                     className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                   />
                 </div>
@@ -497,7 +493,7 @@ export default function FoundationDesignTool() {
                   <input
                     type="number"
                     value={pileDiameter}
-                    onChange={(e) => setPileDiameter(Number(e.target.value))}
+                    onChange={(e) => setPileDiameter(parseNum(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                   />
                 </div>
@@ -506,7 +502,7 @@ export default function FoundationDesignTool() {
                   <input
                     type="number"
                     value={pileCapacity}
-                    onChange={(e) => setPileCapacity(Number(e.target.value))}
+                    onChange={(e) => setPileCapacity(parseNum(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                   />
                 </div>
@@ -515,7 +511,7 @@ export default function FoundationDesignTool() {
                   <input
                     type="number"
                     value={numPiles}
-                    onChange={(e) => setNumPiles(Number(e.target.value))}
+                    onChange={(e) => setNumPiles(parseNum(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono"
                   />
                 </div>
@@ -540,7 +536,7 @@ export default function FoundationDesignTool() {
             <div className="bg-slate-900 border border-emerald-500/30 p-3 rounded-xl text-center">
               <span className="text-[10px] text-slate-400 block uppercase font-bold">Total Rebar Mass</span>
               <span className="text-base font-bold font-mono text-emerald-400">
-                {meshMode === 'double' ? (result.totalSteelWeightKg * 1.85).toFixed(0) : result.totalSteelWeightKg} kg
+                {result.totalSteelWeightKg.toFixed(0)} kg
               </span>
             </div>
           </div>

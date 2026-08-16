@@ -38,6 +38,10 @@ export interface BaseFoundationInput {
   mDeadY?: number;
   mLiveY?: number;
   meshMode?: MeshMode;
+  botBarDiam?: number;     // in mm (default: 16)
+  botBarSpacing?: number;  // in mm (default: 150)
+  topBarDiam?: number;     // in mm (default: 12)
+  topBarSpacing?: number;  // in mm (default: 200)
 }
 
 export interface ShallowDesignInput extends BaseFoundationInput {
@@ -210,10 +214,12 @@ export interface FoundationDesignResult {
     AsProvBot?: number;
     botBarDiam?: number;
     botBarSpacing?: number;
+    botWeightKg?: number;
     AsReqTop?: number;
     AsProvTop?: number;
     topBarDiam?: number;
     topBarSpacing?: number;
+    topWeightKg?: number;
     strapLinks?: string;
   };
   rebarDetails?: {
@@ -239,6 +245,12 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
   const shallowInput = input as ShallowDesignInput;
   const configuredMeshMode: MeshMode = input.meshMode || 'auto';
 
+  // Configured or Default Bar Sizes & Spacings
+  const botBarDiam = input.botBarDiam || 16;
+  const botSpacing = input.botBarSpacing || 150;
+  const topBarDiam = input.topBarDiam || 12;
+  const topSpacing = input.topBarSpacing || 200;
+
   // 1. Factored and Service Loads
   const pDead = input.pDead || 0;
   const pLive = input.pLive || 0;
@@ -260,7 +272,6 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
 
   // 3. Punching & Beam Shear Sizing (D & d)
   const cover = input.cover || 50;
-  const botBarDiam = 16;
   let d = 250; // initial effective depth (mm)
   let D = d + cover + botBarDiam;
 
@@ -321,7 +332,6 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
 
   // 5. DOUBLE MESH CLEAR SPACING ADJUSTMENT
   if (isDoubleMesh) {
-    const topBarDiam = 12;
     const minClearDepth = 2 * cover + 2 * botBarDiam + 2 * topBarDiam + 100; // 100mm clear internal gap
     if (D < minClearDepth) {
       D = minClearDepth;
@@ -341,15 +351,12 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
   );
 
   // Bottom Mesh Bar Selection
-  const botSpacing = 150;
   const botBarArea = (Math.PI * Math.pow(botBarDiam, 2)) / 4;
   const botBarsCountX = Math.ceil((B - 2 * cover) / botSpacing) + 1;
   const botBarsCountY = Math.ceil((L - 2 * cover) / botSpacing) + 1;
   const As_prov_bot = botBarsCountX * botBarArea;
 
   // Top Mesh Bar Selection
-  const topBarDiam = 12;
-  const topSpacing = 200;
   const topBarArea = (Math.PI * Math.pow(topBarDiam, 2)) / 4;
   let topBarsCountX = 0;
   let topBarsCountY = 0;
@@ -395,10 +402,13 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
     totalWeight: Number(weightBotY.toFixed(2))
   });
 
+  let weightTopX = 0;
+  let weightTopY = 0;
+
   // Top Mesh Bars (Added to BBS only when isDoubleMesh === true)
   if (isDoubleMesh) {
     const cutLengthTopX = (B - 2 * cover + 2 * (D - 2 * cover)) / 1000;
-    const weightTopX = topBarsCountX * cutLengthTopX * (topBarArea * 1e-6) * steelDensity;
+    weightTopX = topBarsCountX * cutLengthTopX * (topBarArea * 1e-6) * steelDensity;
     bbs.push({
       mark: 'T1',
       description: 'Top Shrinkage/Flexure Mat (X-Dir)',
@@ -412,7 +422,7 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
     });
 
     const cutLengthTopY = (L - 2 * cover + 2 * (D - 2 * cover)) / 1000;
-    const weightTopY = topBarsCountY * cutLengthTopY * (topBarArea * 1e-6) * steelDensity;
+    weightTopY = topBarsCountY * cutLengthTopY * (topBarArea * 1e-6) * steelDensity;
     bbs.push({
       mark: 'T2',
       description: 'Top Shrinkage/Flexure Mat (Y-Dir)',
@@ -442,6 +452,8 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
     totalWeight: Number(weightDowels.toFixed(2))
   });
 
+  const botWeightKg = weightBotX + weightBotY;
+  const topWeightKg = weightTopX + weightTopY;
   const totalSteelWeightKg = bbs.reduce((sum, item) => sum + item.totalWeight, 0);
   const concreteVolumeM3 = (B * L * D) / 1e9;
 
@@ -489,10 +501,12 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
       AsProvBot: Math.round(As_prov_bot),
       botBarDiam,
       botBarSpacing: botSpacing,
+      botWeightKg: Number(botWeightKg.toFixed(2)),
       AsReqTop: isDoubleMesh ? Math.round(0.0018 * B * D) : 0,
       AsProvTop: Math.round(As_prov_top),
       topBarDiam: isDoubleMesh ? topBarDiam : 0,
-      topBarSpacing: isDoubleMesh ? topSpacing : 0
+      topBarSpacing: isDoubleMesh ? topSpacing : 0,
+      topWeightKg: Number(topWeightKg.toFixed(2))
     },
     rebarDetails: {
       As_req_x: Math.round(As_req_bot),
