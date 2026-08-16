@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { Geometry3DData, Vector3D } from '@/lib/structural/foundation';
@@ -64,13 +64,13 @@ const RebarGrid3D: React.FC<{
     : position.y - height / 2 + cover + barRadius;
 
   // X-direction bars
-  const numXBars = Math.floor((depth - 2 * cover) / spacing);
+  const numXBars = Math.max(1, Math.floor((depth - 2 * cover) / spacing));
   const xBarPositions = Array.from({ length: numXBars }, (_, i) => 
     position.z - (depth - 2 * cover) / 2 + i * spacing
   );
 
   // Z-direction bars
-  const numZBars = Math.floor((width - 2 * cover) / spacing);
+  const numZBars = Math.max(1, Math.floor((width - 2 * cover) / spacing));
   const zBarPositions = Array.from({ length: numZBars }, (_, i) => 
     position.x - (width - 2 * cover) / 2 + i * spacing
   );
@@ -104,7 +104,7 @@ const RebarGrid3D: React.FC<{
   );
 };
 
-// 3D Scene Assembly
+// 3D Scene Assembly - Renders ALL footing and column boxes
 const Foundation3DScene: React.FC<{
   data: Geometry3DData;
   showConcrete: boolean;
@@ -112,77 +112,92 @@ const Foundation3DScene: React.FC<{
   meshMode: 'single' | 'double';
   concreteOpacity: number;
 }> = ({ data, showConcrete, showRebar, meshMode, concreteOpacity }) => {
-  const primaryFooting = data?.footingBox || data?.footingBoxes?.[0] || defaultGeometryData.footingBoxes![0];
-  const primaryColumn = data?.columnBoxes?.[0] || defaultGeometryData.columnBoxes![0];
+  // Extract all footing boxes (handles combined pad 1, pad 2, and connecting strap beams)
+  const footingBoxes = data?.footingBoxes && data.footingBoxes.length > 0
+    ? data.footingBoxes
+    : (data?.footingBox ? [data.footingBox] : defaultGeometryData.footingBoxes!);
+
+  // Extract all column boxes (handles combined dual-column configurations)
+  const columnBoxes = data?.columnBoxes && data.columnBoxes.length > 0
+    ? data.columnBoxes
+    : defaultGeometryData.columnBoxes!;
 
   return (
     <group>
       <ambientLight intensity={0.7} />
       <directionalLight position={[10, 12, 8]} intensity={1.2} castShadow />
 
-      {/* Concrete Rendering */}
+      {/* Concrete Rendering for ALL Footings & Columns */}
       {showConcrete && (
         <>
-          {/* Footing Pad */}
-          <mesh position={[primaryFooting.position.x, primaryFooting.position.y, primaryFooting.position.z]}>
-            <boxGeometry args={[primaryFooting.width, primaryFooting.height, primaryFooting.depth]} />
-            <meshStandardMaterial 
-              color="#94a3b8" 
-              transparent 
-              opacity={concreteOpacity} 
-              wireframe={concreteOpacity === 0}
-            />
-          </mesh>
+          {footingBoxes.map((box, idx) => (
+            <mesh key={`footing-${idx}`} position={[box.position.x, box.position.y, box.position.z]}>
+              <boxGeometry args={[box.width, box.height, box.depth]} />
+              <meshStandardMaterial 
+                color="#94a3b8" 
+                transparent 
+                opacity={concreteOpacity} 
+                wireframe={concreteOpacity === 0}
+              />
+            </mesh>
+          ))}
 
-          {/* Column Stub */}
-          {primaryColumn && (
-            <mesh position={[primaryColumn.position.x, primaryColumn.position.y, primaryColumn.position.z]}>
-              <boxGeometry args={[primaryColumn.width, primaryColumn.height, primaryColumn.depth]} />
+          {columnBoxes.map((col, idx) => (
+            <mesh key={`column-${idx}`} position={[col.position.x, col.position.y, col.position.z]}>
+              <boxGeometry args={[col.width, col.height, col.depth]} />
               <meshStandardMaterial 
                 color="#64748b" 
                 transparent 
                 opacity={concreteOpacity}
               />
             </mesh>
-          )}
+          ))}
         </>
       )}
 
-      {/* Rebar Mesh Rendering */}
+      {/* Rebar Mesh Rendering across ALL Footing Elements */}
       {showRebar && (
         <group>
-          {/* Bottom Rebar Mat */}
-          <RebarGrid3D 
-            width={primaryFooting.width} 
-            height={primaryFooting.height} 
-            depth={primaryFooting.depth} 
-            position={primaryFooting.position} 
-            isTopMat={false} 
-          />
+          {footingBoxes.map((box, idx) => (
+            <React.Fragment key={`rebar-group-${idx}`}>
+              {/* Bottom Rebar Mat */}
+              <RebarGrid3D 
+                width={box.width} 
+                height={box.height} 
+                depth={box.depth} 
+                position={box.position} 
+                isTopMat={false} 
+              />
 
-          {/* Top Rebar Mat (Double Mesh Mode) */}
-          {meshMode === 'double' && (
-            <RebarGrid3D 
-              width={primaryFooting.width} 
-              height={primaryFooting.height} 
-              depth={primaryFooting.depth} 
-              position={primaryFooting.position} 
-              isTopMat={true} 
-            />
-          )}
+              {/* Top Rebar Mat (Double Mesh Mode) */}
+              {meshMode === 'double' && (
+                <RebarGrid3D 
+                  width={box.width} 
+                  height={box.height} 
+                  depth={box.depth} 
+                  position={box.position} 
+                  isTopMat={true} 
+                />
+              )}
+            </React.Fragment>
+          ))}
 
-          {/* Column Starter Dowels */}
-          {primaryColumn && [-0.12, 0.12].map((x, i) =>
-            [-0.12, 0.12].map((z, j) => (
-              <mesh 
-                key={`dowel-${i}-${j}`} 
-                position={[primaryColumn.position.x + x, primaryColumn.position.y - 0.2, primaryColumn.position.z + z]}
-              >
-                <cylinderGeometry args={[0.01, 0.01, primaryColumn.height + 0.4, 12]} />
-                <meshStandardMaterial color="#3b82f6" metalness={0.8} />
-              </mesh>
-            ))
-          )}
+          {/* Column Starter Dowels for ALL Columns */}
+          {columnBoxes.map((col, colIdx) => (
+            <group key={`column-dowels-${colIdx}`}>
+              {[-0.12, 0.12].map((x, i) =>
+                [-0.12, 0.12].map((z, j) => (
+                  <mesh 
+                    key={`dowel-${colIdx}-${i}-${j}`} 
+                    position={[col.position.x + x, col.position.y - 0.2, col.position.z + z]}
+                  >
+                    <cylinderGeometry args={[0.01, 0.01, col.height + 0.4, 12]} />
+                    <meshStandardMaterial color="#3b82f6" metalness={0.8} />
+                  </mesh>
+                ))
+              )}
+            </group>
+          ))}
         </group>
       )}
     </group>
@@ -195,8 +210,13 @@ export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({
 }) => {
   const [showConcrete, setShowConcrete] = useState(true);
   const [showRebar, setShowRebar] = useState(true);
-  const [concreteOpacity, setConcreteOpacity] = useState(0.4); // Semi-transparent by default to see rebar
+  const [concreteOpacity, setConcreteOpacity] = useState(0.4);
   const [meshMode, setMeshMode] = useState<'single' | 'double'>(propMeshMode);
+
+  // Sync internal state when parent propMeshMode changes
+  useEffect(() => {
+    setMeshMode(propMeshMode);
+  }, [propMeshMode]);
 
   return (
     <div className="w-full bg-slate-950 rounded-xl border border-slate-800 overflow-hidden relative shadow-2xl">

@@ -21,7 +21,6 @@ export default function FoundationDesignTool() {
   const [deepType, setDeepType] = useState<DeepType>('pile_cap');
   const [combinedSubType, setCombinedSubType] = useState<CombinedSubType>('strap');
   
-  // NEW: Single Mesh vs Double Mesh configuration state
   const [meshMode, setMeshMode] = useState<'single' | 'double'>('single');
 
   const [fc, setFc] = useState<number>(30);
@@ -144,16 +143,36 @@ export default function FoundationDesignTool() {
           <div>
             <label className="block text-[10px] text-slate-400 uppercase font-bold mb-2">Type Selection</label>
             {category === 'shallow' ? (
-              <select
-                value={shallowType}
-                onChange={(e) => setShallowType(e.target.value as ShallowType)}
-                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200"
-              >
-                <option value="isolated_pad">Isolated Pad Footing</option>
-                <option value="wall_strip">Continuous Wall / Strip Footing</option>
-                <option value="combined">Combined / Strap Footing</option>
-                <option value="raft_mat">Raft / Mat Foundation</option>
-              </select>
+              <>
+                <select
+                  value={shallowType}
+                  onChange={(e) => setShallowType(e.target.value as ShallowType)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200"
+                >
+                  <option value="isolated_pad">Isolated Pad Footing</option>
+                  <option value="wall_strip">Continuous Wall / Strip Footing</option>
+                  <option value="combined">Combined / Strap Footing</option>
+                  <option value="raft_mat">Raft / Mat Foundation</option>
+                </select>
+
+                {/* Subtype Dropdown for Combined Footings */}
+                {shallowType === 'combined' && (
+                  <div className="mt-3 p-3 bg-slate-950/80 rounded-lg border border-cyan-500/30 space-y-1.5">
+                    <label className="block text-[10px] text-cyan-400 uppercase font-bold">
+                      Combined Footing Subtype
+                    </label>
+                    <select
+                      value={combinedSubType}
+                      onChange={(e) => setCombinedSubType(e.target.value as CombinedSubType)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-xs text-slate-200 font-medium focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="strap">Strap / Cantilever Footing</option>
+                      <option value="rectangular">Rectangular Combined</option>
+                      <option value="trapezoidal">Trapezoidal Combined</option>
+                    </select>
+                  </div>
+                )}
+              </>
             ) : (
               <select
                 value={deepType}
