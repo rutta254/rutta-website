@@ -12,8 +12,10 @@ interface VisualizerProps {
 
 export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps) {
   const [activeTab, setActiveTab] = useState<'2d' | '3d'>('2d');
-  const { B, L, D, d } = result.geometry;
-  const { botBarDiam, botBarSpacing } = result.reinforcement;
+  
+  // Safe destructuring with fallbacks for optional properties
+  const { B = 0, L = 0, D = 0, d = 0 } = result?.geometry ?? {};
+  const { botBarDiam = 0, botBarSpacing = 0 } = result?.reinforcement ?? {};
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
@@ -121,7 +123,7 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
               </div>
             </div>
             <div className="flex justify-between items-center text-xs font-mono text-slate-400 px-2">
-              <span>Footing Bounds: {B/1000}m x {L/1000}m x {D/1000}m</span>
+              <span>Footing Bounds: {B / 1000}m x {L / 1000}m x {D / 1000}m</span>
               <span className="text-emerald-400 font-bold">3D Rebar Cage Mesh Generated</span>
             </div>
           </div>

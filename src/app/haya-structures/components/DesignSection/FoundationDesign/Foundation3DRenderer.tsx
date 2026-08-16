@@ -41,7 +41,6 @@ interface Foundation3DRendererProps {
 // Default fallback geometry data matching full Geometry3DData interface
 const defaultGeometryData: Geometry3DData = {
   footingBox: { width: 2.2, height: 0.5, depth: 2.2, position: { x: 0, y: 0, z: 0 } },
-  columnBox: { width: 0.4, height: 1.0, depth: 0.4, position: { x: 0, y: 0.75, z: 0 } },
   footingBoxes: [{ width: 2.2, height: 0.5, depth: 2.2, position: { x: 0, y: 0, z: 0 } }],
   columnBoxes: [{ width: 0.4, height: 1.0, depth: 0.4, position: { x: 0, y: 0.75, z: 0 } }],
   rebars3D: [],
@@ -113,8 +112,8 @@ const Foundation3DScene: React.FC<{
   meshMode: 'single' | 'double';
   concreteOpacity: number;
 }> = ({ data, showConcrete, showRebar, meshMode, concreteOpacity }) => {
-  const primaryFooting = data?.footingBox || data?.footingBoxes?.[0] || defaultGeometryData.footingBox!;
-  const primaryColumn = data?.columnBox || data?.columnBoxes?.[0] || defaultGeometryData.columnBox!;
+  const primaryFooting = data?.footingBox || data?.footingBoxes?.[0] || defaultGeometryData.footingBoxes![0];
+  const primaryColumn = data?.columnBoxes?.[0] || defaultGeometryData.columnBoxes![0];
 
   return (
     <group>
@@ -136,14 +135,16 @@ const Foundation3DScene: React.FC<{
           </mesh>
 
           {/* Column Stub */}
-          <mesh position={[primaryColumn.position.x, primaryColumn.position.y, primaryColumn.position.z]}>
-            <boxGeometry args={[primaryColumn.width, primaryColumn.height, primaryColumn.depth]} />
-            <meshStandardMaterial 
-              color="#64748b" 
-              transparent 
-              opacity={concreteOpacity}
-            />
-          </mesh>
+          {primaryColumn && (
+            <mesh position={[primaryColumn.position.x, primaryColumn.position.y, primaryColumn.position.z]}>
+              <boxGeometry args={[primaryColumn.width, primaryColumn.height, primaryColumn.depth]} />
+              <meshStandardMaterial 
+                color="#64748b" 
+                transparent 
+                opacity={concreteOpacity}
+              />
+            </mesh>
+          )}
         </>
       )}
 
@@ -171,7 +172,7 @@ const Foundation3DScene: React.FC<{
           )}
 
           {/* Column Starter Dowels */}
-          {[-0.12, 0.12].map((x, i) =>
+          {primaryColumn && [-0.12, 0.12].map((x, i) =>
             [-0.12, 0.12].map((z, j) => (
               <mesh 
                 key={`dowel-${i}-${j}`} 
