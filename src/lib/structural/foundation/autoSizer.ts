@@ -552,10 +552,13 @@ function designShallowFoundation(input: ShallowDesignInput): FoundationDesignRes
     botBarDiam
   );
 
+  const As_prov_val = Math.round(barCount * As_bar);
+
   return {
     codeUsed: code,
     category: 'shallow',
     typeLabel: `${shallowType.replace('_', ' ').toUpperCase()} ${combinedSubType ? `(${combinedSubType.toUpperCase()})` : ''}`,
+    inputs: input,
     geometry: { B, L, D, d, B2, b1_pad, l1_pad, b2_pad, l2_pad, strapWidth, strapDepth },
     structuralChecks: {
       bearingOrPileDcr: Number((qu / Math.max(q_net_allow, 1)).toFixed(3)),
@@ -571,8 +574,16 @@ function designShallowFoundation(input: ShallowDesignInput): FoundationDesignRes
       elevationView: { D, d, cover, embedment: embedmentDepth }
     },
     reinforcement: {
-      AsReqBot: Math.round(AsReqBot), AsProvBot: Math.round(barCount * As_bar),
+      AsReqBot: Math.round(AsReqBot), AsProvBot: As_prov_val,
       botBarDiam, botBarSpacing,
+    },
+    rebarDetails: {
+      As_req_x: Math.round(AsReqBot),
+      As_prov_x: As_prov_val,
+      barCalloutX: `T${botBarDiam} @ ${botBarSpacing}mm`,
+      As_req_y: Math.round(AsReqBot),
+      As_prov_y: As_prov_val,
+      barCalloutY: `T${botBarDiam} @ ${botBarSpacing}mm`,
     },
     bbs,
     totalSteelWeightKg: Number(totalWeight.toFixed(1)),
@@ -634,9 +645,12 @@ function designDeepFoundation(input: DeepDesignInput): FoundationDesignResult {
 
   const geom3D = generate3DGeometryAndRebars(input, { B, L, D, numPiles }, botBarDiam);
 
+  const As_prov_val = Math.round(barCount * As_bar);
+
   return {
     codeUsed: code, category: 'deep',
     typeLabel: `${deepType.replace('_', ' ').toUpperCase()} (${numPiles} PILE${numPiles > 1 ? 'S' : ''})`,
+    inputs: input,
     geometry: { B: Math.round(B), L: Math.round(L), D: Math.round(D), d: Math.round(d), numPiles },
     structuralChecks: {
       bearingOrPileDcr: Number((P_per_pile / Math.max(pileCapacity, 1)).toFixed(3)),
@@ -649,7 +663,15 @@ function designDeepFoundation(input: DeepDesignInput): FoundationDesignResult {
       planView: { B, L, c1, c2, rebarCountX: barCount, rebarCountY: barCount },
       elevationView: { D, d, cover, embedment: 2000 }
     },
-    reinforcement: { AsReqBot: Math.round(AsReqBot), AsProvBot: Math.round(barCount * As_bar), botBarDiam, botBarSpacing },
+    reinforcement: { AsReqBot: Math.round(AsReqBot), AsProvBot: As_prov_val, botBarDiam, botBarSpacing },
+    rebarDetails: {
+      As_req_x: Math.round(AsReqBot),
+      As_prov_x: As_prov_val,
+      barCalloutX: `T${botBarDiam} @ ${botBarSpacing}mm`,
+      As_req_y: Math.round(AsReqBot),
+      As_prov_y: As_prov_val,
+      barCalloutY: `T${botBarDiam} @ ${botBarSpacing}mm`,
+    },
     bbs, totalSteelWeightKg: Number(totalWeight.toFixed(1)),
     concreteVolumeM3: Number((((B / 1000) * (L / 1000) * D) / 1000).toFixed(2)),
     status: punchingShearDcr <= 1.0 && P_per_pile <= pileCapacity ? 'OPTIMIZED' : 'OVERSTRESSED',
