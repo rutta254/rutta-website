@@ -41,6 +41,12 @@ declare global {
 interface Foundation3DRendererProps {
   data?: Geometry3DData;
   meshMode?: 'single' | 'double'; // 'single' = bottom mat, 'double' = top & bottom
+  botBarSpacing?: number;        // in mm (e.g. 150)
+  topBarSpacing?: number;        // in mm (e.g. 200)
+  botBarDiam?: number;           // in mm (e.g. 16)
+  topBarDiam?: number;           // in mm (e.g. 12)
+  cover?: number;                // in mm (e.g. 50)
+  onMeshModeChange?: (mode: 'single' | 'double') => void;
 }
 
 // Default fallback geometry data matching full Geometry3DData interface
@@ -51,30 +57,43 @@ const defaultGeometryData: Geometry3DData = {
   rebars3D: [],
 };
 
-// 3D Procedural Rebar Grid Component
+// Parametric 3D Rebar Grid Component
 const RebarGrid3D: React.FC<{
   width: number;
   height: number;
   depth: number;
   position: Vector3D;
   isTopMat?: boolean;
-}> = ({ width, height, depth, position, isTopMat = false }) => {
-  const cover = 0.05; // 50mm cover converted to meters
-  const barRadius = 0.008; // 16mm rebar radius
-  const spacing = 0.15; // 150mm spacing
+  spacingMm?: number;
+  barDiamMm?: number;
+  coverMm?: number;
+}> = ({ 
+  width, 
+  height, 
+  depth, 
+  position, 
+  isTopMat = false,
+  spacingMm = 150,
+  barDiamMm = 16,
+  coverMm = 50
+}) => {
+  const cover = coverMm / 1000;
+  const barRadius = (barDiamMm / 2) / 1000;
+  const spacing = spacingMm / 1000;
   const barColor = isTopMat ? '#f59e0b' : '#ef4444'; // Amber for Top, Red for Bottom
 
+  // Elevation offset based on top vs bottom mat placement
   const yOffset = isTopMat 
     ? position.y + height / 2 - cover - barRadius
     : position.y - height / 2 + cover + barRadius;
 
-  // X-direction bars
+  // X-direction bars (longitudinal)
   const numXBars = Math.max(1, Math.floor((depth - 2 * cover) / spacing));
   const xBarPositions = Array.from({ length: numXBars }, (_, i) => 
     position.z - (depth - 2 * cover) / 2 + i * spacing
   );
 
-  // Z-direction bars
+  // Z-direction bars (transverse)
   const numZBars = Math.max(1, Math.floor((width - 2 * cover) / spacing));
   const zBarPositions = Array.from({ length: numZBars }, (_, i) => 
     position.x - (width - 2 * cover) / 2 + i * spacing
@@ -94,11 +113,11 @@ const RebarGrid3D: React.FC<{
         </mesh>
       ))}
 
-      {/* Transverse Z-Bars */}
+      {/* Transverse Z-Bars (Layered above/below X-bars to eliminate visual clipping) */}
       {zBarPositions.map((xPos: number, idx: number) => (
         <mesh 
           key={`z-bar-${isTopMat ? 'top' : 'bot'}-${idx}`}
-          position={[xPos, yOffset + (isTopMat ? -0.02 : 0.02), position.z]}
+          position={[xPos, yOffset + (isTopMat ? -barRadius * 2 : barRadius * 2), position.z]}
           rotation={[Math.PI / 2, 0, 0]}
         >
           <cylinderGeometry args={[barRadius, barRadius, depth - 2 * cover, 12]} />
@@ -109,20 +128,34 @@ const RebarGrid3D: React.FC<{
   );
 };
 
-// 3D Scene Assembly - Renders ALL footing and column boxes
+// 3D Scene Assembly
 const Foundation3DScene: React.FC<{
   data: Geometry3DData;
   showConcrete: boolean;
   showRebar: boolean;
   meshMode: 'single' | 'double';
   concreteOpacity: number;
-}> = ({ data, showConcrete, showRebar, meshMode, concreteOpacity }) => {
-  // Extract all footing boxes (handles combined pad 1, pad 2, and connecting strap beams)
+  botBarSpacing: number;
+  topBarSpacing: number;
+  botBarDiam: number;
+  topBarDiam: number;
+  cover: number;
+}> = ({ 
+  data, 
+  showConcrete, 
+  showRebar, 
+  meshMode, 
+  concreteOpacity,
+  botBarSpacing,
+  topBarSpacing,
+  botBarDiam,
+  topBarDiam,
+  cover
+}) => {
   const footingBoxes = data?.footingBoxes && data.footingBoxes.length > 0
     ? data.footingBoxes
     : (data?.footingBox ? [data.footingBox] : defaultGeometryData.footingBoxes!);
 
-  // Extract all column boxes (handles combined dual-column configurations)
   const columnBoxes = data?.columnBoxes && data.columnBoxes.length > 0
     ? data.columnBoxes
     : defaultGeometryData.columnBoxes!;
@@ -132,7 +165,7 @@ const Foundation3DScene: React.FC<{
       <ambientLight intensity={0.7} />
       <directionalLight position={[10, 12, 8]} intensity={1.2} castShadow />
 
-      {/* Concrete Rendering for ALL Footings & Columns */}
+      {/* Concrete Rendering */}
       {showConcrete && (
         <>
           {footingBoxes.map((box: FootingBox3D, idx: number) => (
@@ -160,7 +193,7 @@ const Foundation3DScene: React.FC<{
         </>
       )}
 
-      {/* Rebar Mesh Rendering across ALL Footing Elements */}
+      {/* Rebar Mesh Rendering */}
       {showRebar && (
         <group>
           {footingBoxes.map((box: FootingBox3D, idx: number) => (
@@ -172,6 +205,9 @@ const Foundation3DScene: React.FC<{
                 depth={box.depth} 
                 position={box.position} 
                 isTopMat={false} 
+                spacingMm={botBarSpacing}
+                barDiamMm={botBarDiam}
+                coverMm={cover}
               />
 
               {/* Top Rebar Mat (Double Mesh Mode) */}
@@ -182,12 +218,15 @@ const Foundation3DScene: React.FC<{
                   depth={box.depth} 
                   position={box.position} 
                   isTopMat={true} 
+                  spacingMm={topBarSpacing}
+                  barDiamMm={topBarDiam}
+                  coverMm={cover}
                 />
               )}
             </React.Fragment>
           ))}
 
-          {/* Column Starter Dowels for ALL Columns */}
+          {/* Column Dowels */}
           {columnBoxes.map((col: ColumnBox3D, colIdx: number) => (
             <group key={`column-dowels-${colIdx}`}>
               {[-0.12, 0.12].map((x: number, i: number) =>
@@ -211,23 +250,36 @@ const Foundation3DScene: React.FC<{
 
 export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({ 
   data,
-  meshMode: propMeshMode = 'single' 
+  meshMode: propMeshMode = 'single',
+  botBarSpacing = 150,
+  topBarSpacing = 200,
+  botBarDiam = 16,
+  topBarDiam = 12,
+  cover = 50,
+  onMeshModeChange
 }) => {
   const [showConcrete, setShowConcrete] = useState(true);
   const [showRebar, setShowRebar] = useState(true);
   const [concreteOpacity, setConcreteOpacity] = useState(0.4);
   const [meshMode, setMeshMode] = useState<'single' | 'double'>(propMeshMode);
 
-  // Sync internal state when parent propMeshMode changes
+  // Sync internal state when parent propMeshMode updates from calculations
   useEffect(() => {
     setMeshMode(propMeshMode);
   }, [propMeshMode]);
+
+  const handleMeshToggle = (mode: 'single' | 'double') => {
+    setMeshMode(mode);
+    if (onMeshModeChange) {
+      onMeshModeChange(mode); // Recalculates structural engine on toggle
+    }
+  };
 
   return (
     <div className="w-full bg-slate-950 rounded-xl border border-slate-800 overflow-hidden relative shadow-2xl">
       {/* Toolbar Controls Overlay */}
       <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap justify-between items-center bg-slate-900/90 backdrop-blur-md p-2.5 rounded-lg border border-slate-800 text-xs gap-2">
-        {/* Toggle Concrete */}
+        {/* Concrete Controls */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowConcrete(!showConcrete)}
@@ -248,7 +300,7 @@ export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({
           )}
         </div>
 
-        {/* Toggle Rebar & Mesh Layers */}
+        {/* Rebar & Mesh Controls */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowRebar(!showRebar)}
@@ -262,7 +314,7 @@ export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({
           {showRebar && (
             <div className="flex bg-slate-950 rounded border border-slate-800 p-0.5">
               <button
-                onClick={() => setMeshMode('single')}
+                onClick={() => handleMeshToggle('single')}
                 className={`px-2.5 py-0.5 rounded text-[11px] font-bold ${
                   meshMode === 'single' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'
                 }`}
@@ -270,7 +322,7 @@ export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({
                 Single Mesh
               </button>
               <button
-                onClick={() => setMeshMode('double')}
+                onClick={() => handleMeshToggle('double')}
                 className={`px-2.5 py-0.5 rounded text-[11px] font-bold ${
                   meshMode === 'double' ? 'bg-amber-500 text-slate-950' : 'text-slate-400'
                 }`}
@@ -290,7 +342,12 @@ export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({
             showConcrete={showConcrete} 
             showRebar={showRebar} 
             meshMode={meshMode} 
-            concreteOpacity={concreteOpacity} 
+            concreteOpacity={concreteOpacity}
+            botBarSpacing={botBarSpacing}
+            topBarSpacing={topBarSpacing}
+            botBarDiam={botBarDiam}
+            topBarDiam={topBarDiam}
+            cover={cover}
           />
           <OrbitControls makeDefault minDistance={1.5} maxDistance={10} />
         </Canvas>
