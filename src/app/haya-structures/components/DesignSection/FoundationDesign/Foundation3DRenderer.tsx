@@ -38,7 +38,7 @@ declare global {
   }
 }
 
-interface Foundation3DRendererProps {
+export interface Foundation3DRendererProps {
   data?: Geometry3DData;
   meshMode?: 'single' | 'double'; // 'single' = bottom mat, 'double' = top & bottom
   botBarSpacing?: number;        // in mm (e.g. 150)
@@ -57,7 +57,7 @@ const defaultGeometryData: Geometry3DData = {
   rebars3D: [],
 };
 
-// Parametric 3D Rebar Grid Component (Memoized for optimal WebGL performance)
+// Parametric 3D Rebar Grid Component
 const RebarGrid3D: React.FC<{
   width: number;
   height: number;
@@ -117,7 +117,7 @@ const RebarGrid3D: React.FC<{
         </mesh>
       ))}
 
-      {/* Transverse Z-Bars (Layered above/below X-bars to eliminate visual clipping) */}
+      {/* Transverse Z-Bars */}
       {zBarPositions.map((xPos: number, idx: number) => (
         <mesh 
           key={`z-bar-${isTopMat ? 'top' : 'bot'}-${idx}`}
@@ -267,7 +267,6 @@ export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({
   const [concreteOpacity, setConcreteOpacity] = useState(0.4);
   const [meshMode, setMeshMode] = useState<'single' | 'double'>(propMeshMode);
 
-  // Sync internal state when parent propMeshMode updates from calculations
   useEffect(() => {
     setMeshMode(propMeshMode);
   }, [propMeshMode]);
@@ -275,7 +274,7 @@ export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({
   const handleMeshToggle = (mode: 'single' | 'double') => {
     setMeshMode(mode);
     if (onMeshModeChange) {
-      onMeshModeChange(mode); // Recalculates structural engine on toggle
+      onMeshModeChange(mode);
     }
   };
 
@@ -283,7 +282,6 @@ export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({
     <div className="w-full bg-slate-950 rounded-xl border border-slate-800 overflow-hidden relative shadow-2xl">
       {/* Toolbar Controls Overlay */}
       <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap justify-between items-center bg-slate-900/90 backdrop-blur-md p-2.5 rounded-lg border border-slate-800 text-xs gap-2">
-        {/* Concrete Controls */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowConcrete(!showConcrete)}
@@ -304,7 +302,6 @@ export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({
           )}
         </div>
 
-        {/* Rebar & Mesh Controls */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowRebar(!showRebar)}
