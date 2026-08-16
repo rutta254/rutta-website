@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { 
   DesignCode, 
   FoundationCategory, 
@@ -58,13 +58,14 @@ export default function FoundationDesignTool() {
   const [pileCapacity, setPileCapacity] = useState<number>(650);
   const [numPiles, setNumPiles] = useState<number>(4);
 
-  const constructPayload = (): FoundationDesignInput => {
+  const payload: FoundationDesignInput = useMemo(() => {
     if (category === 'shallow') {
       return {
         code,
         category: 'shallow',
         shallowType,
         combinedSubType: shallowType === 'combined' ? combinedSubType : undefined,
+        meshMode,
         fc,
         fy,
         cover,
@@ -77,7 +78,6 @@ export default function FoundationDesignTool() {
         qAllow,
         gammaSoil,
         embedmentDepth,
-        // Dual column details for combined footings
         ...(shallowType === 'combined' && {
           c21,
           c22,
@@ -91,28 +91,39 @@ export default function FoundationDesignTool() {
           maxL,
         }),
       };
-    } else {
-      return {
-        code,
-        category: 'deep',
-        deepType,
-        fc,
-        fy,
-        cover,
-        c1,
-        c2,
-        pDead,
-        pLive,
-        mDeadX,
-        mLiveX,
-        pileDiameter,
-        pileCapacity,
-        numPiles,
-      };
     }
-  };
 
-  const result: FoundationDesignResult = runFoundationDesign(constructPayload());
+    return {
+      code,
+      category: 'deep',
+      deepType,
+      meshMode,
+      fc,
+      fy,
+      cover,
+      c1,
+      c2,
+      pDead,
+      pLive,
+      mDeadX,
+      mLiveX,
+      pileDiameter,
+      pileCapacity,
+      numPiles,
+    };
+  }, [
+    code, category, shallowType, deepType, combinedSubType, meshMode,
+    fc, fy, cover, gammaSoil, embedmentDepth,
+    c1, c2, pDead, pLive, mDeadX, mLiveX,
+    c21, c22, p2Dead, p2Live, m2DeadX, m2LiveX,
+    qAllow, colSpacing, edgeDistance1, edgeDistance2, maxL,
+    pileDiameter, pileCapacity, numPiles
+  ]);
+
+  const result: FoundationDesignResult = useMemo(
+    () => runFoundationDesign(payload),
+    [payload]
+  );
 
   return (
     <div className="space-y-6 text-slate-100 font-sans">

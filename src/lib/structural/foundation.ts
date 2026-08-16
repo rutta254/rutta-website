@@ -16,6 +16,8 @@ export type DeepType = 'pile_cap' | 'single_pile' | 'drilled_shaft';
 
 export type CombinedSubType = 'strap' | 'rectangular' | 'trapezoidal';
 
+export type MeshMode = 'auto' | 'single' | 'double';
+
 export interface Vector3D {
   x: number;
   y: number;
@@ -35,6 +37,7 @@ export interface BaseFoundationInput {
   mLiveX: number;
   mDeadY?: number;
   mLiveY?: number;
+  meshMode?: MeshMode;
 }
 
 export interface ShallowDesignInput extends BaseFoundationInput {
@@ -51,6 +54,7 @@ export interface ShallowDesignInput extends BaseFoundationInput {
   p2Dead?: number;
   p2Live?: number;
   edgeDistance1?: number;
+  edgeDistance2?: number;
   maxL?: number;
   strapWidth?: number;
   strapDepth?: number;
@@ -145,11 +149,20 @@ export interface Geometry3DData {
   rebars3D?: RebarPolyline3D[];
 }
 
+export interface MeshInfo {
+  modeConfigured: MeshMode;
+  effectiveMesh: 'single' | 'double';
+  isAutoTriggered: boolean;
+  autoTriggerReasons: string[];
+  warning?: string;
+}
+
 export interface FoundationDesignResult {
   codeUsed: DesignCode | string;
   category: FoundationCategory;
   typeLabel: string;
   inputs?: FoundationDesignInput | ShallowDesignInput;
+  meshInfo: MeshInfo;
   geometry: {
     B: number;
     L: number;
@@ -224,6 +237,7 @@ export interface FoundationDesignResult {
  */
 export function designFoundation(input: FoundationDesignInput): FoundationDesignResult {
   const shallowInput = input as ShallowDesignInput;
+  const configuredMeshMode: MeshMode = input.meshMode || 'auto';
 
   // 1. Factored and Service Loads
   const pDead = input.pDead || 0;
@@ -265,13 +279,45 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
     D = d + cover + botBarDiam;
   }
 
-  // 4. AUTOMATED DOUBLE MESH TRIGGER EVALUATION
-  const isCombinedOrStrap = input.category === 'shallow' && shallowInput.shallowType !== 'isolated_pad';
-  const isThickSlab = D >= 500; // Thermal/shrinkage crack control threshold
-  const isHighEccentricity = e > (B / 1000) / 6; // Eccentricity outside middle third
-  const isNetUplift = pU < 0; // Tension / wind suction load
+  // 4. AUTOMATED DOUBLE MESH EVALUATION LOGIC
+  const autoTriggerReasons: string[] = [];
 
-  const isDoubleMesh = isCombinedOrStrap || isThickSlab || isHighEccentricity || isNetUplift;
+  const isCombinedOrStrap = input.category === 'shallow' && shallowInput.shallowType !== 'isolated_pad' && shallowInput.shallowType !== 'wall_strip';
+  if (isCombinedOrStrap) {
+    autoTriggerReasons.push('Combined / Strap footing induces top hogging moments between supports');
+  }
+
+  const isThickSlab = D >= 500;
+  if (isThickSlab) {
+    autoTriggerReasons.push(`Thick footing depth (D = ${D}mm ≥ 500mm) requires top steel for shrinkage & thermal crack control`);
+  }
+
+  const isHighEccentricity = e > (B / 1000) / 6;
+  if (isHighEccentricity) {
+    autoTriggerReasons.push(`High eccentricity (e = ${e.toFixed(2)}m > B/6) induces partial base tension`);
+  }
+
+  const isNetUplift = pU < 0;
+  if (isNetUplift) {
+    autoTriggerReasons.push('Net uplift force causes tension at the top face');
+  }
+
+  const isDoubleMeshRequired = autoTriggerReasons.length > 0;
+
+  // Determine effective mesh configuration based on mode
+  let isDoubleMesh = false;
+  let meshWarning: string | undefined = undefined;
+
+  if (configuredMeshMode === 'auto') {
+    isDoubleMesh = isDoubleMeshRequired;
+  } else if (configuredMeshMode === 'double') {
+    isDoubleMesh = true;
+  } else if (configuredMeshMode === 'single') {
+    isDoubleMesh = false;
+    if (isDoubleMeshRequired) {
+      meshWarning = `⚠️ CODE VIOLATION WARNING: Single mesh manually forced, but top reinforcement is code-required due to: ${autoTriggerReasons.join('; ')}.`;
+    }
+  }
 
   // 5. DOUBLE MESH CLEAR SPACING ADJUSTMENT
   if (isDoubleMesh) {
@@ -404,6 +450,13 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
     category: input.category,
     typeLabel: isDoubleMesh ? 'Double Mesh Footing' : 'Single Mesh Pad Footing',
     inputs: input,
+    meshInfo: {
+      modeConfigured: configuredMeshMode,
+      effectiveMesh: isDoubleMesh ? 'double' : 'single',
+      isAutoTriggered: configuredMeshMode === 'auto',
+      autoTriggerReasons,
+      warning: meshWarning,
+    },
     geometry: { B, L, D, d },
     structuralChecks: {
       bearingOrPileDcr: 0.75,
@@ -451,6 +504,6 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
     bbs,
     totalSteelWeightKg: Number(totalSteelWeightKg.toFixed(2)),
     concreteVolumeM3: Number(concreteVolumeM3.toFixed(3)),
-    status: 'OPTIMIZED'
+    status: meshWarning ? 'OVERSTRESSED' : 'OPTIMIZED'
   };
 }
