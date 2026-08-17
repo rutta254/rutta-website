@@ -9,10 +9,10 @@ interface CodeConfig {
   id: DesignCode;
   label: string;
   region: string;
-  gammaD: number; // Dead load safety factor
-  gammaL: number; // Live load safety factor
-  punchingOffsetD: number; // Control perimeter distance from column face (in terms of d)
-  phiShear: number; // Concrete shear capacity factor
+  gammaD: number;
+  gammaL: number;
+  punchingOffsetD: number;
+  phiShear: number;
   description: string;
 }
 
@@ -34,7 +34,7 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
     gammaD: 1.35,
     gammaL: 1.5,
     punchingOffsetD: 2.0,
-    phiShear: 0.67, // Partial factor 1/gamma_c (1/1.5)
+    phiShear: 0.67,
     description: 'EN 1992 ultimate limit state (1.35Gk + 1.5Qk) with punching control perimeter at 2.0d.',
   },
   IS456: {
@@ -79,6 +79,15 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
   },
 };
 
+// Soil Bearing Presets
+const SOIL_PRESETS = [
+  { label: 'Soft Clay', q: 100 },
+  { label: 'Stiff Clay', q: 150 },
+  { label: 'Med. Sand', q: 200 },
+  { label: 'Dense Gravel', q: 300 },
+  { label: 'Hard Rock', q: 500 },
+];
+
 export default function FoundationDesignTool() {
   // Selected Design Standard
   const [activeCode, setActiveCode] = useState<DesignCode>('ACI318');
@@ -105,16 +114,22 @@ export default function FoundationDesignTool() {
 
   const codeSpec = DESIGN_CODES[activeCode];
 
-  // Structural Calculation Engine (Code-Adaptive)
+  // Helper to cycle through soil bearing presets when clicking Step 1
+  const handleCycleSoilBearing = () => {
+    const currentIndex = SOIL_PRESETS.findIndex((p) => p.q === qAllowable);
+    const nextIndex = (currentIndex + 1) % SOIL_PRESETS.length;
+    setQAllowable(SOIL_PRESETS[nextIndex].q);
+  };
+
+  // Structural Calculation Engine
   const results = useMemo(() => {
-    // 1. Service Loads & Geotechnical Bearing Checks
     const pService = deadLoad + liveLoad;
     const lengthM = footingL / 1000;
     const widthM = footingB / 1000;
     const depthM = footingH / 1000;
     const area = lengthM * widthM;
 
-    const grossWeight = area * depthM * 24; // Concrete density ~24 kN/m³
+    const grossWeight = area * depthM * 24;
     const pServiceTotal = pService + grossWeight;
 
     const zX = (widthM * Math.pow(lengthM, 2)) / 6;
@@ -127,38 +142,33 @@ export default function FoundationDesignTool() {
     const qMin = Math.max(0, qDirect - qEccX - qEccY);
     const soilDcr = qMax / (qAllowable || 1);
 
-    // 2. Ultimate Factored Loads (Adaptive Safety Factors)
     const pFactored = codeSpec.gammaD * deadLoad + codeSpec.gammaL * liveLoad;
-    const qUltimate = pFactored / area; // kPa
+    const qUltimate = pFactored / area;
 
-    // 3. Concrete Depth & Critical Shear Zones
-    const d = footingH - concreteCover - barDiameter; // Effective depth (mm)
+    const d = footingH - concreteCover - barDiameter;
     const dM = d / 1000;
 
-    // One-Way Shear at distance 'd' from column face
-    const cantileverX = (footingL - colX) / 2 / 1000; // m
-    const shearDist1Way = cantileverX - dM; // m
-    const v1Way = Math.max(0, qUltimate * (widthM * shearDist1Way)); // kN
-    const vc1Way = codeSpec.phiShear * 0.17 * Math.sqrt(fc) * footingB * d / 1000; // kN
+    const cantileverX = (footingL - colX) / 2 / 1000;
+    const shearDist1Way = cantileverX - dM;
+    const v1Way = Math.max(0, qUltimate * (widthM * shearDist1Way));
+    const vc1Way = (codeSpec.phiShear * 0.17 * Math.sqrt(fc) * footingB * d) / 1000;
     const dcr1Way = v1Way / (vc1Way || 1);
 
-    // Two-Way Punching Shear at code-specific offset (0.5d, 1.5d, or 2.0d)
     const offset = codeSpec.punchingOffsetD * d;
     const offsetM = offset / 1000;
-    const b0 = 2 * (colX + 2 * offset) + 2 * (colY + 2 * offset); // mm
-    const punchingArea = (colX / 1000 + 2 * offsetM) * (colY / 1000 + 2 * offsetM); // m²
-    const vPunch = qUltimate * Math.max(0, area - punchingArea); // kN
-    const vcPunch = codeSpec.phiShear * 0.33 * Math.sqrt(fc) * b0 * d / 1000; // kN
+    const b0 = 2 * (colX + 2 * offset) + 2 * (colY + 2 * offset);
+    const punchingArea = (colX / 1000 + 2 * offsetM) * (colY / 1000 + 2 * offsetM);
+    const vPunch = qUltimate * Math.max(0, area - punchingArea);
+    const vcPunch = (codeSpec.phiShear * 0.33 * Math.sqrt(fc) * b0 * d) / 1000;
     const dcrPunch = vPunch / (vcPunch || 1);
 
-    // 4. Flexure & Steel Area Calculation
-    const mUltimateFace = (qUltimate * widthM * Math.pow(cantileverX, 2)) / 2; // kNm
+    const mUltimateFace = (qUltimate * widthM * Math.pow(cantileverX, 2)) / 2;
     const rn = (mUltimateFace * 1e6) / (0.9 * footingB * Math.pow(d, 2));
-    const rhoReq = (0.85 * fc / fy) * (1 - Math.sqrt(Math.max(0, 1 - (2 * rn) / (0.85 * fc))));
+    const rhoReq = ((0.85 * fc) / fy) * (1 - Math.sqrt(Math.max(0, 1 - (2 * rn) / (0.85 * fc))));
     const rhoMin = 0.0018;
     const rhoFinal = Math.max(rhoReq, rhoMin);
 
-    const asReq = rhoFinal * footingB * d; // mm²
+    const asReq = rhoFinal * footingB * d;
     const singleBarArea = (Math.PI / 4) * Math.pow(barDiameter, 2);
 
     const rawSpacing = (singleBarArea * footingB) / asReq;
@@ -166,7 +176,6 @@ export default function FoundationDesignTool() {
     const numberOfBars = Math.ceil((footingB - 2 * concreteCover) / barSpacing) + 1;
     const asProv = numberOfBars * singleBarArea;
 
-    // BBS Cut Length & Steel Weight
     const hookLength = 12 * barDiameter;
     const barLength = footingL - 2 * concreteCover + 2 * hookLength;
     const linearDensity = Math.pow(barDiameter, 2) / 162;
@@ -202,7 +211,7 @@ export default function FoundationDesignTool() {
 
   return (
     <div className="space-y-6 text-slate-200">
-      {/* Structural Code Selector Toggles */}
+      {/* Code Selector */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
           <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
@@ -238,17 +247,19 @@ export default function FoundationDesignTool() {
         <p className="text-[11px] font-mono text-slate-400 pt-1">{codeSpec.description}</p>
       </div>
 
-      {/* Structural Workflow Stepper */}
+      {/* Structural Workflow Pipeline */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
         <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block mb-3">
-          Automated Foundation Engineering Workflow Pipeline
+          Automated Foundation Engineering Workflow Pipeline (Click Step 1 to Cycle Soil Presets)
         </span>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-mono">
           <WorkflowStep
             stepNum={1}
             title="Soil Bearing Check"
             status={results.soilDcr <= 1.0 ? 'pass' : 'fail'}
-            metric={`q_max: ${results.qMax.toFixed(1)} kPa`}
+            metric={`q_max: ${results.qMax.toFixed(1)} / ${qAllowable} kPa`}
+            onClick={handleCycleSoilBearing}
+            interactive
           />
           <WorkflowStep
             stepNum={2}
@@ -271,7 +282,7 @@ export default function FoundationDesignTool() {
         </div>
       </div>
 
-      {/* Main Calculation Layout */}
+      {/* Inputs & Outputs */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Input Parameters */}
         <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5">
@@ -289,9 +300,34 @@ export default function FoundationDesignTool() {
             </div>
           </div>
 
+          {/* Interactive Bearing Capacity Presets */}
           <div className="space-y-3">
-            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">2. Materials & Geotechnical</span>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex justify-between items-center">
+              <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">2. Materials & Soil Capacity</span>
+              <span className="text-[10px] text-slate-400 font-mono">Select Soil Preset:</span>
+            </div>
+
+            {/* Quick Clickable Soil Bearing Toggles */}
+            <div className="grid grid-cols-3 gap-1.5">
+              {SOIL_PRESETS.map((preset) => {
+                const isActive = qAllowable === preset.q;
+                return (
+                  <button
+                    key={preset.label}
+                    onClick={() => setQAllowable(preset.q)}
+                    className={`px-2 py-1.5 rounded text-[10px] font-mono font-bold transition-all border ${
+                      isActive
+                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    {preset.label} ({preset.q}kPa)
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
               <InputField label="q_allowable (kPa)" value={qAllowable} onChange={setQAllowable} />
               <InputField label="Concrete f_c' (MPa)" value={fc} onChange={setFc} />
               <InputField label="Steel f_y (MPa)" value={fy} onChange={setFy} />
@@ -312,7 +348,7 @@ export default function FoundationDesignTool() {
           </div>
         </div>
 
-        {/* Dynamic Verification Checks & BBS Schedule */}
+        {/* Verifications & BBS */}
         <div className="lg:col-span-7 space-y-6">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
             <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2">
@@ -394,17 +430,21 @@ export default function FoundationDesignTool() {
   );
 }
 
-// UI Helper Components
+// UI Components
 function WorkflowStep({
   stepNum,
   title,
   status,
   metric,
+  onClick,
+  interactive = false,
 }: {
   stepNum: number;
   title: string;
   status: 'pass' | 'fail' | 'info';
   metric: string;
+  onClick?: () => void;
+  interactive?: boolean;
 }) {
   const statusColors = {
     pass: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400',
@@ -413,9 +453,14 @@ function WorkflowStep({
   };
 
   return (
-    <div className={`p-3 rounded-lg border ${statusColors[status]} space-y-1`}>
+    <div
+      onClick={onClick}
+      className={`p-3 rounded-lg border ${statusColors[status]} space-y-1 transition-all ${
+        interactive ? 'cursor-pointer hover:border-cyan-400 hover:bg-slate-900/80 active:scale-95' : ''
+      }`}
+    >
       <div className="flex items-center justify-between text-[10px] text-slate-400">
-        <span>STEP 0{stepNum}</span>
+        <span>STEP 0{stepNum} {interactive && '(Click to Toggle)'}</span>
         {status === 'pass' && <span className="text-emerald-400 font-bold">OK</span>}
         {status === 'fail' && <span className="text-rose-400 font-bold">NG</span>}
       </div>
