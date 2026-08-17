@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 
 // Structural Elements & Codes
-export type StructuralElement = 'beam' | 'column' | 'slab' | 'wall' | 'truss' | 'foundation' | 'frame';
+export type StructuralElement = 'foundation' | 'beam' | 'column' | 'slab' | 'wall' | 'truss' | 'frame';
 export type DesignCode = 'ACI318' | 'EC2' | 'IS456' | 'BS8110' | 'AS3600' | 'CSA_A23';
 
 // Foundation Classification Hierarchy
@@ -108,14 +108,14 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
   },
 };
 
-const ELEMENT_TYPES: { id: StructuralElement; label: string; icon: string }[] = [
-  { id: 'foundation', label: 'Foundation', icon: '⧈' },
-  { id: 'beam', label: 'Beam', icon: '⎯' },
-  { id: 'column', label: 'Column', icon: '❚' },
-  { id: 'slab', label: 'Slab', icon: '▭' },
-  { id: 'wall', label: 'Wall', icon: '❙' },
-  { id: 'truss', label: 'Truss', icon: '▲' },
-  { id: 'frame', label: 'Frame', icon: '⨅' },
+const ELEMENT_TYPES: { id: StructuralElement; label: string }[] = [
+  { id: 'foundation', label: 'FOUNDATION' },
+  { id: 'beam', label: 'BEAM' },
+  { id: 'column', label: 'COLUMN' },
+  { id: 'slab', label: 'SLAB' },
+  { id: 'wall', label: 'WALL' },
+  { id: 'truss', label: 'TRUSS' },
+  { id: 'frame', label: 'FRAME' },
 ];
 
 export default function IntegratedStructuralSuite() {
@@ -187,7 +187,7 @@ export default function IntegratedStructuralSuite() {
         driven_pile: 'Driven Pile',
         micropile: 'Micropile System',
       };
-      return `Deep - ${labels[deepType]}`;
+      return `DEEP - ${labels[deepType].toUpperCase()}`;
     }
     if (shallowType === 'combined') {
       const cLabels: Record<CombinedSubtype, string> = {
@@ -195,7 +195,7 @@ export default function IntegratedStructuralSuite() {
         trapezoidal: 'Trapezoidal Combined',
         strap: 'Strap / Cantilever Beam',
       };
-      return `Shallow - ${cLabels[combinedSubtype]}`;
+      return `SHALLOW - ${cLabels[combinedSubtype].toUpperCase()}`;
     }
     const sLabels: Record<ShallowType, string> = {
       isolated: 'Isolated Pad Footing',
@@ -203,7 +203,7 @@ export default function IntegratedStructuralSuite() {
       raft: 'Mat / Raft Foundation',
       combined: 'Combined Footing',
     };
-    return `Shallow - ${sLabels[shallowType]}`;
+    return `SHALLOW - ${sLabels[shallowType].toUpperCase()}`;
   }, [fdnCategory, shallowType, combinedSubtype, deepType]);
 
   // Structural Calculation Engine
@@ -358,21 +358,20 @@ export default function IntegratedStructuralSuite() {
               <button
                 key={item.id}
                 onClick={() => setActiveElement(item.id)}
-                className={`py-2.5 px-2 rounded-lg text-xs font-mono font-bold transition-all flex flex-col items-center justify-center gap-1 border ${
+                className={`py-2 px-3 rounded-lg text-xs font-mono font-bold tracking-wider transition-all border ${
                   isSelected
                     ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-md shadow-cyan-500/20'
                     : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200'
                 }`}
               >
-                <span className="text-base">{item.icon}</span>
-                <span>{item.label}</span>
+                {item.label}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* 2. Foundation Sub-Type Selector (Shown only when Foundation is selected) */}
+      {/* 2. Foundation Sub-Type Selector (Shown only when FOUNDATION is selected) */}
       {activeElement === 'foundation' && (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
           <div className="flex justify-between items-center border-b border-slate-800 pb-2">
@@ -395,7 +394,7 @@ export default function IntegratedStructuralSuite() {
                     : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                 }`}
               >
-                Shallow Foundation
+                SHALLOW
               </button>
               <button
                 onClick={() => setFdnCategory('deep')}
@@ -405,7 +404,7 @@ export default function IntegratedStructuralSuite() {
                     : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                 }`}
               >
-                Deep Foundation
+                DEEP
               </button>
             </div>
           </div>
@@ -417,10 +416,10 @@ export default function IntegratedStructuralSuite() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   {(
                     [
-                      { id: 'isolated', label: 'Isolated Pad' },
-                      { id: 'strip', label: 'Strip / Continuous' },
-                      { id: 'raft', label: 'Mat / Raft' },
-                      { id: 'combined', label: 'Combined Footing' },
+                      { id: 'isolated', label: 'ISOLATED PAD' },
+                      { id: 'strip', label: 'STRIP / CONTINUOUS' },
+                      { id: 'raft', label: 'MAT / RAFT' },
+                      { id: 'combined', label: 'COMBINED FOOTING' },
                     ] as { id: ShallowType; label: string }[]
                   ).map((item) => (
                     <button
@@ -446,9 +445,9 @@ export default function IntegratedStructuralSuite() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     {(
                       [
-                        { id: 'rectangular', label: 'Rectangular Combined' },
-                        { id: 'trapezoidal', label: 'Trapezoidal Combined' },
-                        { id: 'strap', label: 'Strap / Cantilever' },
+                        { id: 'rectangular', label: 'RECTANGULAR COMBINED' },
+                        { id: 'trapezoidal', label: 'TRAPEZOIDAL COMBINED' },
+                        { id: 'strap', label: 'STRAP / CANTILEVER' },
                       ] as { id: CombinedSubtype; label: string }[]
                     ).map((cItem) => (
                       <button
@@ -475,10 +474,10 @@ export default function IntegratedStructuralSuite() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {(
                   [
-                    { id: 'pile_cap', label: 'Pile Cap' },
-                    { id: 'bored_pile', label: 'Bored Pile' },
-                    { id: 'driven_pile', label: 'Precast Driven' },
-                    { id: 'micropile', label: 'Micropile' },
+                    { id: 'pile_cap', label: 'PILE CAP' },
+                    { id: 'bored_pile', label: 'BORED PILE' },
+                    { id: 'driven_pile', label: 'PRECAST DRIVEN' },
+                    { id: 'micropile', label: 'MICROPILE' },
                   ] as { id: DeepType; label: string }[]
                 ).map((dItem) => (
                   <button
