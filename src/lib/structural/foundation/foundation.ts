@@ -242,7 +242,6 @@ export interface FoundationDesignResult {
  * Structural Foundation Calculation Engine
  */
 export function designFoundation(input: FoundationDesignInput): FoundationDesignResult {
-  const shallowInput = input as ShallowDesignInput;
   const configuredMeshMode: MeshMode = input.meshMode || 'auto';
 
   // Configured or Default Bar Sizes & Spacings
@@ -250,6 +249,7 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
   const botSpacing = input.botBarSpacing || 150;
   const topBarDiam = input.topBarDiam || 12;
   const topSpacing = input.topBarSpacing || 200;
+  const cover = input.cover || 50;
 
   // 1. Factored and Service Loads
   const pDead = input.pDead || 0;
@@ -261,39 +261,267 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
   const mServ = mDeadX + mLiveX;
   const pU = 1.2 * pDead + 1.6 * pLive;
 
-  // 2. Initial Plan Sizing (B x L)
-  const qAllow = shallowInput.qAllow || 150; // kPa
-  const reqArea = (pServ * 1.1) / qAllow; // 10% self-weight allowance
-  let B = Math.max(1000, Math.ceil(Math.sqrt(reqArea) * 10) * 100); // rounded to 100mm
-  let L = B;
+  // Initial Geometries
+  let B = 1800;
+  let L = 1800;
+  let D = 500;
+  let d = D - cover - botBarDiam;
+
+  const geometry3D: Geometry3DData = {};
+  let typeLabel = '';
+
+  // ---------------------------------------------------------
+  // 2. GEOMETRY & 3D BRANCHING BY CATEGORY AND TYPE
+  // ---------------------------------------------------------
+  if (input.category === 'shallow') {
+    const shallowInput = input as ShallowDesignInput;
+    const qAllow = shallowInput.qAllow || 150;
+    const reqArea = (pServ * 1.1) / qAllow;
+
+    if (shallowInput.shallowType === 'isolated_pad') {
+      typeLabel = 'Isolated Pad Footing';
+      B = Math.max(1000, Math.ceil(Math.sqrt(reqArea) * 10) * 100);
+      L = B;
+
+      // Punching shear depth solver
+      const fc = input.fc || 30;
+      const vc = 0.75 * 0.33 * Math.sqrt(fc);
+      for (let i = 0; i < 10; i++) {
+        const qu = (pU * 1000) / (B * L);
+        const bo = 2 * (input.c1 + d) + 2 * (input.c2 + d);
+        const Vu_punch = pU * 1000 - qu * (input.c1 + d) * (input.c2 + d);
+        const vu_punch = Vu_punch / (bo * d);
+
+        if (vu_punch <= vc) break;
+        d += 50;
+        D = d + cover + botBarDiam;
+      }
+
+      geometry3D.footingBox = {
+        width: B / 1000,
+        height: D / 1000,
+        depth: L / 1000,
+        position: { x: 0, y: 0, z: 0 }
+      };
+      geometry3D.columnBoxes = [{
+        width: input.c1 / 1000,
+        height: 1.0,
+        depth: input.c2 / 1000,
+        position: { x: 0, y: (D / 1000) / 2 + 0.5, z: 0 }
+      }];
+
+    } else if (shallowInput.shallowType === 'wall_strip') {
+      typeLabel = 'Continuous Wall Strip Footing';
+      B = Math.max(800, Math.ceil((reqArea / 3) * 10) * 100);
+      L = 3000; // Standard 3-meter section run
+      D = 400;
+      d = D - cover - botBarDiam;
+
+      geometry3D.footingBox = {
+        width: B / 1000,
+        height: D / 1000,
+        depth: L / 1000,
+        position: { x: 0, y: 0, z: 0 }
+      };
+      geometry3D.columnBoxes = [{
+        width: (input.c1 || 225) / 1000,
+        height: 1.0,
+        depth: L / 1000,
+        position: { x: 0, y: (D / 1000) / 2 + 0.5, z: 0 }
+      }];
+
+    } else if (shallowInput.shallowType === 'combined') {
+      const subType = shallowInput.combinedSubType || 'rectangular';
+      const colSpacingM = (shallowInput.colSpacing || 3500) / 1000;
+      const c21M = (shallowInput.c2_1 || input.c1) / 1000;
+      const c22M = (shallowInput.c2_2 || input.c2) / 1000;
+
+      if (subType === 'strap') {
+        typeLabel = 'Strap Footing';
+        const b1 = 1.4, l1 = 1.4;
+        const b2 = 1.2, l2 = 1.2;
+        B = b1 * 1000;
+        L = colSpacingM * 1000;
+        D = 600;
+        d = D - cover - botBarDiam;
+
+        geometry3D.footingBoxes = [
+          { width: b1, height: D / 1000, depth: l1, position: { x: -colSpacingM / 2, y: 0, z: 0 } },
+          { width: b2, height: D / 1000, depth: l2, position: { x: colSpacingM / 2, y: 0, z: 0 } }
+        ];
+        geometry3D.strapBeam = {
+          width: colSpacingM - (b1 + b2) / 2,
+          height: (D + 100) / 1000,
+          depth: 0.4,
+          position: { x: 0, y: 0.05, z: 0 }
+        };
+        geometry3D.columnBoxes = [
+          { width: input.c1 / 1000, height: 1.0, depth: input.c2 / 1000, position: { x: -colSpacingM / 2, y: (D / 1000) / 2 + 0.5, z: 0 } },
+          { width: c21M, height: 1.0, depth: c22M, position: { x: colSpacingM / 2, y: (D / 1000) / 2 + 0.5, z: 0 } }
+        ];
+
+      } else if (subType === 'trapezoidal') {
+        typeLabel = 'Trapezoidal Combined Footing';
+        B = 2200;
+        L = colSpacingM * 1000 + 1000;
+        D = 600;
+        d = D - cover - botBarDiam;
+
+        geometry3D.trapezoidFootings = [{
+          b1: 2.4,
+          b2: 1.4,
+          height: D / 1000,
+          depth: L / 1000,
+          position: { x: 0, y: 0, z: 0 }
+        }];
+        geometry3D.columnBoxes = [
+          { width: input.c1 / 1000, height: 1.0, depth: input.c2 / 1000, position: { x: -colSpacingM / 2, y: (D / 1000) / 2 + 0.5, z: 0 } },
+          { width: c21M, height: 1.0, depth: c22M, position: { x: colSpacingM / 2, y: (D / 1000) / 2 + 0.5, z: 0 } }
+        ];
+
+      } else {
+        typeLabel = 'Rectangular Combined Footing';
+        B = 1800;
+        L = Math.max(4000, colSpacingM * 1000 + 1200);
+        D = 600;
+        d = D - cover - botBarDiam;
+
+        geometry3D.footingBox = {
+          width: L / 1000,
+          height: D / 1000,
+          depth: B / 1000,
+          position: { x: 0, y: 0, z: 0 }
+        };
+        geometry3D.columnBoxes = [
+          { width: input.c1 / 1000, height: 1.0, depth: input.c2 / 1000, position: { x: -colSpacingM / 2, y: (D / 1000) / 2 + 0.5, z: 0 } },
+          { width: c21M, height: 1.0, depth: c22M, position: { x: colSpacingM / 2, y: (D / 1000) / 2 + 0.5, z: 0 } }
+        ];
+      }
+
+    } else if (shallowInput.shallowType === 'raft_mat') {
+      typeLabel = 'Raft / Mat Foundation';
+      B = 6000;
+      L = 6000;
+      D = 600;
+      d = D - cover - botBarDiam;
+
+      geometry3D.footingBox = {
+        width: B / 1000,
+        height: D / 1000,
+        depth: L / 1000,
+        position: { x: 0, y: 0, z: 0 }
+      };
+      const offset = 1.8;
+      geometry3D.columnBoxes = [
+        { width: 0.4, height: 1.0, depth: 0.4, position: { x: -offset, y: (D / 1000) / 2 + 0.5, z: -offset } },
+        { width: 0.4, height: 1.0, depth: 0.4, position: { x: offset, y: (D / 1000) / 2 + 0.5, z: -offset } },
+        { width: 0.4, height: 1.0, depth: 0.4, position: { x: -offset, y: (D / 1000) / 2 + 0.5, z: offset } },
+        { width: 0.4, height: 1.0, depth: 0.4, position: { x: offset, y: (D / 1000) / 2 + 0.5, z: offset } }
+      ];
+    }
+
+  } else {
+    // Deep Foundations
+    const deepInput = input as DeepDesignInput;
+    const numPiles = deepInput.numPiles || 4;
+    const pileDiaM = (deepInput.pileDiameter || 500) / 1000;
+    const pileLenM = (deepInput.pileLength || 12000) / 1000;
+    const pileSpacingM = deepInput.pileSpacing ? deepInput.pileSpacing / 1000 : pileDiaM * 3;
+
+    if (deepInput.deepType === 'pile_cap') {
+      typeLabel = `Pile Cap (${numPiles} Piles)`;
+      const gridCols = Math.ceil(Math.sqrt(numPiles));
+      const gridRows = Math.ceil(numPiles / gridCols);
+
+      B = Math.ceil((gridCols * pileSpacingM + pileDiaM) * 1000);
+      L = Math.ceil((gridRows * pileSpacingM + pileDiaM) * 1000);
+      D = 800;
+      d = D - cover - botBarDiam;
+
+      geometry3D.footingBox = {
+        width: B / 1000,
+        height: D / 1000,
+        depth: L / 1000,
+        position: { x: 0, y: 0, z: 0 }
+      };
+      geometry3D.columnBoxes = [{
+        width: input.c1 / 1000,
+        height: 1.0,
+        depth: input.c2 / 1000,
+        position: { x: 0, y: (D / 1000) / 2 + 0.5, z: 0 }
+      }];
+
+      const piles: Pile3D[] = [];
+      const startX = -((gridCols - 1) * pileSpacingM) / 2;
+      const startZ = -((gridRows - 1) * pileSpacingM) / 2;
+      let placed = 0;
+
+      for (let r = 0; r < gridRows; r++) {
+        for (let c = 0; c < gridCols; c++) {
+          if (placed >= numPiles) break;
+          piles.push({
+            diameter: pileDiaM,
+            length: pileLenM,
+            position: {
+              x: startX + c * pileSpacingM,
+              y: -(D / 1000) / 2 - pileLenM / 2,
+              z: startZ + r * pileSpacingM
+            }
+          });
+          placed++;
+        }
+      }
+      geometry3D.piles = piles;
+
+    } else if (deepInput.deepType === 'drilled_shaft') {
+      typeLabel = 'Drilled Shaft / Caisson';
+      const dia = Math.max(1.0, pileDiaM);
+      B = dia * 1000;
+      L = dia * 1000;
+      D = 600;
+      d = D - cover - botBarDiam;
+
+      geometry3D.piles = [{
+        diameter: dia,
+        length: pileLenM,
+        position: { x: 0, y: -pileLenM / 2, z: 0 }
+      }];
+      geometry3D.columnBoxes = [{
+        width: input.c1 / 1000,
+        height: 1.0,
+        depth: input.c2 / 1000,
+        position: { x: 0, y: 0.5, z: 0 }
+      }];
+
+    } else {
+      typeLabel = 'Single Pile Foundation';
+      const dia = pileDiaM;
+      B = dia * 1000;
+      L = dia * 1000;
+      D = 500;
+      d = D - cover - botBarDiam;
+
+      geometry3D.piles = [{
+        diameter: dia,
+        length: pileLenM,
+        position: { x: 0, y: -pileLenM / 2, z: 0 }
+      }];
+      geometry3D.columnBoxes = [{
+        width: input.c1 / 1000,
+        height: 1.0,
+        depth: input.c2 / 1000,
+        position: { x: 0, y: 0.5, z: 0 }
+      }];
+    }
+  }
 
   // Eccentricity Check
   const e = pServ > 0 ? Math.abs(mServ) / pServ : 0;
 
-  // 3. Punching & Beam Shear Sizing (D & d)
-  const cover = input.cover || 50;
-  let d = 250; // initial effective depth (mm)
-  let D = d + cover + botBarDiam;
-
-  const fc = input.fc || 30;
-  const vc = 0.75 * 0.33 * Math.sqrt(fc); // ACI concrete shear resistance (MPa)
-
-  // Iterative punching shear depth solver
-  for (let i = 0; i < 10; i++) {
-    const qu = (pU * 1000) / (B * L);
-    const bo = 2 * (input.c1 + d) + 2 * (input.c2 + d);
-    const Vu_punch = pU * 1000 - qu * (input.c1 + d) * (input.c2 + d);
-    const vu_punch = Vu_punch / (bo * d);
-
-    if (vu_punch <= vc) break;
-    d += 50;
-    D = d + cover + botBarDiam;
-  }
-
-  // 4. AUTOMATED DOUBLE MESH EVALUATION LOGIC
+  // 3. AUTOMATED DOUBLE MESH EVALUATION LOGIC
   const autoTriggerReasons: string[] = [];
 
-  const isCombinedOrStrap = input.category === 'shallow' && shallowInput.shallowType !== 'isolated_pad' && shallowInput.shallowType !== 'wall_strip';
+  const isCombinedOrStrap = input.category === 'shallow' && (input as ShallowDesignInput).shallowType !== 'isolated_pad' && (input as ShallowDesignInput).shallowType !== 'wall_strip';
   if (isCombinedOrStrap) {
     autoTriggerReasons.push('Combined / Strap footing induces top hogging moments between supports');
   }
@@ -315,7 +543,6 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
 
   const isDoubleMeshRequired = autoTriggerReasons.length > 0;
 
-  // Determine effective mesh configuration based on mode
   let isDoubleMesh = false;
   let meshWarning: string | undefined = undefined;
 
@@ -330,16 +557,15 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
     }
   }
 
-  // 5. DOUBLE MESH CLEAR SPACING ADJUSTMENT
   if (isDoubleMesh) {
-    const minClearDepth = 2 * cover + 2 * botBarDiam + 2 * topBarDiam + 100; // 100mm clear internal gap
+    const minClearDepth = 2 * cover + 2 * botBarDiam + 2 * topBarDiam + 100;
     if (D < minClearDepth) {
       D = minClearDepth;
       d = D - cover - botBarDiam;
     }
   }
 
-  // 6. FLEXURAL REINFORCEMENT CALCULATION
+  // 4. FLEXURAL REINFORCEMENT CALCULATION
   const fy = input.fy || 460;
   const cantilever = (B - input.c1) / 2;
   const qu = (pU * 1000) / (B * L);
@@ -350,13 +576,11 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
     0.0018 * B * D
   );
 
-  // Bottom Mesh Bar Selection
   const botBarArea = (Math.PI * Math.pow(botBarDiam, 2)) / 4;
   const botBarsCountX = Math.ceil((B - 2 * cover) / botSpacing) + 1;
   const botBarsCountY = Math.ceil((L - 2 * cover) / botSpacing) + 1;
   const As_prov_bot = botBarsCountX * botBarArea;
 
-  // Top Mesh Bar Selection
   const topBarArea = (Math.PI * Math.pow(topBarDiam, 2)) / 4;
   let topBarsCountX = 0;
   let topBarsCountY = 0;
@@ -368,7 +592,7 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
     As_prov_top = topBarsCountX * topBarArea;
   }
 
-  // 7. BAR BENDING SCHEDULE (BBS) & STEEL MASS
+  // 5. BAR BENDING SCHEDULE (BBS) & STEEL MASS
   const bbs: BBSItem[] = [];
   const steelDensity = 7850; // kg/m^3
 
@@ -405,7 +629,6 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
   let weightTopX = 0;
   let weightTopY = 0;
 
-  // Top Mesh Bars (Added to BBS only when isDoubleMesh === true)
   if (isDoubleMesh) {
     const cutLengthTopX = (B - 2 * cover + 2 * (D - 2 * cover)) / 1000;
     weightTopX = topBarsCountX * cutLengthTopX * (topBarArea * 1e-6) * steelDensity;
@@ -460,7 +683,7 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
   return {
     codeUsed: input.code,
     category: input.category,
-    typeLabel: isDoubleMesh ? 'Double Mesh Footing' : 'Single Mesh Pad Footing',
+    typeLabel: `${typeLabel} (${isDoubleMesh ? 'Double Mesh' : 'Single Mesh'})`,
     inputs: input,
     meshInfo: {
       modeConfigured: configuredMeshMode,
@@ -469,17 +692,20 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
       autoTriggerReasons,
       warning: meshWarning,
     },
-    geometry: { B, L, D, d },
+    geometry: {
+      B,
+      L,
+      D,
+      d,
+      numPiles: input.category === 'deep' ? (input as DeepDesignInput).numPiles : undefined
+    },
     structuralChecks: {
       bearingOrPileDcr: 0.75,
       punchingShearDcr: 0.85,
       flexureDcr: 0.65,
       governingCheck: 'Punching Shear'
     },
-    geometry3D: {
-      footingBox: { width: B / 1000, height: D / 1000, depth: L / 1000, position: { x: 0, y: 0, z: 0 } },
-      columnBoxes: [{ width: input.c1 / 1000, height: 1.0, depth: input.c2 / 1000, position: { x: 0, y: (D / 1000) / 2 + 0.5, z: 0 } }]
-    },
+    geometry3D,
     section2D: {
       planView: {
         B,
@@ -493,7 +719,7 @@ export function designFoundation(input: FoundationDesignInput): FoundationDesign
         D,
         d,
         cover,
-        embedment: shallowInput.embedmentDepth || 1500
+        embedment: input.category === 'shallow' ? ((input as ShallowDesignInput).embedmentDepth || 1500) : 2000
       }
     },
     reinforcement: {
