@@ -5,6 +5,12 @@ import { useState, useMemo } from 'react';
 // 6 Major Structural Design Codes Metadata
 export type DesignCode = 'ACI318' | 'EC2' | 'IS456' | 'BS8110' | 'AS3600' | 'CSA_A23';
 
+// Foundation Hierarchy Types
+export type FoundationCategory = 'shallow' | 'deep';
+export type ShallowFoundationType = 'isolated' | 'strip' | 'raft' | 'combined';
+export type CombinedFoundationType = 'rectangular' | 'trapezoidal' | 'strap';
+export type DeepFoundationType = 'pile_cap' | 'bored_pile' | 'driven_pile' | 'micropile';
+
 interface CodeConfig {
   id: DesignCode;
   label: string;
@@ -79,18 +85,36 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
   },
 };
 
-// Soil Bearing Presets
-const SOIL_PRESETS = [
-  { label: 'Soft Clay', q: 100 },
-  { label: 'Stiff Clay', q: 150 },
-  { label: 'Med. Sand', q: 200 },
-  { label: 'Dense Gravel', q: 300 },
-  { label: 'Hard Rock', q: 500 },
+export interface SoilPreset {
+  id: string;
+  label: string;
+  q: number;
+  isCustom?: boolean;
+}
+
+const DEFAULT_SOIL_PRESETS: SoilPreset[] = [
+  { id: '1', label: 'Soft Clay', q: 100 },
+  { id: '2', label: 'Stiff Clay', q: 150 },
+  { id: '3', label: 'Med. Sand', q: 200 },
+  { id: '4', label: 'Dense Gravel', q: 300 },
+  { id: '5', label: 'Hard Rock', q: 500 },
 ];
 
 export default function FoundationDesignTool() {
   // Selected Design Standard
   const [activeCode, setActiveCode] = useState<DesignCode>('ACI318');
+
+  // Foundation Hierarchy States
+  const [foundationCategory, setFoundationCategory] = useState<FoundationCategory>('shallow');
+  const [shallowType, setShallowType] = useState<ShallowFoundationType>('isolated');
+  const [combinedType, setCombinedType] = useState<CombinedFoundationType>('rectangular');
+  const [deepType, setDeepType] = useState<DeepFoundationType>('pile_cap');
+
+  // Dynamic Soil Presets
+  const [soilPresets, setSoilPresets] = useState<SoilPreset[]>(DEFAULT_SOIL_PRESETS);
+  const [showAddSoilModal, setShowAddSoilModal] = useState<boolean>(false);
+  const [newSoilName, setNewSoilName] = useState<string>('');
+  const [newSoilCapacity, setNewSoilCapacity] = useState<number>(250);
 
   // Service & Applied Loads
   const [deadLoad, setDeadLoad] = useState<number>(650); // kN
@@ -114,11 +138,33 @@ export default function FoundationDesignTool() {
 
   const codeSpec = DESIGN_CODES[activeCode];
 
-  // Helper to cycle through soil bearing presets when clicking Step 1
+  // Handler to add custom soil profile
+  const handleAddCustomSoil = () => {
+    if (!newSoilName.trim() || newSoilCapacity <= 0) return;
+    const customPreset: SoilPreset = {
+      id: Date.now().toString(),
+      label: newSoilName.trim(),
+      q: newSoilCapacity,
+      isCustom: true,
+    };
+    setSoilPresets((prev) => [...prev, customPreset]);
+    setQAllowable(newSoilCapacity);
+    setNewSoilName('');
+    setNewSoilCapacity(250);
+    setShowAddSoilModal(false);
+  };
+
+  // Handler to delete custom soil profile
+  const handleDeleteCustomSoil = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSoilPresets((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  // Cycle through presets on Step 1 click
   const handleCycleSoilBearing = () => {
-    const currentIndex = SOIL_PRESETS.findIndex((p) => p.q === qAllowable);
-    const nextIndex = (currentIndex + 1) % SOIL_PRESETS.length;
-    setQAllowable(SOIL_PRESETS[nextIndex].q);
+    const currentIndex = soilPresets.findIndex((p) => p.q === qAllowable);
+    const nextIndex = (currentIndex + 1) % soilPresets.length;
+    setQAllowable(soilPresets[nextIndex].q);
   };
 
   // Structural Calculation Engine
@@ -209,13 +255,43 @@ export default function FoundationDesignTool() {
     qAllowable, fc, fy, concreteCover, colX, colY, footingL, footingB, footingH, barDiameter
   ]);
 
+  // Label Formatter for Current Selection
+  const activeFoundationLabel = useMemo(() => {
+    if (foundationCategory === 'deep') {
+      const deepLabels: Record<DeepFoundationType, string> = {
+        pile_cap: 'Pile Cap Foundation',
+        bored_pile: 'Bored Cast-in-Situ Pile',
+        driven_pile: 'Precast Driven Pile',
+        micropile: 'Micropile / Anchor System',
+      };
+      return `Deep - ${deepLabels[deepType]}`;
+    }
+
+    if (shallowType === 'combined') {
+      const combinedLabels: Record<CombinedFoundationType, string> = {
+        rectangular: 'Rectangular Combined Footing',
+        trapezoidal: 'Trapezoidal Combined Footing',
+        strap: 'Strap / Cantilever Beam Footing',
+      };
+      return `Shallow - ${combinedLabels[combinedType]}`;
+    }
+
+    const shallowLabels: Record<ShallowFoundationType, string> = {
+      isolated: 'Isolated Pad Footing',
+      strip: 'Continuous Strip Footing',
+      raft: 'Mat / Raft Foundation',
+      combined: 'Combined Footing',
+    };
+    return `Shallow - ${shallowLabels[shallowType]}`;
+  }, [foundationCategory, shallowType, combinedType, deepType]);
+
   return (
     <div className="space-y-6 text-slate-200">
-      {/* Code Selector */}
+      {/* 1. Design Standard Selector */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
           <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-            Select Design Standard Code
+            1. Select Design Standard Code
           </span>
           <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded">
             {codeSpec.region} Standard
@@ -247,10 +323,143 @@ export default function FoundationDesignTool() {
         <p className="text-[11px] font-mono text-slate-400 pt-1">{codeSpec.description}</p>
       </div>
 
-      {/* Structural Workflow Pipeline */}
+      {/* 2. Hierarchical Foundation Type Selector */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
+        <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+            2. Foundation Classification & Geometry Type
+          </span>
+          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
+            {activeFoundationLabel}
+          </span>
+        </div>
+
+        {/* Primary Category Selector: Shallow vs Deep */}
+        <div className="space-y-1.5">
+          <span className="text-[10px] font-mono text-slate-400 uppercase block">Category</span>
+          <div className="grid grid-cols-2 gap-2 max-w-xs">
+            <button
+              onClick={() => setFoundationCategory('shallow')}
+              className={`py-2 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
+                foundationCategory === 'shallow'
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
+                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              Shallow Foundation
+            </button>
+            <button
+              onClick={() => setFoundationCategory('deep')}
+              className={`py-2 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
+                foundationCategory === 'deep'
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
+                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              Deep Foundation
+            </button>
+          </div>
+        </div>
+
+        {/* Shallow Subtypes */}
+        {foundationCategory === 'shallow' && (
+          <div className="space-y-3 pt-2 border-t border-slate-800/60">
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-mono text-slate-400 uppercase block">
+                Shallow Foundation Type
+              </span>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {(
+                  [
+                    { id: 'isolated', label: 'Isolated Pad' },
+                    { id: 'strip', label: 'Strip / Continuous' },
+                    { id: 'raft', label: 'Mat / Raft' },
+                    { id: 'combined', label: 'Combined Footing' },
+                  ] as { id: ShallowFoundationType; label: string }[]
+                ).map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setShallowType(item.id)}
+                    className={`py-2 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
+                      shallowType === item.id
+                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Combined Foundation Nested Subtypes */}
+            {shallowType === 'combined' && (
+              <div className="space-y-1.5 p-3 bg-slate-950 rounded-lg border border-cyan-500/30 animate-fadeIn">
+                <span className="text-[10px] font-mono text-cyan-400 uppercase font-bold block">
+                  Select Combined Foundation Subtype
+                </span>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {(
+                    [
+                      { id: 'rectangular', label: 'Rectangular Combined' },
+                      { id: 'trapezoidal', label: 'Trapezoidal Combined' },
+                      { id: 'strap', label: 'Strap / Cantilever' },
+                    ] as { id: CombinedFoundationType; label: string }[]
+                  ).map((cItem) => (
+                    <button
+                      key={cItem.id}
+                      onClick={() => setCombinedType(cItem.id)}
+                      className={`py-1.5 px-3 rounded text-xs font-mono font-bold border transition-all ${
+                        combinedType === cItem.id
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-400'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      {cItem.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Deep Subtypes */}
+        {foundationCategory === 'deep' && (
+          <div className="space-y-1.5 pt-2 border-t border-slate-800/60">
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">
+              Deep Foundation Type
+            </span>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {(
+                [
+                  { id: 'pile_cap', label: 'Pile Cap' },
+                  { id: 'bored_pile', label: 'Bored Pile' },
+                  { id: 'driven_pile', label: 'Precast Driven' },
+                  { id: 'micropile', label: 'Micropile' },
+                ] as { id: DeepFoundationType; label: string }[]
+              ).map((dItem) => (
+                <button
+                  key={dItem.id}
+                  onClick={() => setDeepType(dItem.id)}
+                  className={`py-2 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
+                    deepType === dItem.id
+                      ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                  }`}
+                >
+                  {dItem.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Structural Workflow Stepper */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
         <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block mb-3">
-          Automated Foundation Engineering Workflow Pipeline (Click Step 1 to Cycle Soil Presets)
+          Automated Foundation Engineering Workflow Pipeline ({activeFoundationLabel})
         </span>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-mono">
           <WorkflowStep
@@ -300,29 +509,72 @@ export default function FoundationDesignTool() {
             </div>
           </div>
 
-          {/* Interactive Bearing Capacity Presets */}
+          {/* Customizable Bearing Capacity Section */}
           <div className="space-y-3">
             <div className="flex justify-between items-center">
-              <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">2. Materials & Soil Capacity</span>
-              <span className="text-[10px] text-slate-400 font-mono">Select Soil Preset:</span>
+              <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">2. Materials & Customizable Soil</span>
+              <button
+                onClick={() => setShowAddSoilModal(!showAddSoilModal)}
+                className="text-[10px] font-mono text-cyan-400 hover:underline flex items-center gap-1"
+              >
+                {showAddSoilModal ? 'Cancel' : '+ Add Custom Soil'}
+              </button>
             </div>
 
-            {/* Quick Clickable Soil Bearing Toggles */}
-            <div className="grid grid-cols-3 gap-1.5">
-              {SOIL_PRESETS.map((preset) => {
+            {/* Custom Soil Preset Form */}
+            {showAddSoilModal && (
+              <div className="bg-slate-950 p-3 rounded-lg border border-cyan-500/30 space-y-2 animate-fadeIn">
+                <span className="text-[10px] font-mono text-slate-300 font-bold block">Create Custom Soil Profile</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Soil Label (e.g. Silty Sand)"
+                    value={newSoilName}
+                    onChange={(e) => setNewSoilName(e.target.value)}
+                    className="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs font-mono focus:border-cyan-500 focus:outline-none"
+                  />
+                  <input
+                    type="number"
+                    placeholder="q_allow (kPa)"
+                    value={newSoilCapacity}
+                    onChange={(e) => setNewSoilCapacity(Number(e.target.value) || 0)}
+                    className="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs font-mono focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+                <button
+                  onClick={handleAddCustomSoil}
+                  className="w-full bg-cyan-500 text-slate-950 font-bold font-mono text-xs py-1.5 rounded hover:bg-cyan-400 transition-colors"
+                >
+                  Save & Apply Preset
+                </button>
+              </div>
+            )}
+
+            {/* Customizable Preset Badges */}
+            <div className="flex flex-wrap gap-1.5">
+              {soilPresets.map((preset) => {
                 const isActive = qAllowable === preset.q;
                 return (
-                  <button
-                    key={preset.label}
+                  <div
+                    key={preset.id}
                     onClick={() => setQAllowable(preset.q)}
-                    className={`px-2 py-1.5 rounded text-[10px] font-mono font-bold transition-all border ${
+                    className={`px-2 py-1.5 rounded text-[10px] font-mono font-bold cursor-pointer transition-all border flex items-center gap-1.5 ${
                       isActive
                         ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
                         : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
                     }`}
                   >
-                    {preset.label} ({preset.q}kPa)
-                  </button>
+                    <span>{preset.label} ({preset.q} kPa)</span>
+                    {preset.isCustom && (
+                      <span
+                        onClick={(e) => handleDeleteCustomSoil(preset.id, e)}
+                        className="text-rose-400 hover:text-rose-200 ml-1 font-bold"
+                        title="Delete custom preset"
+                      >
+                        ×
+                      </span>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -336,7 +588,7 @@ export default function FoundationDesignTool() {
           </div>
 
           <div className="space-y-3">
-            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">3. Dimensions & Footing Geometry</span>
+            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">3. Geometry & Member Specs</span>
             <div className="grid grid-cols-2 gap-3">
               <InputField label="Length L (mm)" value={footingL} onChange={setFootingL} step={50} />
               <InputField label="Width B (mm)" value={footingB} onChange={setFootingB} step={50} />
@@ -352,7 +604,7 @@ export default function FoundationDesignTool() {
         <div className="lg:col-span-7 space-y-6">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
             <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2">
-              Code Verifications ({codeSpec.label})
+              Code Verifications ({codeSpec.label}) - {activeFoundationLabel}
             </h3>
 
             <div className="space-y-3">
@@ -430,7 +682,7 @@ export default function FoundationDesignTool() {
   );
 }
 
-// UI Components
+// UI Helpers
 function WorkflowStep({
   stepNum,
   title,
@@ -460,7 +712,7 @@ function WorkflowStep({
       }`}
     >
       <div className="flex items-center justify-between text-[10px] text-slate-400">
-        <span>STEP 0{stepNum} {interactive && '(Click to Toggle)'}</span>
+        <span>STEP 0{stepNum} {interactive && '(Click to Cycle)'}</span>
         {status === 'pass' && <span className="text-emerald-400 font-bold">OK</span>}
         {status === 'fail' && <span className="text-rose-400 font-bold">NG</span>}
       </div>
