@@ -2,88 +2,15 @@
 
 import React, { useState, useMemo } from 'react';
 
-// Design Codes Metadata
+// Structural Elements & Codes
+export type StructuralElement = 'beam' | 'column' | 'slab' | 'wall' | 'truss' | 'foundation' | 'frame';
 export type DesignCode = 'ACI318' | 'EC2' | 'IS456' | 'BS8110' | 'AS3600' | 'CSA_A23';
 
-// Foundation Hierarchy Types
+// Foundation Classification Hierarchy
 export type FoundationCategory = 'shallow' | 'deep';
-export type ShallowFoundationType = 'isolated' | 'strip' | 'raft' | 'combined';
-export type CombinedFoundationType = 'rectangular' | 'trapezoidal' | 'strap';
-export type DeepFoundationType = 'pile_cap' | 'bored_pile' | 'driven_pile' | 'micropile';
-
-interface CodeConfig {
-  id: DesignCode;
-  label: string;
-  region: string;
-  gammaD: number;
-  gammaL: number;
-  punchingOffsetD: number;
-  phiShear: number;
-  description: string;
-}
-
-const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
-  ACI318: {
-    id: 'ACI318',
-    label: 'ACI 318-19',
-    region: 'USA / Intl',
-    gammaD: 1.2,
-    gammaL: 1.6,
-    punchingOffsetD: 0.5,
-    phiShear: 0.75,
-    description: 'LRFD load combinations (1.2D + 1.6L) with critical punching perimeter at 0.5d.',
-  },
-  EC2: {
-    id: 'EC2',
-    label: 'Eurocode 2',
-    region: 'EU / UK',
-    gammaD: 1.35,
-    gammaL: 1.5,
-    punchingOffsetD: 2.0,
-    phiShear: 0.67,
-    description: 'EN 1992 ULS factors (1.35Gk + 1.5Qk) with rounded control perimeter at 2.0d.',
-  },
-  IS456: {
-    id: 'IS456',
-    label: 'IS 456:2000',
-    region: 'India',
-    gammaD: 1.5,
-    gammaL: 1.5,
-    punchingOffsetD: 0.5,
-    phiShear: 0.67,
-    description: 'Limit State Design (1.5DL + 1.5LL) with shear verification per Clause 31.6.',
-  },
-  BS8110: {
-    id: 'BS8110',
-    label: 'BS 8110',
-    region: 'British Std',
-    gammaD: 1.4,
-    gammaL: 1.6,
-    punchingOffsetD: 1.5,
-    phiShear: 0.8,
-    description: 'ULS factors (1.4Gk + 1.6Qk) with rectangular punching zone at 1.5d.',
-  },
-  AS3600: {
-    id: 'AS3600',
-    label: 'AS 3600:18',
-    region: 'Australia',
-    gammaD: 1.2,
-    gammaL: 1.5,
-    punchingOffsetD: 0.5,
-    phiShear: 0.7,
-    description: 'Australian Standard LRFD factors (1.2G + 1.5Q) with capacity factor phi = 0.70.',
-  },
-  CSA_A23: {
-    id: 'CSA_A23',
-    label: 'CSA A23.3',
-    region: 'Canada',
-    gammaD: 1.25,
-    gammaL: 1.5,
-    punchingOffsetD: 0.5,
-    phiShear: 0.65,
-    description: 'Canadian Standard factored loads (1.25D + 1.5L) with phi_c = 0.65 concrete factor.',
-  },
-};
+export type ShallowType = 'isolated' | 'strip' | 'raft' | 'combined';
+export type CombinedSubtype = 'rectangular' | 'trapezoidal' | 'strap';
+export type DeepType = 'pile_cap' | 'bored_pile' | 'driven_pile' | 'micropile';
 
 export interface SoilPreset {
   id: string;
@@ -100,37 +27,137 @@ const DEFAULT_SOIL_PRESETS: SoilPreset[] = [
   { id: '5', label: 'Hard Rock', q: 500 },
 ];
 
-export default function FoundationDesignTool() {
-  const [activeCode, setActiveCode] = useState<DesignCode>('ACI318');
-  const [foundationCategory, setFoundationCategory] = useState<FoundationCategory>('shallow');
-  const [shallowType, setShallowType] = useState<ShallowFoundationType>('isolated');
-  const [combinedType, setCombinedType] = useState<CombinedFoundationType>('rectangular');
-  const [deepType, setDeepType] = useState<DeepFoundationType>('pile_cap');
+interface CodeConfig {
+  id: DesignCode;
+  label: string;
+  region: string;
+  gammaD: number;
+  gammaL: number;
+  punchingOffsetD: number;
+  phiFlexure: number;
+  phiShear: number;
+  description: string;
+}
 
+const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
+  ACI318: {
+    id: 'ACI318',
+    label: 'ACI 318-19',
+    region: 'USA / Intl',
+    gammaD: 1.2,
+    gammaL: 1.6,
+    punchingOffsetD: 0.5,
+    phiFlexure: 0.90,
+    phiShear: 0.75,
+    description: 'LRFD load combinations (1.2D + 1.6L) with 0.5d critical punching perimeter.',
+  },
+  EC2: {
+    id: 'EC2',
+    label: 'Eurocode 2',
+    region: 'EU / UK',
+    gammaD: 1.35,
+    gammaL: 1.5,
+    punchingOffsetD: 2.0,
+    phiFlexure: 0.87,
+    phiShear: 0.67,
+    description: 'EN 1992 ULS factors (1.35Gk + 1.5Qk) with 2.0d rounded control perimeter.',
+  },
+  IS456: {
+    id: 'IS456',
+    label: 'IS 456:2000',
+    region: 'India',
+    gammaD: 1.5,
+    gammaL: 1.5,
+    punchingOffsetD: 0.5,
+    phiFlexure: 0.87,
+    phiShear: 0.67,
+    description: 'Limit State Design (1.5DL + 1.5LL) per Bureau of Indian Standards.',
+  },
+  BS8110: {
+    id: 'BS8110',
+    label: 'BS 8110',
+    region: 'British Std',
+    gammaD: 1.4,
+    gammaL: 1.6,
+    punchingOffsetD: 1.5,
+    phiFlexure: 0.87,
+    phiShear: 0.80,
+    description: 'ULS factors (1.4Gk + 1.6Qk) with 1.5d rectangular punching shear boundary.',
+  },
+  AS3600: {
+    id: 'AS3600',
+    label: 'AS 3600:18',
+    region: 'Australia',
+    gammaD: 1.2,
+    gammaL: 1.5,
+    punchingOffsetD: 0.5,
+    phiFlexure: 0.85,
+    phiShear: 0.70,
+    description: 'Australian Standard LRFD factors (1.2G + 1.5Q).',
+  },
+  CSA_A23: {
+    id: 'CSA_A23',
+    label: 'CSA A23.3',
+    region: 'Canada',
+    gammaD: 1.25,
+    gammaL: 1.5,
+    punchingOffsetD: 0.5,
+    phiFlexure: 0.85,
+    phiShear: 0.65,
+    description: 'Canadian Standard factored loads (1.25D + 1.5L) with phi factors.',
+  },
+};
+
+const ELEMENT_TYPES: { id: StructuralElement; label: string; icon: string }[] = [
+  { id: 'foundation', label: 'Foundation', icon: '⧈' },
+  { id: 'beam', label: 'Beam', icon: '⎯' },
+  { id: 'column', label: 'Column', icon: '❚' },
+  { id: 'slab', label: 'Slab', icon: '▭' },
+  { id: 'wall', label: 'Wall', icon: '❙' },
+  { id: 'truss', label: 'Truss', icon: '▲' },
+  { id: 'frame', label: 'Frame', icon: '⨅' },
+];
+
+export default function IntegratedStructuralSuite() {
+  const [activeElement, setActiveElement] = useState<StructuralElement>('foundation');
+  const [activeCode, setActiveCode] = useState<DesignCode>('ACI318');
+
+  // Foundation Sub-types State
+  const [fdnCategory, setFdnCategory] = useState<FoundationCategory>('shallow');
+  const [shallowType, setShallowType] = useState<ShallowType>('isolated');
+  const [combinedSubtype, setCombinedSubtype] = useState<CombinedSubtype>('rectangular');
+  const [deepType, setDeepType] = useState<DeepType>('pile_cap');
+
+  // Soil Management State
   const [soilPresets, setSoilPresets] = useState<SoilPreset[]>(DEFAULT_SOIL_PRESETS);
   const [showAddSoilModal, setShowAddSoilModal] = useState<boolean>(false);
   const [newSoilName, setNewSoilName] = useState<string>('');
   const [newSoilCapacity, setNewSoilCapacity] = useState<number>(250);
+  const [qAllowable, setQAllowable] = useState<number>(175);
 
+  // Material Properties
+  const [fc, setFc] = useState<number>(30);
+  const [fy, setFy] = useState<number>(500);
+  const [cover, setCover] = useState<number>(50);
+  const [barDiameter, setBarDiameter] = useState<number>(16);
+
+  // Loading Inputs
   const [deadLoad, setDeadLoad] = useState<number>(650);
   const [liveLoad, setLiveLoad] = useState<number>(350);
   const [momentX, setMomentX] = useState<number>(40);
   const [momentY, setMomentY] = useState<number>(20);
+  const [axialForce, setAxialForce] = useState<number>(850);
 
-  const [qAllowable, setQAllowable] = useState<number>(175);
-  const [fc, setFc] = useState<number>(30);
-  const [fy, setFy] = useState<number>(500);
-  const [concreteCover, setConcreteCover] = useState<number>(50);
-
-  const [colX, setColX] = useState<number>(400);
-  const [colY, setColY] = useState<number>(400);
-  const [footingL, setFootingL] = useState<number>(2300);
-  const [footingB, setFootingB] = useState<number>(2300);
-  const [footingH, setFootingH] = useState<number>(500);
-  const [barDiameter, setBarDiameter] = useState<number>(16);
+  // Dimensional Geometry
+  const [dimL, setDimL] = useState<number>(2300); // Length or Span (mm)
+  const [dimB, setDimB] = useState<number>(2300); // Width (mm)
+  const [dimH, setDimH] = useState<number>(500);  // Depth or Thickness (mm)
+  const [colX, setColX] = useState<number>(400);  // Column X (mm)
+  const [colY, setColY] = useState<number>(400);  // Column Y (mm)
 
   const codeSpec = DESIGN_CODES[activeCode];
 
+  // Custom Soil Handlers
   const handleAddCustomSoil = () => {
     if (!newSoilName.trim() || newSoilCapacity <= 0) return;
     const customPreset: SoilPreset = {
@@ -151,146 +178,332 @@ export default function FoundationDesignTool() {
     setSoilPresets((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const handleCycleSoilBearing = () => {
-    const currentIndex = soilPresets.findIndex((p) => p.q === qAllowable);
-    const nextIndex = (currentIndex + 1) % soilPresets.length;
-    setQAllowable(soilPresets[nextIndex].q);
-  };
-
-  const results = useMemo(() => {
-    const pService = deadLoad + liveLoad;
-    const lengthM = footingL / 1000;
-    const widthM = footingB / 1000;
-    const depthM = footingH / 1000;
-    const area = lengthM * widthM;
-
-    const grossWeight = area * depthM * 24;
-    const pServiceTotal = pService + grossWeight;
-
-    const zX = (widthM * Math.pow(lengthM, 2)) / 6;
-    const zY = (lengthM * Math.pow(widthM, 2)) / 6;
-    const qDirect = pServiceTotal / area;
-    const qEccX = momentX / zX;
-    const qEccY = momentY / zY;
-
-    const qMax = qDirect + qEccX + qEccY;
-    const qMin = Math.max(0, qDirect - qEccX - qEccY);
-    const soilDcr = qMax / (qAllowable || 1);
-
-    const pFactored = codeSpec.gammaD * deadLoad + codeSpec.gammaL * liveLoad;
-    const qUltimate = pFactored / area;
-
-    const d = footingH - concreteCover - barDiameter;
-    const dM = d / 1000;
-
-    const cantileverX = (footingL - colX) / 2 / 1000;
-    const shearDist1Way = cantileverX - dM;
-    const v1Way = Math.max(0, qUltimate * (widthM * shearDist1Way));
-    const vc1Way = (codeSpec.phiShear * 0.17 * Math.sqrt(fc) * footingB * d) / 1000;
-    const dcr1Way = v1Way / (vc1Way || 1);
-
-    // Standard-Specific Punching Perimeter (b0) Logic
-    const a = codeSpec.punchingOffsetD;
-    let b0 = 0;
-    let punchingArea = 0;
-
-    if (activeCode === 'EC2') {
-      // Eurocode 2 uses rounded corners at 2.0d
-      b0 = 2 * colX + 2 * colY + 2 * Math.PI * (a * d);
-      punchingArea = (colX / 1000) * (colY / 1000) + (2 * colX * a * dM) / 1000 + (2 * colY * a * dM) / 1000 + Math.PI * Math.pow(a * dM, 2);
-    } else {
-      // ACI, IS, BS, AS, CSA use rectangular perimeters
-      b0 = 2 * (colX + 2 * a * d) + 2 * (colY + 2 * a * d);
-      punchingArea = (colX / 1000 + 2 * a * dM) * (colY / 1000 + 2 * a * dM);
-    }
-
-    const vPunch = qUltimate * Math.max(0, area - punchingArea);
-    const vcPunch = (codeSpec.phiShear * 0.33 * Math.sqrt(fc) * b0 * d) / 1000;
-    const dcrPunch = vPunch / (vcPunch || 1);
-
-    const mUltimateFace = (qUltimate * widthM * Math.pow(cantileverX, 2)) / 2;
-    const rn = (mUltimateFace * 1e6) / (0.9 * footingB * Math.pow(d, 2));
-    const rhoReq = ((0.85 * fc) / fy) * (1 - Math.sqrt(Math.max(0, 1 - (2 * rn) / (0.85 * fc))));
-    const rhoMin = 0.0018;
-    const rhoFinal = Math.max(rhoReq, rhoMin);
-
-    const asReq = rhoFinal * footingB * d;
-    const singleBarArea = (Math.PI / 4) * Math.pow(barDiameter, 2);
-
-    const rawSpacing = (singleBarArea * footingB) / asReq;
-    const barSpacing = Math.min(300, Math.max(100, Math.floor(rawSpacing / 25) * 25));
-    const numberOfBars = Math.ceil((footingB - 2 * concreteCover) / barSpacing) + 1;
-    const asProv = numberOfBars * singleBarArea;
-
-    const hookLength = 12 * barDiameter;
-    const barLength = footingL - 2 * concreteCover + 2 * hookLength;
-    const linearDensity = Math.pow(barDiameter, 2) / 162;
-    const totalWeightKg = numberOfBars * (barLength / 1000) * linearDensity * 2;
-
-    const isPassing = soilDcr <= 1.0 && dcr1Way <= 1.0 && dcrPunch <= 1.0;
-
-    return {
-      pFactored,
-      qMax,
-      qMin,
-      soilDcr,
-      d,
-      v1Way,
-      vc1Way,
-      dcr1Way,
-      b0,
-      vPunch,
-      vcPunch,
-      dcrPunch,
-      asReq,
-      barSpacing,
-      asProv,
-      numberOfBars,
-      barLength,
-      totalWeightKg,
-      isPassing,
-    };
-  }, [
-    activeCode, codeSpec, deadLoad, liveLoad, momentX, momentY,
-    qAllowable, fc, fy, concreteCover, colX, colY, footingL, footingB, footingH, barDiameter
-  ]);
-
-  const activeFoundationLabel = useMemo(() => {
-    if (foundationCategory === 'deep') {
-      const deepLabels: Record<DeepFoundationType, string> = {
-        pile_cap: 'Pile Cap Foundation',
-        bored_pile: 'Bored Cast-in-Situ Pile',
-        driven_pile: 'Precast Driven Pile',
-        micropile: 'Micropile / Anchor System',
+  // Active Foundation Dynamic Label
+  const fdnLabel = useMemo(() => {
+    if (fdnCategory === 'deep') {
+      const labels: Record<DeepType, string> = {
+        pile_cap: 'Pile Cap',
+        bored_pile: 'Bored Pile',
+        driven_pile: 'Driven Pile',
+        micropile: 'Micropile System',
       };
-      return `Deep - ${deepLabels[deepType]}`;
+      return `Deep - ${labels[deepType]}`;
     }
-
     if (shallowType === 'combined') {
-      const combinedLabels: Record<CombinedFoundationType, string> = {
-        rectangular: 'Rectangular Combined Footing',
-        trapezoidal: 'Trapezoidal Combined Footing',
-        strap: 'Strap / Cantilever Beam Footing',
+      const cLabels: Record<CombinedSubtype, string> = {
+        rectangular: 'Rectangular Combined',
+        trapezoidal: 'Trapezoidal Combined',
+        strap: 'Strap / Cantilever Beam',
       };
-      return `Shallow - ${combinedLabels[combinedType]}`;
+      return `Shallow - ${cLabels[combinedSubtype]}`;
     }
-
-    const shallowLabels: Record<ShallowFoundationType, string> = {
+    const sLabels: Record<ShallowType, string> = {
       isolated: 'Isolated Pad Footing',
       strip: 'Continuous Strip Footing',
       raft: 'Mat / Raft Foundation',
       combined: 'Combined Footing',
     };
-    return `Shallow - ${shallowLabels[shallowType]}`;
-  }, [foundationCategory, shallowType, combinedType, deepType]);
+    return `Shallow - ${sLabels[shallowType]}`;
+  }, [fdnCategory, shallowType, combinedSubtype, deepType]);
+
+  // Structural Calculation Engine
+  const designResults = useMemo(() => {
+    const d = dimH - cover - barDiameter;
+    const dM = d / 1000;
+    const gammaD = codeSpec.gammaD;
+    const gammaL = codeSpec.gammaL;
+
+    if (activeElement === 'foundation') {
+      const pService = deadLoad + liveLoad;
+      const lengthM = dimL / 1000;
+      const widthM = dimB / 1000;
+      const depthM = dimH / 1000;
+      const area = lengthM * widthM;
+
+      const grossWeight = area * depthM * 24;
+      const pServiceTotal = pService + grossWeight;
+
+      const zX = (widthM * Math.pow(lengthM, 2)) / 6;
+      const zY = (lengthM * Math.pow(widthM, 2)) / 6;
+      const qDirect = pServiceTotal / area;
+      const qEccX = momentX / (zX || 1);
+      const qEccY = momentY / (zY || 1);
+
+      const qMax = qDirect + qEccX + qEccY;
+      const qMin = Math.max(0, qDirect - qEccX - qEccY);
+      const soilDcr = qMax / (qAllowable || 1);
+
+      const pFactored = gammaD * deadLoad + gammaL * liveLoad;
+      const qUltimate = pFactored / (area || 1);
+
+      const cantileverX = (dimL - colX) / 2 / 1000;
+      const shearDist1Way = cantileverX - dM;
+      const v1Way = Math.max(0, qUltimate * (widthM * shearDist1Way));
+      const vc1Way = (codeSpec.phiShear * 0.17 * Math.sqrt(fc) * dimB * d) / 1000;
+      const dcr1Way = v1Way / (vc1Way || 1);
+
+      // Code-Specific Punching Perimeter (b0)
+      const a = codeSpec.punchingOffsetD;
+      let b0 = 0;
+      let punchingArea = 0;
+
+      if (activeCode === 'EC2') {
+        b0 = 2 * colX + 2 * colY + 2 * Math.PI * (a * d);
+        punchingArea = (colX / 1000) * (colY / 1000) + (2 * colX * a * dM) / 1000 + (2 * colY * a * dM) / 1000 + Math.PI * Math.pow(a * dM, 2);
+      } else {
+        b0 = 2 * (colX + 2 * a * d) + 2 * (colY + 2 * a * d);
+        punchingArea = (colX / 1000 + 2 * a * dM) * (colY / 1000 + 2 * a * dM);
+      }
+
+      const vPunch = qUltimate * Math.max(0, area - punchingArea);
+      const vcPunch = (codeSpec.phiShear * 0.33 * Math.sqrt(fc) * b0 * d) / 1000;
+      const dcrPunch = vPunch / (vcPunch || 1);
+
+      const mUltimateFace = (qUltimate * widthM * Math.pow(cantileverX, 2)) / 2;
+      const rn = (mUltimateFace * 1e6) / (0.9 * dimB * Math.pow(d, 2));
+      const rhoReq = ((0.85 * fc) / fy) * (1 - Math.sqrt(Math.max(0, 1 - (2 * rn) / (0.85 * fc))));
+      const asReq = Math.max(0.0018, rhoReq) * dimB * d;
+
+      const singleBarArea = (Math.PI / 4) * Math.pow(barDiameter, 2);
+      const rawSpacing = (singleBarArea * dimB) / (asReq || 1);
+      const barSpacing = Math.min(300, Math.max(100, Math.floor(rawSpacing / 25) * 25));
+      const numberOfBars = Math.ceil((dimB - 2 * cover) / barSpacing) + 1;
+      const asProv = numberOfBars * singleBarArea;
+
+      const hookLength = 12 * barDiameter;
+      const barLength = dimL - 2 * cover + 2 * hookLength;
+      const totalWeightKg = numberOfBars * (barLength / 1000) * (Math.pow(barDiameter, 2) / 162) * 2;
+
+      return {
+        isFoundation: true,
+        dcrPrimary: soilDcr,
+        dcrSecondary: dcr1Way,
+        dcrPunch,
+        asReq,
+        asProv,
+        numberOfBars,
+        barSpacing,
+        barLength,
+        totalWeightKg,
+        primaryTitle: '1. Soil Bearing Capacity Check',
+        secondaryTitle: '2. One-Way Beam Shear Check',
+        primaryDetails: `q_max: ${qMax.toFixed(1)} kPa | q_min: ${qMin.toFixed(1)} kPa | Allowable: ${qAllowable} kPa`,
+        secondaryDetails: `V_u: ${v1Way.toFixed(1)} kN | φV_c: ${vc1Way.toFixed(1)} kN at dist d=${d}mm`,
+        punchDetails: `V_u: ${vPunch.toFixed(1)} kN | φV_c: ${vcPunch.toFixed(1)} kN on b_0=${b0.toFixed(0)}mm (${codeSpec.punchingOffsetD}d)`,
+      };
+    }
+
+    // Generic Member Analysis Engine (Beam, Column, Slab, Wall, Truss, Frame)
+    const wFactored = gammaD * deadLoad + gammaL * liveLoad;
+    const lengthM = dimL / 1000;
+    const mFactored = (wFactored * Math.pow(lengthM, 2)) / 8;
+    const vFactored = (wFactored * lengthM) / 2;
+
+    const rn = (mFactored * 1e6) / (codeSpec.phiFlexure * dimB * Math.pow(d, 2));
+    const rho = ((0.85 * fc) / fy) * (1 - Math.sqrt(Math.max(0, 1 - (2 * rn) / (0.85 * fc))));
+    const asReq = Math.max(0.0018, rho) * dimB * d;
+
+    const mCapacity = (codeSpec.phiFlexure * asReq * fy * (d - 0.15 * d)) / 1e6;
+    const dcrPrimary = mFactored / (mCapacity || 1);
+
+    const vc = (codeSpec.phiShear * 0.17 * Math.sqrt(fc) * dimB * d) / 1000;
+    const dcrSecondary = vFactored / (vc || 1);
+
+    const singleBarArea = (Math.PI / 4) * Math.pow(barDiameter, 2);
+    const numberOfBars = Math.max(2, Math.ceil(asReq / singleBarArea));
+    const asProv = numberOfBars * singleBarArea;
+    const barSpacing = Math.floor((dimB - 2 * cover) / (numberOfBars - 1));
+    const barLength = dimL + 2 * (12 * barDiameter);
+    const totalWeightKg = numberOfBars * (barLength / 1000) * (Math.pow(barDiameter, 2) / 162);
+
+    return {
+      isFoundation: false,
+      dcrPrimary,
+      dcrSecondary,
+      dcrPunch: 0,
+      asReq,
+      asProv,
+      numberOfBars,
+      barSpacing,
+      barLength,
+      totalWeightKg,
+      primaryTitle: `1. Flexural Capacity Check (M_u vs φM_n)`,
+      secondaryTitle: `2. Shear Capacity Check (V_u vs φV_c)`,
+      primaryDetails: `M_u: ${mFactored.toFixed(1)} kNm | φM_n: ${mCapacity.toFixed(1)} kNm | Span: ${lengthM.toFixed(1)}m`,
+      secondaryDetails: `V_u: ${vFactored.toFixed(1)} kN | φV_c: ${vc.toFixed(1)} kN`,
+      punchDetails: '',
+    };
+  }, [
+    activeElement, activeCode, codeSpec, deadLoad, liveLoad, momentX, momentY,
+    qAllowable, fc, fy, cover, barDiameter, dimL, dimB, dimH, colX, colY
+  ]);
 
   return (
-    <div className="space-y-6 text-slate-200">
-      {/* 1. Design Standard Selector */}
+    <div className="space-y-6 text-slate-200 font-sans max-w-7xl mx-auto p-2">
+      {/* 1. Structural Element Selector Tabs */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
           <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-            1. Select Design Standard Code
+            1. Select Structural Member Type
+          </span>
+          <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded">
+            Active: {activeElement === 'foundation' ? fdnLabel : activeElement.toUpperCase()}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+          {ELEMENT_TYPES.map((item) => {
+            const isSelected = activeElement === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveElement(item.id)}
+                className={`py-2.5 px-2 rounded-lg text-xs font-mono font-bold transition-all flex flex-col items-center justify-center gap-1 border ${
+                  isSelected
+                    ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-md shadow-cyan-500/20'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200'
+                }`}
+              >
+                <span className="text-base">{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 2. Foundation Sub-Type Selector (Shown only when Foundation is selected) */}
+      {activeElement === 'foundation' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
+          <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              2. Foundation Classification & Sub-Type
+            </span>
+            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
+              {fdnLabel}
+            </span>
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Category</span>
+            <div className="grid grid-cols-2 gap-2 max-w-xs">
+              <button
+                onClick={() => setFdnCategory('shallow')}
+                className={`py-1.5 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
+                  fdnCategory === 'shallow'
+                    ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                Shallow Foundation
+              </button>
+              <button
+                onClick={() => setFdnCategory('deep')}
+                className={`py-1.5 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
+                  fdnCategory === 'deep'
+                    ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                Deep Foundation
+              </button>
+            </div>
+          </div>
+
+          {fdnCategory === 'shallow' && (
+            <div className="space-y-3 pt-2 border-t border-slate-800/60">
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-mono text-slate-400 uppercase block">Shallow Sub-type</span>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {(
+                    [
+                      { id: 'isolated', label: 'Isolated Pad' },
+                      { id: 'strip', label: 'Strip / Continuous' },
+                      { id: 'raft', label: 'Mat / Raft' },
+                      { id: 'combined', label: 'Combined Footing' },
+                    ] as { id: ShallowType; label: string }[]
+                  ).map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => setShallowType(item.id)}
+                      className={`py-1.5 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
+                        shallowType === item.id
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {shallowType === 'combined' && (
+                <div className="space-y-1.5 p-3 bg-slate-950 rounded-lg border border-cyan-500/30">
+                  <span className="text-[10px] font-mono text-cyan-400 uppercase font-bold block">
+                    Combined Footing Type
+                  </span>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    {(
+                      [
+                        { id: 'rectangular', label: 'Rectangular Combined' },
+                        { id: 'trapezoidal', label: 'Trapezoidal Combined' },
+                        { id: 'strap', label: 'Strap / Cantilever' },
+                      ] as { id: CombinedSubtype; label: string }[]
+                    ).map((cItem) => (
+                      <button
+                        key={cItem.id}
+                        onClick={() => setCombinedSubtype(cItem.id)}
+                        className={`py-1.5 px-3 rounded text-xs font-mono font-bold border transition-all ${
+                          combinedSubtype === cItem.id
+                            ? 'bg-cyan-500 text-slate-950 border-cyan-400'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        {cItem.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {fdnCategory === 'deep' && (
+            <div className="space-y-1.5 pt-2 border-t border-slate-800/60">
+              <span className="text-[10px] font-mono text-slate-400 uppercase block">Deep Sub-type</span>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {(
+                  [
+                    { id: 'pile_cap', label: 'Pile Cap' },
+                    { id: 'bored_pile', label: 'Bored Pile' },
+                    { id: 'driven_pile', label: 'Precast Driven' },
+                    { id: 'micropile', label: 'Micropile' },
+                  ] as { id: DeepType; label: string }[]
+                ).map((dItem) => (
+                  <button
+                    key={dItem.id}
+                    onClick={() => setDeepType(dItem.id)}
+                    className={`py-1.5 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
+                      deepType === dItem.id
+                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    {dItem.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3. Design Code Standard Selector */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+            {activeElement === 'foundation' ? '3.' : '2.'} Select Design Code Standard
           </span>
           <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded">
             {codeSpec.region} Standard
@@ -307,7 +520,7 @@ export default function FoundationDesignTool() {
                 onClick={() => setActiveCode(codeKey)}
                 className={`px-3 py-2 rounded-lg text-xs font-mono font-bold transition-all text-left flex flex-col justify-between ${
                   isSelected
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 ring-1 ring-cyan-300'
+                    ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-md'
                     : 'bg-slate-950 text-slate-300 border border-slate-800 hover:bg-slate-800'
                 }`}
               >
@@ -319,311 +532,167 @@ export default function FoundationDesignTool() {
             );
           })}
         </div>
-        <p className="text-[11px] font-mono text-slate-400 pt-1">{codeSpec.description}</p>
+        <p className="text-[11px] font-mono text-slate-400">{codeSpec.description}</p>
       </div>
 
-      {/* 2. Hierarchical Foundation Type Selector */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
-        <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-            2. Foundation Classification & Geometry Type
-          </span>
-          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
-            {activeFoundationLabel}
-          </span>
-        </div>
-
-        <div className="space-y-1.5">
-          <span className="text-[10px] font-mono text-slate-400 uppercase block">Category</span>
-          <div className="grid grid-cols-2 gap-2 max-w-xs">
-            <button
-              onClick={() => setFoundationCategory('shallow')}
-              className={`py-2 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
-                foundationCategory === 'shallow'
-                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
-                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-              }`}
-            >
-              Shallow Foundation
-            </button>
-            <button
-              onClick={() => setFoundationCategory('deep')}
-              className={`py-2 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
-                foundationCategory === 'deep'
-                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
-                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-              }`}
-            >
-              Deep Foundation
-            </button>
-          </div>
-        </div>
-
-        {foundationCategory === 'shallow' && (
-          <div className="space-y-3 pt-2 border-t border-slate-800/60">
-            <div className="space-y-1.5">
-              <span className="text-[10px] font-mono text-slate-400 uppercase block">
-                Shallow Foundation Type
-              </span>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {(
-                  [
-                    { id: 'isolated', label: 'Isolated Pad' },
-                    { id: 'strip', label: 'Strip / Continuous' },
-                    { id: 'raft', label: 'Mat / Raft' },
-                    { id: 'combined', label: 'Combined Footing' },
-                  ] as { id: ShallowFoundationType; label: string }[]
-                ).map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => setShallowType(item.id)}
-                    className={`py-2 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
-                      shallowType === item.id
-                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {shallowType === 'combined' && (
-              <div className="space-y-1.5 p-3 bg-slate-950 rounded-lg border border-cyan-500/30">
-                <span className="text-[10px] font-mono text-cyan-400 uppercase font-bold block">
-                  Select Combined Foundation Subtype
-                </span>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  {(
-                    [
-                      { id: 'rectangular', label: 'Rectangular Combined' },
-                      { id: 'trapezoidal', label: 'Trapezoidal Combined' },
-                      { id: 'strap', label: 'Strap / Cantilever' },
-                    ] as { id: CombinedFoundationType; label: string }[]
-                  ).map((cItem) => (
-                    <button
-                      key={cItem.id}
-                      onClick={() => setCombinedType(cItem.id)}
-                      className={`py-1.5 px-3 rounded text-xs font-mono font-bold border transition-all ${
-                        combinedType === cItem.id
-                          ? 'bg-cyan-500 text-slate-950 border-cyan-400'
-                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      {cItem.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {foundationCategory === 'deep' && (
-          <div className="space-y-1.5 pt-2 border-t border-slate-800/60">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block">
-              Deep Foundation Type
-            </span>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {(
-                [
-                  { id: 'pile_cap', label: 'Pile Cap' },
-                  { id: 'bored_pile', label: 'Bored Pile' },
-                  { id: 'driven_pile', label: 'Precast Driven' },
-                  { id: 'micropile', label: 'Micropile' },
-                ] as { id: DeepFoundationType; label: string }[]
-              ).map((dItem) => (
-                <button
-                  key={dItem.id}
-                  onClick={() => setDeepType(dItem.id)}
-                  className={`py-2 px-3 rounded-lg text-xs font-mono font-bold border transition-all ${
-                    deepType === dItem.id
-                      ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
-                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
-                  }`}
-                >
-                  {dItem.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 3. Structural Workflow Stepper */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-        <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block mb-3">
-          Automated Foundation Engineering Workflow Pipeline ({activeFoundationLabel})
-        </span>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-mono">
-          <WorkflowStep
-            stepNum={1}
-            title="Soil Bearing Check"
-            status={results.soilDcr <= 1.0 ? 'pass' : 'fail'}
-            metric={`q_max: ${results.qMax.toFixed(1)} / ${qAllowable} kPa`}
-            onClick={handleCycleSoilBearing}
-            interactive
-          />
-          <WorkflowStep
-            stepNum={2}
-            title="Load Factoring"
-            status="info"
-            metric={`P_u: ${results.pFactored.toFixed(0)} kN (${codeSpec.gammaD}D + ${codeSpec.gammaL}L)`}
-          />
-          <WorkflowStep
-            stepNum={3}
-            title="Punching Shear"
-            status={results.dcrPunch <= 1.0 ? 'pass' : 'fail'}
-            metric={`DCR: ${results.dcrPunch.toFixed(2)} (@ ${codeSpec.punchingOffsetD}d)`}
-          />
-          <WorkflowStep
-            stepNum={4}
-            title="Flexure & BBS"
-            status="info"
-            metric={`A_s: ${results.asReq.toFixed(0)} mm² | ${results.totalWeightKg.toFixed(0)} kg`}
-          />
-        </div>
-      </div>
-
-      {/* Inputs & Outputs */}
+      {/* 4. Inputs & Calculations Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5">
           <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2">
-            Design Inputs ({codeSpec.label})
+            {activeElement.toUpperCase()} Inputs ({codeSpec.label})
           </h3>
 
+          {/* Loads */}
           <div className="space-y-3">
-            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">1. Applied Unfactored Loads</span>
+            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">1. Applied Load Cases</span>
             <div className="grid grid-cols-2 gap-3">
-              <InputField label="Dead Load P_D (kN)" value={deadLoad} onChange={setDeadLoad} />
-              <InputField label="Live Load P_L (kN)" value={liveLoad} onChange={setLiveLoad} />
+              <InputField label="Dead Load P_D / w_D (kN)" value={deadLoad} onChange={setDeadLoad} />
+              <InputField label="Live Load P_L / w_L (kN)" value={liveLoad} onChange={setLiveLoad} />
               <InputField label="Moment M_x (kNm)" value={momentX} onChange={setMomentX} />
-              <InputField label="Moment M_y (kNm)" value={momentY} onChange={setMomentY} />
+              {activeElement === 'foundation' ? (
+                <InputField label="Moment M_y (kNm)" value={momentY} onChange={setMomentY} />
+              ) : (
+                <InputField label="Axial Force P_u (kN)" value={axialForce} onChange={setAxialForce} />
+              )}
             </div>
           </div>
 
+          {/* Geometry */}
           <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">2. Materials & Soil</span>
-              <button
-                onClick={() => setShowAddSoilModal(!showAddSoilModal)}
-                className="text-[10px] font-mono text-cyan-400 hover:underline flex items-center gap-1"
-              >
-                {showAddSoilModal ? 'Cancel' : '+ Add Custom Soil'}
-              </button>
+            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">2. Geometry Specs</span>
+            <div className="grid grid-cols-2 gap-3">
+              <InputField label="Length / Span L (mm)" value={dimL} onChange={setDimL} step={50} />
+              <InputField label="Width B (mm)" value={dimB} onChange={setDimB} step={50} />
+              <InputField label="Thickness / Depth H (mm)" value={dimH} onChange={setDimH} step={25} />
+              <InputField label="Concrete Cover (mm)" value={cover} onChange={setCover} step={5} />
+              {activeElement === 'foundation' && (
+                <>
+                  <InputField label="Column c_x (mm)" value={colX} onChange={setColX} step={25} />
+                  <InputField label="Column c_y (mm)" value={colY} onChange={setColY} step={25} />
+                </>
+              )}
             </div>
+          </div>
 
-            {showAddSoilModal && (
-              <div className="bg-slate-950 p-3 rounded-lg border border-cyan-500/30 space-y-2">
-                <span className="text-[10px] font-mono text-slate-300 font-bold block">Create Custom Soil Profile</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    placeholder="Soil Label"
-                    value={newSoilName}
-                    onChange={(e) => setNewSoilName(e.target.value)}
-                    className="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs font-mono focus:border-cyan-500 focus:outline-none"
-                  />
-                  <input
-                    type="number"
-                    placeholder="q_allow (kPa)"
-                    value={newSoilCapacity}
-                    onChange={(e) => setNewSoilCapacity(Number(e.target.value) || 0)}
-                    className="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs font-mono focus:border-cyan-500 focus:outline-none"
-                  />
-                </div>
+          {/* Soil & Material Presets (Shown for Foundations) */}
+          {activeElement === 'foundation' && (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">3. Soil Capacity Preset</span>
                 <button
-                  onClick={handleAddCustomSoil}
-                  className="w-full bg-cyan-500 text-slate-950 font-bold font-mono text-xs py-1.5 rounded hover:bg-cyan-400 transition-colors"
+                  onClick={() => setShowAddSoilModal(!showAddSoilModal)}
+                  className="text-[10px] font-mono text-cyan-400 hover:underline"
                 >
-                  Save Preset
+                  {showAddSoilModal ? 'Cancel' : '+ Custom Soil'}
                 </button>
               </div>
-            )}
 
-            <div className="flex flex-wrap gap-1.5">
-              {soilPresets.map((preset) => {
-                const isActive = qAllowable === preset.q;
-                return (
-                  <div
-                    key={preset.id}
-                    onClick={() => setQAllowable(preset.q)}
-                    className={`px-2 py-1.5 rounded text-[10px] font-mono font-bold cursor-pointer transition-all border flex items-center gap-1.5 ${
-                      isActive
-                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
-                    }`}
-                  >
-                    <span>{preset.label} ({preset.q} kPa)</span>
-                    {preset.isCustom && (
-                      <span
-                        onClick={(e) => handleDeleteCustomSoil(preset.id, e)}
-                        className="text-rose-400 hover:text-rose-200 ml-1 font-bold"
-                        title="Delete custom preset"
-                      >
-                        ×
-                      </span>
-                    )}
+              {showAddSoilModal && (
+                <div className="bg-slate-950 p-3 rounded-lg border border-cyan-500/30 space-y-2">
+                  <span className="text-[10px] font-mono text-slate-300 font-bold block">Add Custom Soil Profile</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      placeholder="Soil Name"
+                      value={newSoilName}
+                      onChange={(e) => setNewSoilName(e.target.value)}
+                      className="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs font-mono focus:border-cyan-500 focus:outline-none"
+                    />
+                    <input
+                      type="number"
+                      placeholder="q_allow (kPa)"
+                      value={newSoilCapacity}
+                      onChange={(e) => setNewSoilCapacity(Number(e.target.value) || 0)}
+                      className="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs font-mono focus:border-cyan-500 focus:outline-none"
+                    />
                   </div>
-                );
-              })}
-            </div>
+                  <button
+                    onClick={handleAddCustomSoil}
+                    className="w-full bg-cyan-500 text-slate-950 font-bold font-mono text-xs py-1 rounded hover:bg-cyan-400"
+                  >
+                    Save Soil Preset
+                  </button>
+                </div>
+              )}
 
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <InputField label="q_allowable (kPa)" value={qAllowable} onChange={setQAllowable} />
-              <InputField label="Concrete f_c' (MPa)" value={fc} onChange={setFc} />
-              <InputField label="Steel f_y (MPa)" value={fy} onChange={setFy} />
-              <InputField label="Cover (mm)" value={concreteCover} onChange={setConcreteCover} />
+              <div className="flex flex-wrap gap-1.5">
+                {soilPresets.map((preset) => {
+                  const isActive = qAllowable === preset.q;
+                  return (
+                    <div
+                      key={preset.id}
+                      onClick={() => setQAllowable(preset.q)}
+                      className={`px-2 py-1 rounded text-[10px] font-mono font-bold cursor-pointer transition-all border flex items-center gap-1 ${
+                        isActive
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <span>{preset.label} ({preset.q} kPa)</span>
+                      {preset.isCustom && (
+                        <span onClick={(e) => handleDeleteCustomSoil(preset.id, e)} className="text-rose-400 ml-1 font-bold">
+                          ×
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
+          {/* Materials */}
           <div className="space-y-3">
-            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">3. Geometry Specs</span>
+            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">
+              {activeElement === 'foundation' ? '4. Material Strengths' : '3. Material Strengths'}
+            </span>
             <div className="grid grid-cols-2 gap-3">
-              <InputField label="Length L (mm)" value={footingL} onChange={setFootingL} step={50} />
-              <InputField label="Width B (mm)" value={footingB} onChange={setFootingB} step={50} />
-              <InputField label="Thickness H (mm)" value={footingH} onChange={setFootingH} step={25} />
-              <InputField label="Bar Dia (mm)" value={barDiameter} onChange={setBarDiameter} step={2} />
-              <InputField label="Column c_x (mm)" value={colX} onChange={setColX} step={25} />
-              <InputField label="Column c_y (mm)" value={colY} onChange={setColY} step={25} />
+              <InputField label="Concrete f_c' (MPa)" value={fc} onChange={setFc} />
+              <InputField label="Steel Yield f_y (MPa)" value={fy} onChange={setFy} />
+              <InputField label="Bar Diameter (mm)" value={barDiameter} onChange={setBarDiameter} step={2} />
+              {activeElement === 'foundation' && (
+                <InputField label="q_allowable (kPa)" value={qAllowable} onChange={setQAllowable} />
+              )}
             </div>
           </div>
         </div>
 
-        {/* Verifications & BBS */}
+        {/* Dynamic Verification & BBS Outputs */}
         <div className="lg:col-span-7 space-y-6">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
             <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2">
-              Code Verifications ({codeSpec.label}) - {activeFoundationLabel}
+              Code Verifications & Structural DCR
             </h3>
 
             <div className="space-y-3">
               <DcrProgressBar
-                title="1. Soil Bearing Capacity Check"
-                dcr={results.soilDcr}
-                details={`q_max: ${results.qMax.toFixed(1)} kPa | q_min: ${results.qMin.toFixed(1)} kPa | Allowable: ${qAllowable} kPa`}
+                title={designResults.primaryTitle}
+                dcr={designResults.dcrPrimary}
+                details={designResults.primaryDetails}
               />
               <DcrProgressBar
-                title="2. One-Way Beam Shear Check"
-                dcr={results.dcr1Way}
-                details={`V_u: ${results.v1Way.toFixed(1)} kN | φV_c: ${results.vc1Way.toFixed(1)} kN at dist d=${results.d}mm`}
+                title={designResults.secondaryTitle}
+                dcr={designResults.dcrSecondary}
+                details={designResults.secondaryDetails}
               />
-              <DcrProgressBar
-                title={`3. Two-Way Punching Shear Check (${codeSpec.punchingOffsetD}d Perimeter)`}
-                dcr={results.dcrPunch}
-                details={`V_u: ${results.vPunch.toFixed(1)} kN | φV_c: ${results.vcPunch.toFixed(1)} kN on b_0=${results.b0.toFixed(0)}mm`}
-              />
+              {designResults.isFoundation && (
+                <DcrProgressBar
+                  title={`3. Two-Way Punching Shear Check (${codeSpec.punchingOffsetD}d Perimeter)`}
+                  dcr={designResults.dcrPunch}
+                  details={designResults.punchDetails}
+                />
+              )}
             </div>
           </div>
 
+          {/* Reinforcement Bar Bending Schedule (BBS) Output */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-800 pb-2">
               <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                Bar Bending Schedule (BBS) Output
+                Bar Bending Schedule ({activeElement === 'foundation' ? fdnLabel : activeElement.toUpperCase()})
               </h3>
               <span className="text-[10px] bg-cyan-500/10 text-cyan-400 font-mono px-2 py-0.5 rounded border border-cyan-500/20">
-                A_s,req: {results.asReq.toFixed(0)} mm²
+                A_s,req: {designResults.asReq.toFixed(0)} mm²
               </span>
             </div>
 
@@ -631,9 +700,9 @@ export default function FoundationDesignTool() {
               <table className="w-full text-left text-xs text-slate-300 font-mono">
                 <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
                   <tr>
-                    <th className="py-2 px-3">Dir</th>
-                    <th className="py-2 px-3">Bar Mark</th>
-                    <th className="py-2 px-3">Count</th>
+                    <th className="py-2 px-3">Direction / Mark</th>
+                    <th className="py-2 px-3">Bar Dia</th>
+                    <th className="py-2 px-3">Quantity</th>
                     <th className="py-2 px-3">Spacing</th>
                     <th className="py-2 px-3">Cut Length</th>
                     <th className="py-2 px-3">Weight</th>
@@ -641,73 +710,40 @@ export default function FoundationDesignTool() {
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   <tr>
-                    <td className="py-2 px-3 font-bold text-cyan-400">B1 (X)</td>
-                    <td className="py-2 px-3">T{barDiameter}-01</td>
-                    <td className="py-2 px-3">{results.numberOfBars}</td>
-                    <td className="py-2 px-3">@{results.barSpacing} mm</td>
-                    <td className="py-2 px-3">{results.barLength} mm</td>
-                    <td className="py-2 px-3">{(results.totalWeightKg / 2).toFixed(1)} kg</td>
+                    <td className="py-2 px-3 font-bold text-cyan-400">
+                      {designResults.isFoundation ? 'B1 (X-Dir Main)' : 'Main Top/Bot'}
+                    </td>
+                    <td className="py-2 px-3">T{barDiameter}</td>
+                    <td className="py-2 px-3">{designResults.numberOfBars}</td>
+                    <td className="py-2 px-3">@{designResults.barSpacing} mm</td>
+                    <td className="py-2 px-3">{designResults.barLength} mm</td>
+                    <td className="py-2 px-3">
+                      {(designResults.isFoundation ? designResults.totalWeightKg / 2 : designResults.totalWeightKg).toFixed(1)} kg
+                    </td>
                   </tr>
-                  <tr>
-                    <td className="py-2 px-3 font-bold text-cyan-400">B2 (Y)</td>
-                    <td className="py-2 px-3">T{barDiameter}-02</td>
-                    <td className="py-2 px-3">{results.numberOfBars}</td>
-                    <td className="py-2 px-3">@{results.barSpacing} mm</td>
-                    <td className="py-2 px-3">{results.barLength} mm</td>
-                    <td className="py-2 px-3">{(results.totalWeightKg / 2).toFixed(1)} kg</td>
-                  </tr>
+                  {designResults.isFoundation && (
+                    <tr>
+                      <td className="py-2 px-3 font-bold text-cyan-400">B2 (Y-Dir Main)</td>
+                      <td className="py-2 px-3">T{barDiameter}</td>
+                      <td className="py-2 px-3">{designResults.numberOfBars}</td>
+                      <td className="py-2 px-3">@{designResults.barSpacing} mm</td>
+                      <td className="py-2 px-3">{designResults.barLength} mm</td>
+                      <td className="py-2 px-3">{(designResults.totalWeightKg / 2).toFixed(1)} kg</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
 
             <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 flex justify-between items-center text-xs">
-              <span className="text-slate-400">Reinforcement Provided (A_s,prov):</span>
-              <span className="font-mono text-emerald-400 font-bold">
-                {results.asProv.toFixed(0)} mm² ({((results.asProv / (results.asReq || 1)) * 100).toFixed(0)}% capacity)
+              <span className="text-slate-400">Reinforcement Summary:</span>
+              <span className={`font-mono font-bold ${designResults.asProv >= designResults.asReq ? 'text-emerald-400' : 'text-rose-400'}`}>
+                A_s,prov: {designResults.asProv.toFixed(0)} mm² ({designResults.asProv >= designResults.asReq ? 'Pass' : 'Fail'})
               </span>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function WorkflowStep({
-  stepNum,
-  title,
-  status,
-  metric,
-  onClick,
-  interactive = false,
-}: {
-  stepNum: number;
-  title: string;
-  status: 'pass' | 'fail' | 'info';
-  metric: string;
-  onClick?: () => void;
-  interactive?: boolean;
-}) {
-  const statusColors = {
-    pass: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400',
-    fail: 'bg-rose-500/10 border-rose-500/30 text-rose-400',
-    info: 'bg-slate-950 border-slate-800 text-cyan-400',
-  };
-
-  return (
-    <div
-      onClick={onClick}
-      className={`p-3 rounded-lg border ${statusColors[status]} space-y-1 transition-all ${
-        interactive ? 'cursor-pointer hover:border-cyan-400 hover:bg-slate-900/80 active:scale-95' : ''
-      }`}
-    >
-      <div className="flex items-center justify-between text-[10px] text-slate-400">
-        <span>STEP 0{stepNum}</span>
-        {status === 'pass' && <span className="text-emerald-400 font-bold">OK</span>}
-        {status === 'fail' && <span className="text-rose-400 font-bold">NG</span>}
-      </div>
-      <div className="font-bold text-slate-200">{title}</div>
-      <div className="text-[10px] font-mono text-slate-400">{metric}</div>
     </div>
   );
 }
