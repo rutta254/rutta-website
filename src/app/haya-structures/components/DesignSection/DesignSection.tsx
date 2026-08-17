@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 
-// 6 Major Structural Design Codes Metadata
+// Design Codes Metadata
 export type DesignCode = 'ACI318' | 'EC2' | 'IS456' | 'BS8110' | 'AS3600' | 'CSA_A23';
 
 // Foundation Hierarchy Types
@@ -41,7 +41,7 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
     gammaL: 1.5,
     punchingOffsetD: 2.0,
     phiShear: 0.67,
-    description: 'EN 1992 ultimate limit state (1.35Gk + 1.5Qk) with punching control perimeter at 2.0d.',
+    description: 'EN 1992 ULS factors (1.35Gk + 1.5Qk) with rounded control perimeter at 2.0d.',
   },
   IS456: {
     id: 'IS456',
@@ -61,7 +61,7 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
     gammaL: 1.6,
     punchingOffsetD: 1.5,
     phiShear: 0.8,
-    description: 'Ultimate Limit State factors (1.4Gk + 1.6Qk) with punching shear zone at 1.5d.',
+    description: 'ULS factors (1.4Gk + 1.6Qk) with rectangular punching zone at 1.5d.',
   },
   AS3600: {
     id: 'AS3600',
@@ -101,44 +101,36 @@ const DEFAULT_SOIL_PRESETS: SoilPreset[] = [
 ];
 
 export default function FoundationDesignTool() {
-  // Selected Design Standard
   const [activeCode, setActiveCode] = useState<DesignCode>('ACI318');
-
-  // Foundation Hierarchy States
   const [foundationCategory, setFoundationCategory] = useState<FoundationCategory>('shallow');
   const [shallowType, setShallowType] = useState<ShallowFoundationType>('isolated');
   const [combinedType, setCombinedType] = useState<CombinedFoundationType>('rectangular');
   const [deepType, setDeepType] = useState<DeepFoundationType>('pile_cap');
 
-  // Dynamic Soil Presets
   const [soilPresets, setSoilPresets] = useState<SoilPreset[]>(DEFAULT_SOIL_PRESETS);
   const [showAddSoilModal, setShowAddSoilModal] = useState<boolean>(false);
   const [newSoilName, setNewSoilName] = useState<string>('');
   const [newSoilCapacity, setNewSoilCapacity] = useState<number>(250);
 
-  // Service & Applied Loads
-  const [deadLoad, setDeadLoad] = useState<number>(650); // kN
-  const [liveLoad, setLiveLoad] = useState<number>(350); // kN
-  const [momentX, setMomentX] = useState<number>(40); // kNm
-  const [momentY, setMomentY] = useState<number>(20); // kNm
+  const [deadLoad, setDeadLoad] = useState<number>(650);
+  const [liveLoad, setLiveLoad] = useState<number>(350);
+  const [momentX, setMomentX] = useState<number>(40);
+  const [momentY, setMomentY] = useState<number>(20);
 
-  // Geotechnical & Material Properties
-  const [qAllowable, setQAllowable] = useState<number>(175); // kPa
-  const [fc, setFc] = useState<number>(30); // MPa
-  const [fy, setFy] = useState<number>(500); // MPa
-  const [concreteCover, setConcreteCover] = useState<number>(50); // mm
+  const [qAllowable, setQAllowable] = useState<number>(175);
+  const [fc, setFc] = useState<number>(30);
+  const [fy, setFy] = useState<number>(500);
+  const [concreteCover, setConcreteCover] = useState<number>(50);
 
-  // Foundation & Column Dimensions
-  const [colX, setColX] = useState<number>(400); // mm
-  const [colY, setColY] = useState<number>(400); // mm
-  const [footingL, setFootingL] = useState<number>(2300); // mm
-  const [footingB, setFootingB] = useState<number>(2300); // mm
-  const [footingH, setFootingH] = useState<number>(500); // mm
-  const [barDiameter, setBarDiameter] = useState<number>(16); // mm
+  const [colX, setColX] = useState<number>(400);
+  const [colY, setColY] = useState<number>(400);
+  const [footingL, setFootingL] = useState<number>(2300);
+  const [footingB, setFootingB] = useState<number>(2300);
+  const [footingH, setFootingH] = useState<number>(500);
+  const [barDiameter, setBarDiameter] = useState<number>(16);
 
   const codeSpec = DESIGN_CODES[activeCode];
 
-  // Handler to add custom soil profile
   const handleAddCustomSoil = () => {
     if (!newSoilName.trim() || newSoilCapacity <= 0) return;
     const customPreset: SoilPreset = {
@@ -154,20 +146,17 @@ export default function FoundationDesignTool() {
     setShowAddSoilModal(false);
   };
 
-  // Handler to delete custom soil profile
   const handleDeleteCustomSoil = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setSoilPresets((prev) => prev.filter((p) => p.id !== id));
   };
 
-  // Cycle through presets on Step 1 click
   const handleCycleSoilBearing = () => {
     const currentIndex = soilPresets.findIndex((p) => p.q === qAllowable);
     const nextIndex = (currentIndex + 1) % soilPresets.length;
     setQAllowable(soilPresets[nextIndex].q);
   };
 
-  // Structural Calculation Engine
   const results = useMemo(() => {
     const pService = deadLoad + liveLoad;
     const lengthM = footingL / 1000;
@@ -200,10 +189,21 @@ export default function FoundationDesignTool() {
     const vc1Way = (codeSpec.phiShear * 0.17 * Math.sqrt(fc) * footingB * d) / 1000;
     const dcr1Way = v1Way / (vc1Way || 1);
 
-    const offset = codeSpec.punchingOffsetD * d;
-    const offsetM = offset / 1000;
-    const b0 = 2 * (colX + 2 * offset) + 2 * (colY + 2 * offset);
-    const punchingArea = (colX / 1000 + 2 * offsetM) * (colY / 1000 + 2 * offsetM);
+    // Standard-Specific Punching Perimeter (b0) Logic
+    const a = codeSpec.punchingOffsetD;
+    let b0 = 0;
+    let punchingArea = 0;
+
+    if (activeCode === 'EC2') {
+      // Eurocode 2 uses rounded corners at 2.0d
+      b0 = 2 * colX + 2 * colY + 2 * Math.PI * (a * d);
+      punchingArea = (colX / 1000) * (colY / 1000) + (2 * colX * a * dM) / 1000 + (2 * colY * a * dM) / 1000 + Math.PI * Math.pow(a * dM, 2);
+    } else {
+      // ACI, IS, BS, AS, CSA use rectangular perimeters
+      b0 = 2 * (colX + 2 * a * d) + 2 * (colY + 2 * a * d);
+      punchingArea = (colX / 1000 + 2 * a * dM) * (colY / 1000 + 2 * a * dM);
+    }
+
     const vPunch = qUltimate * Math.max(0, area - punchingArea);
     const vcPunch = (codeSpec.phiShear * 0.33 * Math.sqrt(fc) * b0 * d) / 1000;
     const dcrPunch = vPunch / (vcPunch || 1);
@@ -255,7 +255,6 @@ export default function FoundationDesignTool() {
     qAllowable, fc, fy, concreteCover, colX, colY, footingL, footingB, footingH, barDiameter
   ]);
 
-  // Label Formatter for Current Selection
   const activeFoundationLabel = useMemo(() => {
     if (foundationCategory === 'deep') {
       const deepLabels: Record<DeepFoundationType, string> = {
@@ -334,7 +333,6 @@ export default function FoundationDesignTool() {
           </span>
         </div>
 
-        {/* Primary Category Selector: Shallow vs Deep */}
         <div className="space-y-1.5">
           <span className="text-[10px] font-mono text-slate-400 uppercase block">Category</span>
           <div className="grid grid-cols-2 gap-2 max-w-xs">
@@ -361,7 +359,6 @@ export default function FoundationDesignTool() {
           </div>
         </div>
 
-        {/* Shallow Subtypes */}
         {foundationCategory === 'shallow' && (
           <div className="space-y-3 pt-2 border-t border-slate-800/60">
             <div className="space-y-1.5">
@@ -392,9 +389,8 @@ export default function FoundationDesignTool() {
               </div>
             </div>
 
-            {/* Combined Foundation Nested Subtypes */}
             {shallowType === 'combined' && (
-              <div className="space-y-1.5 p-3 bg-slate-950 rounded-lg border border-cyan-500/30 animate-fadeIn">
+              <div className="space-y-1.5 p-3 bg-slate-950 rounded-lg border border-cyan-500/30">
                 <span className="text-[10px] font-mono text-cyan-400 uppercase font-bold block">
                   Select Combined Foundation Subtype
                 </span>
@@ -424,7 +420,6 @@ export default function FoundationDesignTool() {
           </div>
         )}
 
-        {/* Deep Subtypes */}
         {foundationCategory === 'deep' && (
           <div className="space-y-1.5 pt-2 border-t border-slate-800/60">
             <span className="text-[10px] font-mono text-slate-400 uppercase block">
@@ -493,7 +488,6 @@ export default function FoundationDesignTool() {
 
       {/* Inputs & Outputs */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Input Parameters */}
         <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5">
           <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2">
             Design Inputs ({codeSpec.label})
@@ -509,10 +503,9 @@ export default function FoundationDesignTool() {
             </div>
           </div>
 
-          {/* Customizable Bearing Capacity Section */}
           <div className="space-y-3">
             <div className="flex justify-between items-center">
-              <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">2. Materials & Customizable Soil</span>
+              <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">2. Materials & Soil</span>
               <button
                 onClick={() => setShowAddSoilModal(!showAddSoilModal)}
                 className="text-[10px] font-mono text-cyan-400 hover:underline flex items-center gap-1"
@@ -521,14 +514,13 @@ export default function FoundationDesignTool() {
               </button>
             </div>
 
-            {/* Custom Soil Preset Form */}
             {showAddSoilModal && (
-              <div className="bg-slate-950 p-3 rounded-lg border border-cyan-500/30 space-y-2 animate-fadeIn">
+              <div className="bg-slate-950 p-3 rounded-lg border border-cyan-500/30 space-y-2">
                 <span className="text-[10px] font-mono text-slate-300 font-bold block">Create Custom Soil Profile</span>
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     type="text"
-                    placeholder="Soil Label (e.g. Silty Sand)"
+                    placeholder="Soil Label"
                     value={newSoilName}
                     onChange={(e) => setNewSoilName(e.target.value)}
                     className="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs font-mono focus:border-cyan-500 focus:outline-none"
@@ -545,12 +537,11 @@ export default function FoundationDesignTool() {
                   onClick={handleAddCustomSoil}
                   className="w-full bg-cyan-500 text-slate-950 font-bold font-mono text-xs py-1.5 rounded hover:bg-cyan-400 transition-colors"
                 >
-                  Save & Apply Preset
+                  Save Preset
                 </button>
               </div>
             )}
 
-            {/* Customizable Preset Badges */}
             <div className="flex flex-wrap gap-1.5">
               {soilPresets.map((preset) => {
                 const isActive = qAllowable === preset.q;
@@ -583,17 +574,17 @@ export default function FoundationDesignTool() {
               <InputField label="q_allowable (kPa)" value={qAllowable} onChange={setQAllowable} />
               <InputField label="Concrete f_c' (MPa)" value={fc} onChange={setFc} />
               <InputField label="Steel f_y (MPa)" value={fy} onChange={setFy} />
-              <InputField label="Concrete Cover (mm)" value={concreteCover} onChange={setConcreteCover} />
+              <InputField label="Cover (mm)" value={concreteCover} onChange={setConcreteCover} />
             </div>
           </div>
 
           <div className="space-y-3">
-            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">3. Geometry & Member Specs</span>
+            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">3. Geometry Specs</span>
             <div className="grid grid-cols-2 gap-3">
               <InputField label="Length L (mm)" value={footingL} onChange={setFootingL} step={50} />
               <InputField label="Width B (mm)" value={footingB} onChange={setFootingB} step={50} />
               <InputField label="Thickness H (mm)" value={footingH} onChange={setFootingH} step={25} />
-              <InputField label="Bar Diameter (mm)" value={barDiameter} onChange={setBarDiameter} step={2} />
+              <InputField label="Bar Dia (mm)" value={barDiameter} onChange={setBarDiameter} step={2} />
               <InputField label="Column c_x (mm)" value={colX} onChange={setColX} step={25} />
               <InputField label="Column c_y (mm)" value={colY} onChange={setColY} step={25} />
             </div>
@@ -621,7 +612,7 @@ export default function FoundationDesignTool() {
               <DcrProgressBar
                 title={`3. Two-Way Punching Shear Check (${codeSpec.punchingOffsetD}d Perimeter)`}
                 dcr={results.dcrPunch}
-                details={`V_u: ${results.vPunch.toFixed(1)} kN | φV_c: ${results.vcPunch.toFixed(1)} kN on b_0=${results.b0}mm`}
+                details={`V_u: ${results.vPunch.toFixed(1)} kN | φV_c: ${results.vcPunch.toFixed(1)} kN on b_0=${results.b0.toFixed(0)}mm`}
               />
             </div>
           </div>
@@ -672,7 +663,7 @@ export default function FoundationDesignTool() {
             <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 flex justify-between items-center text-xs">
               <span className="text-slate-400">Reinforcement Provided (A_s,prov):</span>
               <span className="font-mono text-emerald-400 font-bold">
-                {results.asProv.toFixed(0)} mm² ({(results.asProv / results.asReq * 100).toFixed(0)}% efficiency)
+                {results.asProv.toFixed(0)} mm² ({((results.asProv / (results.asReq || 1)) * 100).toFixed(0)}% capacity)
               </span>
             </div>
           </div>
@@ -682,7 +673,6 @@ export default function FoundationDesignTool() {
   );
 }
 
-// UI Helpers
 function WorkflowStep({
   stepNum,
   title,
@@ -712,7 +702,7 @@ function WorkflowStep({
       }`}
     >
       <div className="flex items-center justify-between text-[10px] text-slate-400">
-        <span>STEP 0{stepNum} {interactive && '(Click to Cycle)'}</span>
+        <span>STEP 0{stepNum}</span>
         {status === 'pass' && <span className="text-emerald-400 font-bold">OK</span>}
         {status === 'fail' && <span className="text-rose-400 font-bold">NG</span>}
       </div>
@@ -756,7 +746,7 @@ function DcrProgressBar({
   dcr: number;
   details: string;
 }) {
-  const percent = Math.min(100, Math.round(dcr * 100));
+  const percent = Math.min(100, Math.max(0, Math.round(dcr * 100)));
   const isOver = dcr > 1.0;
 
   return (
