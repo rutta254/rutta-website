@@ -39,7 +39,7 @@ interface VisualizerProps {
 export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps) {
   const [activeTab, setActiveTab] = useState<'2d' | '3d'>('2d');
 
-  // Robust Type Detection (handles result.type, result.foundationType, result.typeId)
+  // Robust Type Detection
   const rawType = (
     result?.type ||
     result?.foundationType ||
@@ -84,8 +84,8 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
 
   // --- Dynamic SVG Scaling based on actual B x L Aspect Ratio ---
   const svgBox = useMemo(() => {
-    const maxW = 210;
-    const maxH = 140;
+    const maxW = 200;
+    const maxH = 130;
     const aspect = B / (L || 1);
 
     let w = maxW;
@@ -93,14 +93,14 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
 
     if (aspect >= 1) {
       w = maxW;
-      h = Math.max(40, Math.min(maxH, maxW / aspect));
+      h = Math.max(50, Math.min(maxH, maxW / aspect));
     } else {
       h = maxH;
-      w = Math.max(40, Math.min(maxW, maxH * aspect));
+      w = Math.max(50, Math.min(maxW, maxH * aspect));
     }
 
-    const x = 150 - w / 2;
-    const y = 105 - h / 2;
+    const x = 140 - w / 2;
+    const y = 100 - h / 2;
 
     return { x, y, w, h };
   }, [B, L]);
@@ -132,7 +132,6 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
         { x: left, y: bottom }, { x: right, y: bottom },
       ];
     }
-    // Standard 4 or 6 grid
     const coords = [
       { x: left, y: top }, { x: right, y: top },
       { x: left, y: bottom }, { x: right, y: bottom },
@@ -143,7 +142,14 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
     return coords;
   }, [isPileCap, numPiles, svgBox]);
 
-  // --- Dynamic 3D Geometry Payload Generation ---
+  // Unique X projection coords for Piles in Elevation View
+  const pileElevationXCoords = useMemo(() => {
+    if (!isPileCap || pileCoordinates.length === 0) return [70, 198];
+    const uniqueXs = Array.from(new Set(pileCoordinates.map((p) => p.x)));
+    return uniqueXs.sort((a, b) => a - b);
+  }, [isPileCap, pileCoordinates]);
+
+  // Dynamic 3D Geometry Payload Generation
   const render3DData: Geometry3DData = useMemo(() => {
     const footingWidthM = B / 1000;
     const footingDepthM = L / 1000;
@@ -203,7 +209,6 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
         position: { x: 0, y: 0, z: 0 },
       });
 
-      // Show 4 column stubs on Raft
       const xOff = footingWidthM * 0.25;
       const zOff = footingDepthM * 0.25;
       columnBoxes.push(
@@ -295,23 +300,18 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
                 </span>
               </div>
 
-              <svg viewBox="0 0 300 220" className="w-full h-56 mx-auto">
+              <svg viewBox="0 0 280 210" className="w-full h-56 mx-auto">
                 {/* 1. STRAP FOOTING PLAN */}
                 {isStrap && (
                   <g>
-                    {/* Left Pad */}
-                    <rect x="35" y="35" width="75" height="135" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="2" />
-                    {/* Right Pad */}
-                    <rect x="190" y="35" width="75" height="135" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="2" />
-                    {/* Connecting Strap Beam */}
-                    <rect x="110" y="85" width="80" height="35" fill="#0f172a" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 2" />
-                    <text x="150" y="106" fill="#f59e0b" fontSize="8" textAnchor="middle" className="font-mono">
+                    <rect x="30" y="35" width="70" height="130" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="2" />
+                    <rect x="180" y="35" width="70" height="130" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="2" />
+                    <rect x="100" y="82" width="80" height="36" fill="#0f172a" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 2" />
+                    <text x="140" y="103" fill="#f59e0b" fontSize="8" textAnchor="middle" className="font-mono">
                       Strap Beam
                     </text>
-                    {/* Left Column */}
-                    <rect x="57" y="82" width="30" height="40" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
-                    {/* Right Column */}
-                    <rect x="213" y="82" width="30" height="40" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
+                    <rect x="50" y="80" width="30" height="40" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
+                    <rect x="200" y="80" width="30" height="40" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
                   </g>
                 )}
 
@@ -319,11 +319,8 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
                 {isCombined && (
                   <g>
                     <rect x={svgBox.x} y={svgBox.y} width={svgBox.w} height={svgBox.h} fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="2" />
-                    {/* Column 1 */}
-                    <rect x={svgBox.x + svgBox.w * 0.2 - 15} y={svgBox.y + svgBox.h / 2 - 15} width="30" height="30" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
-                    {/* Column 2 */}
-                    <rect x={svgBox.x + svgBox.w * 0.8 - 15} y={svgBox.y + svgBox.h / 2 - 15} width="30" height="30" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
-                    {/* Column Spacing Line */}
+                    <rect x={svgBox.x + svgBox.w * 0.2 - 14} y={svgBox.y + svgBox.h / 2 - 14} width="28" height="28" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
+                    <rect x={svgBox.x + svgBox.w * 0.8 - 14} y={svgBox.y + svgBox.h / 2 - 14} width="28" height="28" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
                     <line
                       x1={svgBox.x + svgBox.w * 0.2}
                       y1={svgBox.y + svgBox.h / 2}
@@ -333,7 +330,7 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
                       strokeWidth="1.2"
                       strokeDasharray="3 2"
                     />
-                    <text x="150" y={svgBox.y + svgBox.h / 2 - 6} fill="#f59e0b" fontSize="8" textAnchor="middle" className="font-mono">
+                    <text x="140" y={svgBox.y + svgBox.h / 2 - 6} fill="#f59e0b" fontSize="8" textAnchor="middle" className="font-mono">
                       s = {colSpacing}mm
                     </text>
                   </g>
@@ -342,16 +339,14 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
                 {/* 3. WALL / STRIP FOOTING PLAN */}
                 {isWallStrip && (
                   <g>
-                    <rect x="25" y={svgBox.y} width="250" height={svgBox.h} fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="2" />
-                    {/* Continuous Wall Stripe */}
-                    <rect x="25" y={105 - 12} width="250" height="24" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
-                    {/* Wall hatching pattern */}
-                    <line x1="40" y1="93" x2="52" y2="117" stroke="#94a3b8" strokeWidth="1" />
-                    <line x1="80" y1="93" x2="92" y2="117" stroke="#94a3b8" strokeWidth="1" />
-                    <line x1="120" y1="93" x2="132" y2="117" stroke="#94a3b8" strokeWidth="1" />
-                    <line x1="160" y1="93" x2="172" y2="117" stroke="#94a3b8" strokeWidth="1" />
-                    <line x1="200" y1="93" x2="212" y2="117" stroke="#94a3b8" strokeWidth="1" />
-                    <line x1="240" y1="93" x2="252" y2="117" stroke="#94a3b8" strokeWidth="1" />
+                    <rect x="20" y={svgBox.y} width="240" height={svgBox.h} fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="2" />
+                    <rect x="20" y={100 - 12} width="240" height="24" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
+                    <line x1="35" y1="88" x2="47" y2="112" stroke="#94a3b8" strokeWidth="1" />
+                    <line x1="75" y1="88" x2="87" y2="112" stroke="#94a3b8" strokeWidth="1" />
+                    <line x1="115" y1="88" x2="127" y2="112" stroke="#94a3b8" strokeWidth="1" />
+                    <line x1="155" y1="88" x2="167" y2="112" stroke="#94a3b8" strokeWidth="1" />
+                    <line x1="195" y1="88" x2="207" y2="112" stroke="#94a3b8" strokeWidth="1" />
+                    <line x1="235" y1="88" x2="247" y2="112" stroke="#94a3b8" strokeWidth="1" />
                   </g>
                 )}
 
@@ -359,32 +354,28 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
                 {isPileCap && (
                   <g>
                     <rect x={svgBox.x} y={svgBox.y} width={svgBox.w} height={svgBox.h} fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="2" />
-                    {/* Pile Circles */}
                     <g fill="#0f172a" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="3 2">
                       {pileCoordinates.map((pt, idx) => (
-                        <circle key={idx} cx={pt.x} cy={pt.y} r={Math.min(16, Math.max(10, pileDiameter / 30))} />
+                        <circle key={idx} cx={pt.x} cy={pt.y} r={Math.min(14, Math.max(9, pileDiameter / 35))} />
                       ))}
                     </g>
-                    {/* Center Column */}
-                    <rect x="133" y={105 - 17} width="34" height="34" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
+                    <rect x="124" y={100 - 16} width="32" height="32" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
                   </g>
                 )}
 
                 {/* 5. RAFT / MAT FOUNDATION PLAN */}
                 {isRaft && (
                   <g>
-                    <rect x="25" y="25" width="250" height="150" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="2" />
-                    {/* Multi-column Grid */}
-                    <rect x="60" y="50" width="25" height="25" fill="#475569" stroke="#cbd5e1" strokeWidth="1" />
-                    <rect x="215" y="50" width="25" height="25" fill="#475569" stroke="#cbd5e1" strokeWidth="1" />
-                    <rect x="60" y="125" width="25" height="25" fill="#475569" stroke="#cbd5e1" strokeWidth="1" />
-                    <rect x="215" y="125" width="25" height="25" fill="#475569" stroke="#cbd5e1" strokeWidth="1" />
-                    <rect x="137.5" y="87.5" width="25" height="25" fill="#475569" stroke="#cbd5e1" strokeWidth="1" />
-                    {/* Grid Lines */}
-                    <line x1="25" y1="62.5" x2="275" y2="62.5" stroke="#334155" strokeWidth="1" strokeDasharray="4 2" />
-                    <line x1="25" y1="137.5" x2="275" y2="137.5" stroke="#334155" strokeWidth="1" strokeDasharray="4 2" />
-                    <line x1="72.5" y1="25" x2="72.5" y2="175" stroke="#334155" strokeWidth="1" strokeDasharray="4 2" />
-                    <line x1="227.5" y1="25" x2="227.5" y2="175" stroke="#334155" strokeWidth="1" strokeDasharray="4 2" />
+                    <rect x="20" y="20" width="240" height="145" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="2" />
+                    <rect x="55" y="45" width="24" height="24" fill="#475569" stroke="#cbd5e1" strokeWidth="1" />
+                    <rect x="201" y="45" width="24" height="24" fill="#475569" stroke="#cbd5e1" strokeWidth="1" />
+                    <rect x="55" y="116" width="24" height="24" fill="#475569" stroke="#cbd5e1" strokeWidth="1" />
+                    <rect x="201" y="116" width="24" height="24" fill="#475569" stroke="#cbd5e1" strokeWidth="1" />
+                    <rect x="128" y="80.5" width="24" height="24" fill="#475569" stroke="#cbd5e1" strokeWidth="1" />
+                    <line x1="20" y1="57" x2="260" y2="57" stroke="#334155" strokeWidth="1" strokeDasharray="4 2" />
+                    <line x1="20" y1="128" x2="260" y2="128" stroke="#334155" strokeWidth="1" strokeDasharray="4 2" />
+                    <line x1="67" y1="20" x2="67" y2="165" stroke="#334155" strokeWidth="1" strokeDasharray="4 2" />
+                    <line x1="213" y1="20" x2="213" y2="165" stroke="#334155" strokeWidth="1" strokeDasharray="4 2" />
                   </g>
                 )}
 
@@ -392,30 +383,30 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
                 {isIsolated && (
                   <g>
                     <rect x={svgBox.x} y={svgBox.y} width={svgBox.w} height={svgBox.h} fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="2" />
-                    <rect x="132" y={105 - 18} width="36" height="36" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
+                    <rect x="123" y={100 - 17} width="34" height="34" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
                   </g>
                 )}
 
-                {/* Dynamic Rebar Overlay Grid */}
+                {/* Rebar Overlay Grid */}
                 {!isStrap && !isRaft && (
-                  <g stroke="#10b981" strokeWidth="1" strokeDasharray="4 3" opacity="0.6">
-                    <line x1={svgBox.x + 10} y1={svgBox.y + 15} x2={svgBox.x + svgBox.w - 10} y2={svgBox.y + 15} />
-                    <line x1={svgBox.x + 10} y1={svgBox.y + svgBox.h - 15} x2={svgBox.x + svgBox.w - 10} y2={svgBox.y + svgBox.h - 15} />
-                    <line x1={svgBox.x + 15} y1={svgBox.y + 10} x2={svgBox.x + 15} y2={svgBox.y + svgBox.h - 10} />
-                    <line x1={svgBox.x + svgBox.w - 15} y1={svgBox.y + 10} x2={svgBox.x + svgBox.w - 15} y2={svgBox.y + svgBox.h - 10} />
+                  <g stroke="#10b981" strokeWidth="1" strokeDasharray="4 3" opacity="0.5">
+                    <line x1={svgBox.x + 8} y1={svgBox.y + 12} x2={svgBox.x + svgBox.w - 8} y2={svgBox.y + 12} />
+                    <line x1={svgBox.x + 8} y1={svgBox.y + svgBox.h - 12} x2={svgBox.x + svgBox.w - 8} y2={svgBox.y + svgBox.h - 12} />
+                    <line x1={svgBox.x + 12} y1={svgBox.y + 8} x2={svgBox.x + 12} y2={svgBox.y + svgBox.h - 8} />
+                    <line x1={svgBox.x + svgBox.w - 12} y1={svgBox.y + 8} x2={svgBox.x + svgBox.w - 12} y2={svgBox.y + svgBox.h - 8} />
                   </g>
                 )}
 
                 {/* Dimension Annotations */}
-                <text x="150" y="16" fill="#38bdf8" fontSize="10" textAnchor="middle" className="font-mono">
+                <text x="140" y="15" fill="#38bdf8" fontSize="10" textAnchor="middle" className="font-mono">
                   B = {B} mm
                 </text>
 
-                <text x="150" y="202" fill="#10b981" fontSize="9" textAnchor="middle" className="font-sans font-medium">
+                <text x="140" y="190" fill="#10b981" fontSize="9" textAnchor="middle" className="font-sans font-medium">
                   Btm Mesh: T{botBarDiam} @ {botBarSpacing}mm c/c
                 </text>
                 {isDoubleMesh && (
-                  <text x="150" y="215" fill="#f59e0b" fontSize="8.5" textAnchor="middle" className="font-sans">
+                  <text x="140" y="202" fill="#f59e0b" fontSize="8.5" textAnchor="middle" className="font-sans">
                     Top Mesh: T{topBarDiam} @ {topBarSpacing}mm c/c
                   </text>
                 )}
@@ -433,66 +424,60 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
                 </span>
               </div>
 
-              <svg viewBox="0 0 300 220" className="w-full h-56 mx-auto">
+              <svg viewBox="0 0 280 210" className="w-full h-56 mx-auto">
                 {/* Natural Ground Level Line */}
-                <line x1="10" y1="50" x2="290" y2="50" stroke="#64748b" strokeWidth="1.5" strokeDasharray="6 4" />
-                <text x="25" y="42" fill="#64748b" fontSize="8" className="font-mono">
-                  NGL (Ground Level)
+                <line x1="10" y1="48" x2="270" y2="48" stroke="#64748b" strokeWidth="1.5" strokeDasharray="6 4" />
+                <text x="20" y="40" fill="#64748b" fontSize="8" className="font-mono">
+                  NGL
                 </text>
 
-                {/* ELEVATION 1: PILE CAP WITH PILES */}
+                {/* ELEVATION 1: PILE CAP WITH PILES (SYNCED X) */}
                 {isPileCap && (
                   <g fill="#334155" stroke="#64748b" strokeWidth="1.5">
-                    <rect x="70" y="150" width="32" height="50" />
-                    <rect x="198" y="150" width="32" height="50" />
-                    <text x="86" y="180" fill="#94a3b8" fontSize="7" textAnchor="middle" className="font-mono">
-                      Ø{pileDiameter}
-                    </text>
-                    <text x="214" y="180" fill="#94a3b8" fontSize="7" textAnchor="middle" className="font-mono">
-                      Ø{pileDiameter}
-                    </text>
+                    {pileElevationXCoords.map((x, i) => (
+                      <g key={i}>
+                        <rect x={x - 14} y="145" width="28" height="50" />
+                        <text x={x} y="175" fill="#94a3b8" fontSize="7" textAnchor="middle" className="font-mono">
+                          Ø{pileDiameter}
+                        </text>
+                      </g>
+                    ))}
                   </g>
                 )}
 
-                {/* ELEVATION 2: STRAP FOOTING (Two separate pads connected by beam) */}
+                {/* ELEVATION 2: STRAP FOOTING */}
                 {isStrap ? (
                   <g>
-                    {/* Left Pad */}
-                    <rect x="35" y="100" width="75" height="50" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="1" />
-                    {/* Right Pad */}
-                    <rect x="190" y="100" width="75" height="50" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="1" />
-                    {/* Strap Beam */}
-                    <rect x="110" y="110" width="80" height="30" fill="#0f172a" stroke="#f59e0b" strokeWidth="1.5" />
-                    {/* Column 1 */}
-                    <rect x="55" y="25" width="35" height="75" fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
-                    {/* Column 2 */}
-                    <rect x="210" y="25" width="35" height="75" fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
+                    <rect x="30" y="95" width="70" height="50" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="1" />
+                    <rect x="180" y="95" width="70" height="50" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="1" />
+                    <rect x="100" y="105" width="80" height="30" fill="#0f172a" stroke="#f59e0b" strokeWidth="1.5" />
+                    <rect x="48" y="22" width="34" height="73" fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
+                    <rect x="198" y="22" width="34" height="73" fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
                   </g>
                 ) : isCombined ? (
                   /* ELEVATION 3: COMBINED FOOTING */
                   <g>
-                    <rect x="35" y="100" width="230" height="50" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="1" />
-                    <rect x="65" y="25" width="35" height="75" fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
-                    <rect x="200" y="25" width="35" height="75" fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
+                    <rect x="30" y="95" width="220" height="50" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="1" />
+                    <rect x="60" y="22" width="32" height="73" fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
+                    <rect x="188" y="22" width="32" height="73" fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
                   </g>
                 ) : isWallStrip ? (
                   /* ELEVATION 4: WALL / STRIP FOOTING */
                   <g>
-                    <rect x="35" y="100" width="230" height="50" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="1" />
-                    {/* Continuous Wall */}
-                    <rect x="120" y="20" width="60" height="80" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
+                    <rect x="30" y="95" width="220" height="50" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="1" />
+                    <rect x="112" y="18" width="56" height="77" fill="#475569" stroke="#cbd5e1" strokeWidth="1.5" />
                   </g>
                 ) : (
                   /* ELEVATION 5: ISOLATED / RAFT / PILE CAP MASS */
                   <g>
-                    <rect x="35" y="100" width="230" height="50" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="1" />
-                    <rect x="130" y="20" width="40" height="80" fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
+                    <rect x="30" y="95" width="220" height="50" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" rx="1" />
+                    <rect x="122" y="18" width="36" height="77" fill="#334155" stroke="#94a3b8" strokeWidth="1.5" />
                   </g>
                 )}
 
                 {/* Main Bottom Reinforcement Line with Hooks */}
                 <path
-                  d="M 45 112 L 45 142 L 255 142 L 255 112"
+                  d="M 40 107 L 40 137 L 240 137 L 240 107"
                   fill="none"
                   stroke="#10b981"
                   strokeWidth="2.5"
@@ -502,19 +487,19 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
 
                 {/* Bottom Bar Cross-Section Circles */}
                 <g fill="#059669">
-                  <circle cx="65" cy="138" r="2.5" />
-                  <circle cx="100" cy="138" r="2.5" />
-                  <circle cx="135" cy="138" r="2.5" />
-                  <circle cx="165" cy="138" r="2.5" />
-                  <circle cx="200" cy="138" r="2.5" />
-                  <circle cx="235" cy="138" r="2.5" />
+                  <circle cx="60" cy="133" r="2.5" />
+                  <circle cx="92" cy="133" r="2.5" />
+                  <circle cx="124" cy="133" r="2.5" />
+                  <circle cx="156" cy="133" r="2.5" />
+                  <circle cx="188" cy="133" r="2.5" />
+                  <circle cx="220" cy="133" r="2.5" />
                 </g>
 
                 {/* Top Rebar Mesh (if double mesh) */}
                 {isDoubleMesh && (
                   <>
                     <path
-                      d="M 45 130 L 45 108 L 255 108 L 255 130"
+                      d="M 40 125 L 40 103 L 240 103 L 240 125"
                       fill="none"
                       stroke="#f59e0b"
                       strokeWidth="2"
@@ -522,33 +507,33 @@ export function FoundationVisualizers({ result, c1, c2, cover }: VisualizerProps
                       strokeLinejoin="round"
                     />
                     <g fill="#d97706">
-                      <circle cx="65" cy="112" r="2" />
-                      <circle cx="100" cy="112" r="2" />
-                      <circle cx="135" cy="112" r="2" />
-                      <circle cx="165" cy="112" r="2" />
-                      <circle cx="200" cy="112" r="2" />
-                      <circle cx="235" cy="112" r="2" />
+                      <circle cx="60" cy="107" r="2" />
+                      <circle cx="92" cy="107" r="2" />
+                      <circle cx="124" cy="107" r="2" />
+                      <circle cx="156" cy="107" r="2" />
+                      <circle cx="188" cy="107" r="2" />
+                      <circle cx="220" cy="107" r="2" />
                     </g>
                   </>
                 )}
 
                 {/* Dimension Bar */}
-                <line x1="275" y1="100" x2="275" y2="150" stroke="#38bdf8" strokeWidth="1" />
-                <line x1="271" y1="100" x2="279" y2="100" stroke="#38bdf8" strokeWidth="1" />
-                <line x1="271" y1="150" x2="279" y2="150" stroke="#38bdf8" strokeWidth="1" />
+                <line x1="260" y1="95" x2="260" y2="145" stroke="#38bdf8" strokeWidth="1" />
+                <line x1="256" y1="95" x2="264" y2="95" stroke="#38bdf8" strokeWidth="1" />
+                <line x1="256" y1="145" x2="264" y2="145" stroke="#38bdf8" strokeWidth="1" />
                 <text
-                  x="287"
-                  y="125"
+                  x="272"
+                  y="120"
                   fill="#38bdf8"
-                  fontSize="9"
+                  fontSize="8.5"
                   textAnchor="middle"
                   className="font-mono"
-                  transform="rotate(90,287,125)"
+                  transform="rotate(90,272,120)"
                 >
-                  D = {D}mm
+                  D={D}
                 </text>
 
-                <text x="150" y="172" fill="#cbd5e1" fontSize="9" textAnchor="middle" className="font-mono">
+                <text x="140" y="165" fill="#cbd5e1" fontSize="9" textAnchor="middle" className="font-mono">
                   Depth d = {d} mm | Cover = {cover} mm
                 </text>
               </svg>

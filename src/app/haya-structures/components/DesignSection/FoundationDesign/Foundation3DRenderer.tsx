@@ -41,11 +41,11 @@ declare global {
 export interface Foundation3DRendererProps {
   data?: Geometry3DData;
   meshMode?: 'single' | 'double'; // 'single' = bottom mat, 'double' = top & bottom
-  botBarSpacing?: number;        // in mm (e.g. 150)
-  topBarSpacing?: number;        // in mm (e.g. 200)
-  botBarDiam?: number;           // in mm (e.g. 16)
-  topBarDiam?: number;           // in mm (e.g. 12)
-  cover?: number;                // in mm (e.g. 50)
+  botBarSpacing?: number;        // in mm
+  topBarSpacing?: number;        // in mm
+  botBarDiam?: number;           // in mm
+  topBarDiam?: number;           // in mm
+  cover?: number;                // in mm
   onMeshModeChange?: (mode: 'single' | 'double') => void;
 }
 
@@ -83,18 +83,15 @@ const RebarGrid3D: React.FC<{
     const spacing = spacingMm / 1000;
     const barColor = isTopMat ? '#f59e0b' : '#ef4444'; // Amber for Top, Red for Bottom
 
-    // Elevation offset based on top vs bottom mat placement
     const yOffset = isTopMat 
       ? position.y + height / 2 - cover - barRadius
       : position.y - height / 2 + cover + barRadius;
 
-    // X-direction bars (longitudinal)
     const numXBars = Math.max(1, Math.floor((depth - 2 * cover) / spacing));
     const xBarPositions = Array.from({ length: numXBars }, (_, i) => 
       position.z - (depth - 2 * cover) / 2 + i * spacing
     );
 
-    // Z-direction bars (transverse)
     const numZBars = Math.max(1, Math.floor((width - 2 * cover) / spacing));
     const zBarPositions = Array.from({ length: numZBars }, (_, i) => 
       position.x - (width - 2 * cover) / 2 + i * spacing
@@ -160,9 +157,9 @@ const Foundation3DScene: React.FC<{
     ? data.footingBoxes
     : (data?.footingBox ? [data.footingBox] : defaultGeometryData.footingBoxes!);
 
-  const columnBoxes = data?.columnBoxes && data.columnBoxes.length > 0
-    ? data.columnBoxes
-    : defaultGeometryData.columnBoxes!;
+  const columnBoxes = data?.columnBoxes || defaultGeometryData.columnBoxes!;
+  const strapBeam = data?.strapBeam;
+  const piles = data?.piles || [];
 
   return (
     <group>
@@ -172,6 +169,7 @@ const Foundation3DScene: React.FC<{
       {/* Concrete Rendering */}
       {showConcrete && (
         <>
+          {/* Footing Pads / Pile Caps */}
           {footingBoxes.map((box: FootingBox3D, idx: number) => (
             <mesh key={`footing-${idx}`} position={[box.position.x, box.position.y, box.position.z]}>
               <boxGeometry args={[box.width, box.height, box.depth]} />
@@ -184,11 +182,39 @@ const Foundation3DScene: React.FC<{
             </mesh>
           ))}
 
+          {/* Strap Connecting Beam (Strap Footings) */}
+          {strapBeam && (
+            <mesh position={[strapBeam.position.x, strapBeam.position.y, strapBeam.position.z]}>
+              <boxGeometry args={[strapBeam.width, strapBeam.height, strapBeam.depth]} />
+              <meshStandardMaterial 
+                color="#64748b" 
+                transparent 
+                opacity={concreteOpacity} 
+              />
+            </mesh>
+          )}
+
+          {/* Foundation Piles (Deep Foundations) */}
+          {piles.map((pile, idx) => (
+            <mesh 
+              key={`pile-${idx}`} 
+              position={[pile.position.x, pile.position.y, pile.position.z]}
+            >
+              <cylinderGeometry args={[pile.diameter / 2, pile.diameter / 2, pile.length, 24]} />
+              <meshStandardMaterial 
+                color="#475569" 
+                transparent 
+                opacity={concreteOpacity} 
+              />
+            </mesh>
+          ))}
+
+          {/* Columns */}
           {columnBoxes.map((col: ColumnBox3D, idx: number) => (
             <mesh key={`column-${idx}`} position={[col.position.x, col.position.y, col.position.z]}>
               <boxGeometry args={[col.width, col.height, col.depth]} />
               <meshStandardMaterial 
-                color="#64748b" 
+                color="#334155" 
                 transparent 
                 opacity={concreteOpacity}
               />
@@ -202,7 +228,6 @@ const Foundation3DScene: React.FC<{
         <group>
           {footingBoxes.map((box: FootingBox3D, idx: number) => (
             <React.Fragment key={`rebar-group-${idx}`}>
-              {/* Bottom Rebar Mat */}
               <RebarGrid3D 
                 width={box.width} 
                 height={box.height} 
@@ -214,7 +239,6 @@ const Foundation3DScene: React.FC<{
                 coverMm={cover}
               />
 
-              {/* Top Rebar Mat (Double Mesh Mode) */}
               {meshMode === 'double' && (
                 <RebarGrid3D 
                   width={box.width} 
@@ -230,7 +254,6 @@ const Foundation3DScene: React.FC<{
             </React.Fragment>
           ))}
 
-          {/* Column Dowels */}
           {columnBoxes.map((col: ColumnBox3D, colIdx: number) => (
             <group key={`column-dowels-${colIdx}`}>
               {[-0.12, 0.12].map((x: number, i: number) =>
@@ -280,7 +303,6 @@ export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({
 
   return (
     <div className="w-full bg-slate-950 rounded-xl border border-slate-800 overflow-hidden relative shadow-2xl">
-      {/* Toolbar Controls Overlay */}
       <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap justify-between items-center bg-slate-900/90 backdrop-blur-md p-2.5 rounded-lg border border-slate-800 text-xs gap-2">
         <div className="flex items-center gap-2">
           <button
@@ -335,7 +357,6 @@ export const Foundation3DRenderer: React.FC<Foundation3DRendererProps> = ({
         </div>
       </div>
 
-      {/* 3D WebGL Canvas */}
       <div className="w-full h-[480px]">
         <Canvas camera={{ position: [3.5, 3, 3.5], fov: 45 }}>
           <Foundation3DScene 
