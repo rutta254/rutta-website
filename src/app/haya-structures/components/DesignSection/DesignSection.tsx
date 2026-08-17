@@ -20,11 +20,11 @@ export interface SoilPreset {
 }
 
 const DEFAULT_SOIL_PRESETS: SoilPreset[] = [
-  { id: '1', label: 'Soft Clay', q: 100 },
-  { id: '2', label: 'Stiff Clay', q: 150 },
-  { id: '3', label: 'Med. Sand', q: 200 },
-  { id: '4', label: 'Dense Gravel', q: 300 },
-  { id: '5', label: 'Hard Rock', q: 500 },
+  { id: '1', label: 'SOFT CLAY', q: 100 },
+  { id: '2', label: 'STIFF CLAY', q: 150 },
+  { id: '3', label: 'MED SAND', q: 200 },
+  { id: '4', label: 'DENSE GRAVEL', q: 300 },
+  { id: '5', label: 'HARD ROCK', q: 500 },
 ];
 
 interface CodeConfig {
@@ -43,7 +43,7 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
   ACI318: {
     id: 'ACI318',
     label: 'ACI 318-19',
-    region: 'USA / Intl',
+    region: 'USA / INTL',
     gammaD: 1.2,
     gammaL: 1.6,
     punchingOffsetD: 0.5,
@@ -53,7 +53,7 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
   },
   EC2: {
     id: 'EC2',
-    label: 'Eurocode 2',
+    label: 'EUROCODE 2',
     region: 'EU / UK',
     gammaD: 1.35,
     gammaL: 1.5,
@@ -65,7 +65,7 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
   IS456: {
     id: 'IS456',
     label: 'IS 456:2000',
-    region: 'India',
+    region: 'INDIA',
     gammaD: 1.5,
     gammaL: 1.5,
     punchingOffsetD: 0.5,
@@ -76,7 +76,7 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
   BS8110: {
     id: 'BS8110',
     label: 'BS 8110',
-    region: 'British Std',
+    region: 'BRITISH STD',
     gammaD: 1.4,
     gammaL: 1.6,
     punchingOffsetD: 1.5,
@@ -87,7 +87,7 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
   AS3600: {
     id: 'AS3600',
     label: 'AS 3600:18',
-    region: 'Australia',
+    region: 'AUSTRALIA',
     gammaD: 1.2,
     gammaL: 1.5,
     punchingOffsetD: 0.5,
@@ -98,7 +98,7 @@ const DESIGN_CODES: Record<DesignCode, CodeConfig> = {
   CSA_A23: {
     id: 'CSA_A23',
     label: 'CSA A23.3',
-    region: 'Canada',
+    region: 'CANADA',
     gammaD: 1.25,
     gammaL: 1.5,
     punchingOffsetD: 0.5,
@@ -149,20 +149,19 @@ export default function IntegratedStructuralSuite() {
   const [axialForce, setAxialForce] = useState<number>(850);
 
   // Dimensional Geometry
-  const [dimL, setDimL] = useState<number>(2300); // Length or Span (mm)
-  const [dimB, setDimB] = useState<number>(2300); // Width (mm)
-  const [dimH, setDimH] = useState<number>(500);  // Depth or Thickness (mm)
-  const [colX, setColX] = useState<number>(400);  // Column X (mm)
-  const [colY, setColY] = useState<number>(400);  // Column Y (mm)
+  const [dimL, setDimL] = useState<number>(2300);
+  const [dimB, setDimB] = useState<number>(2300);
+  const [dimH, setDimH] = useState<number>(500);
+  const [colX, setColX] = useState<number>(400);
+  const [colY, setColY] = useState<number>(400);
 
   const codeSpec = DESIGN_CODES[activeCode];
 
-  // Custom Soil Handlers
   const handleAddCustomSoil = () => {
     if (!newSoilName.trim() || newSoilCapacity <= 0) return;
     const customPreset: SoilPreset = {
       id: Date.now().toString(),
-      label: newSoilName.trim(),
+      label: newSoilName.trim().toUpperCase(),
       q: newSoilCapacity,
       isCustom: true,
     };
@@ -178,35 +177,33 @@ export default function IntegratedStructuralSuite() {
     setSoilPresets((prev) => prev.filter((p) => p.id !== id));
   };
 
-  // Active Foundation Dynamic Label
   const fdnLabel = useMemo(() => {
     if (fdnCategory === 'deep') {
       const labels: Record<DeepType, string> = {
-        pile_cap: 'Pile Cap',
-        bored_pile: 'Bored Pile',
-        driven_pile: 'Driven Pile',
-        micropile: 'Micropile System',
+        pile_cap: 'PILE CAP',
+        bored_pile: 'BORED PILE',
+        driven_pile: 'PRECAST DRIVEN',
+        micropile: 'MICROPILE',
       };
-      return `DEEP - ${labels[deepType].toUpperCase()}`;
+      return `DEEP - ${labels[deepType]}`;
     }
     if (shallowType === 'combined') {
       const cLabels: Record<CombinedSubtype, string> = {
-        rectangular: 'Rectangular Combined',
-        trapezoidal: 'Trapezoidal Combined',
-        strap: 'Strap / Cantilever Beam',
+        rectangular: 'RECTANGULAR COMBINED',
+        trapezoidal: 'TRAPEZOIDAL COMBINED',
+        strap: 'STRAP / CANTILEVER',
       };
-      return `SHALLOW - ${cLabels[combinedSubtype].toUpperCase()}`;
+      return `SHALLOW - ${cLabels[combinedSubtype]}`;
     }
     const sLabels: Record<ShallowType, string> = {
-      isolated: 'Isolated Pad Footing',
-      strip: 'Continuous Strip Footing',
-      raft: 'Mat / Raft Foundation',
-      combined: 'Combined Footing',
+      isolated: 'ISOLATED PAD',
+      strip: 'CONTINUOUS STRIP',
+      raft: 'MAT / RAFT',
+      combined: 'COMBINED FOOTING',
     };
-    return `SHALLOW - ${sLabels[shallowType].toUpperCase()}`;
+    return `SHALLOW - ${sLabels[shallowType]}`;
   }, [fdnCategory, shallowType, combinedSubtype, deepType]);
 
-  // Structural Calculation Engine
   const designResults = useMemo(() => {
     const d = dimH - cover - barDiameter;
     const dM = d / 1000;
@@ -242,7 +239,6 @@ export default function IntegratedStructuralSuite() {
       const vc1Way = (codeSpec.phiShear * 0.17 * Math.sqrt(fc) * dimB * d) / 1000;
       const dcr1Way = v1Way / (vc1Way || 1);
 
-      // Code-Specific Punching Perimeter (b0)
       const a = codeSpec.punchingOffsetD;
       let b0 = 0;
       let punchingArea = 0;
@@ -285,15 +281,14 @@ export default function IntegratedStructuralSuite() {
         barSpacing,
         barLength,
         totalWeightKg,
-        primaryTitle: '1. Soil Bearing Capacity Check',
-        secondaryTitle: '2. One-Way Beam Shear Check',
+        primaryTitle: '1. SOIL BEARING CAPACITY CHECK',
+        secondaryTitle: '2. ONE-WAY BEAM SHEAR CHECK',
         primaryDetails: `q_max: ${qMax.toFixed(1)} kPa | q_min: ${qMin.toFixed(1)} kPa | Allowable: ${qAllowable} kPa`,
         secondaryDetails: `V_u: ${v1Way.toFixed(1)} kN | φV_c: ${vc1Way.toFixed(1)} kN at dist d=${d}mm`,
         punchDetails: `V_u: ${vPunch.toFixed(1)} kN | φV_c: ${vcPunch.toFixed(1)} kN on b_0=${b0.toFixed(0)}mm (${codeSpec.punchingOffsetD}d)`,
       };
     }
 
-    // Generic Member Analysis Engine (Beam, Column, Slab, Wall, Truss, Frame)
     const wFactored = gammaD * deadLoad + gammaL * liveLoad;
     const lengthM = dimL / 1000;
     const mFactored = (wFactored * Math.pow(lengthM, 2)) / 8;
@@ -327,8 +322,8 @@ export default function IntegratedStructuralSuite() {
       barSpacing,
       barLength,
       totalWeightKg,
-      primaryTitle: `1. Flexural Capacity Check (M_u vs φM_n)`,
-      secondaryTitle: `2. Shear Capacity Check (V_u vs φV_c)`,
+      primaryTitle: `1. FLEXURAL CAPACITY CHECK (M_u vs φM_n)`,
+      secondaryTitle: `2. SHEAR CAPACITY CHECK (V_u vs φV_c)`,
       primaryDetails: `M_u: ${mFactored.toFixed(1)} kNm | φM_n: ${mCapacity.toFixed(1)} kNm | Span: ${lengthM.toFixed(1)}m`,
       secondaryDetails: `V_u: ${vFactored.toFixed(1)} kN | φV_c: ${vc.toFixed(1)} kN`,
       punchDetails: '',
@@ -340,14 +335,14 @@ export default function IntegratedStructuralSuite() {
 
   return (
     <div className="space-y-6 text-slate-200 font-sans max-w-7xl mx-auto p-2">
-      {/* 1. Structural Element Selector Tabs */}
+      {/* Structural Element Toggles */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
           <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-            1. Select Structural Member Type
+            1. SELECT STRUCTURAL MEMBER TYPE
           </span>
           <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded">
-            Active: {activeElement === 'foundation' ? fdnLabel : activeElement.toUpperCase()}
+            ACTIVE: {activeElement === 'foundation' ? fdnLabel : activeElement.toUpperCase()}
           </span>
         </div>
 
@@ -371,12 +366,12 @@ export default function IntegratedStructuralSuite() {
         </div>
       </div>
 
-      {/* 2. Foundation Sub-Type Selector (Shown only when FOUNDATION is selected) */}
+      {/* Foundation Sub-Type Selector */}
       {activeElement === 'foundation' && (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
           <div className="flex justify-between items-center border-b border-slate-800 pb-2">
             <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-              2. Foundation Classification & Sub-Type
+              2. FOUNDATION CLASSIFICATION & SUB-TYPE
             </span>
             <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
               {fdnLabel}
@@ -384,7 +379,7 @@ export default function IntegratedStructuralSuite() {
           </div>
 
           <div className="space-y-1.5">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block">Category</span>
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">CATEGORY</span>
             <div className="grid grid-cols-2 gap-2 max-w-xs">
               <button
                 onClick={() => setFdnCategory('shallow')}
@@ -412,7 +407,7 @@ export default function IntegratedStructuralSuite() {
           {fdnCategory === 'shallow' && (
             <div className="space-y-3 pt-2 border-t border-slate-800/60">
               <div className="space-y-1.5">
-                <span className="text-[10px] font-mono text-slate-400 uppercase block">Shallow Sub-type</span>
+                <span className="text-[10px] font-mono text-slate-400 uppercase block">SHALLOW SUB-TYPE</span>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   {(
                     [
@@ -440,7 +435,7 @@ export default function IntegratedStructuralSuite() {
               {shallowType === 'combined' && (
                 <div className="space-y-1.5 p-3 bg-slate-950 rounded-lg border border-cyan-500/30">
                   <span className="text-[10px] font-mono text-cyan-400 uppercase font-bold block">
-                    Combined Footing Type
+                    COMBINED FOOTING TYPE
                   </span>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     {(
@@ -470,7 +465,7 @@ export default function IntegratedStructuralSuite() {
 
           {fdnCategory === 'deep' && (
             <div className="space-y-1.5 pt-2 border-t border-slate-800/60">
-              <span className="text-[10px] font-mono text-slate-400 uppercase block">Deep Sub-type</span>
+              <span className="text-[10px] font-mono text-slate-400 uppercase block">DEEP SUB-TYPE</span>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {(
                   [
@@ -498,14 +493,14 @@ export default function IntegratedStructuralSuite() {
         </div>
       )}
 
-      {/* 3. Design Code Standard Selector */}
+      {/* Design Code Standard Selector */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
           <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-            {activeElement === 'foundation' ? '3.' : '2.'} Select Design Code Standard
+            {activeElement === 'foundation' ? '3.' : '2.'} SELECT DESIGN CODE STANDARD
           </span>
           <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded">
-            {codeSpec.region} Standard
+            {codeSpec.region} STANDARD
           </span>
         </div>
 
@@ -534,72 +529,71 @@ export default function IntegratedStructuralSuite() {
         <p className="text-[11px] font-mono text-slate-400">{codeSpec.description}</p>
       </div>
 
-      {/* 4. Inputs & Calculations Layout */}
+      {/* Inputs & Calculation Engine Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5">
           <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2">
-            {activeElement.toUpperCase()} Inputs ({codeSpec.label})
+            {activeElement.toUpperCase()} INPUTS ({codeSpec.label})
           </h3>
 
-          {/* Loads */}
           <div className="space-y-3">
-            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">1. Applied Load Cases</span>
+            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">1. APPLIED LOAD CASES</span>
             <div className="grid grid-cols-2 gap-3">
-              <InputField label="Dead Load P_D / w_D (kN)" value={deadLoad} onChange={setDeadLoad} />
-              <InputField label="Live Load P_L / w_L (kN)" value={liveLoad} onChange={setLiveLoad} />
-              <InputField label="Moment M_x (kNm)" value={momentX} onChange={setMomentX} />
+              <InputField label="DEAD LOAD P_D / W_D (KN)" value={deadLoad} onChange={setDeadLoad} />
+              <InputField label="LIVE LOAD P_L / W_L (KN)" value={liveLoad} onChange={setLiveLoad} />
+              <InputField label="MOMENT M_X (KNM)" value={momentX} onChange={setMomentX} />
               {activeElement === 'foundation' ? (
-                <InputField label="Moment M_y (kNm)" value={momentY} onChange={setMomentY} />
+                <InputField label="MOMENT M_Y (KNM)" value={momentY} onChange={setMomentY} />
               ) : (
-                <InputField label="Axial Force P_u (kN)" value={axialForce} onChange={setAxialForce} />
+                <InputField label="AXIAL FORCE P_U (KN)" value={axialForce} onChange={setAxialForce} />
               )}
             </div>
           </div>
 
-          {/* Geometry */}
           <div className="space-y-3">
-            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">2. Geometry Specs</span>
+            <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">2. GEOMETRY SPECS</span>
             <div className="grid grid-cols-2 gap-3">
-              <InputField label="Length / Span L (mm)" value={dimL} onChange={setDimL} step={50} />
-              <InputField label="Width B (mm)" value={dimB} onChange={setDimB} step={50} />
-              <InputField label="Thickness / Depth H (mm)" value={dimH} onChange={setDimH} step={25} />
-              <InputField label="Concrete Cover (mm)" value={cover} onChange={setCover} step={5} />
+              <InputField label="LENGTH / SPAN L (MM)" value={dimL} onChange={setDimL} step={50} />
+              <InputField label="WIDTH B (MM)" value={dimB} onChange={setDimB} step={50} />
+              <InputField label="THICKNESS / DEPTH H (MM)" value={dimH} onChange={setDimH} step={25} />
+              <InputField label="CONCRETE COVER (MM)" value={cover} onChange={setCover} step={5} />
               {activeElement === 'foundation' && (
                 <>
-                  <InputField label="Column c_x (mm)" value={colX} onChange={setColX} step={25} />
-                  <InputField label="Column c_y (mm)" value={colY} onChange={setColY} step={25} />
+                  <InputField label="COLUMN C_X (MM)" value={colX} onChange={setColX} step={25} />
+                  <InputField label="COLUMN C_Y (MM)" value={colY} onChange={setColY} step={25} />
                 </>
               )}
             </div>
           </div>
 
-          {/* Soil & Material Presets (Shown for Foundations) */}
           {activeElement === 'foundation' && (
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">3. Soil Capacity Preset</span>
+                <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">3. SOIL CAPACITY PRESET</span>
                 <button
                   onClick={() => setShowAddSoilModal(!showAddSoilModal)}
-                  className="text-[10px] font-mono text-cyan-400 hover:underline"
+                  className="text-[10px] font-mono text-cyan-400 hover:underline uppercase"
                 >
-                  {showAddSoilModal ? 'Cancel' : '+ Custom Soil'}
+                  {showAddSoilModal ? 'CANCEL' : 'ADD CUSTOM SOIL'}
                 </button>
               </div>
 
               {showAddSoilModal && (
                 <div className="bg-slate-950 p-3 rounded-lg border border-cyan-500/30 space-y-2">
-                  <span className="text-[10px] font-mono text-slate-300 font-bold block">Add Custom Soil Profile</span>
+                  <span className="text-[10px] font-mono text-slate-300 font-bold block uppercase">
+                    ADD CUSTOM SOIL PROFILE
+                  </span>
                   <div className="grid grid-cols-2 gap-2">
                     <input
                       type="text"
-                      placeholder="Soil Name"
+                      placeholder="SOIL NAME"
                       value={newSoilName}
                       onChange={(e) => setNewSoilName(e.target.value)}
-                      className="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs font-mono focus:border-cyan-500 focus:outline-none"
+                      className="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs font-mono focus:border-cyan-500 focus:outline-none uppercase"
                     />
                     <input
                       type="number"
-                      placeholder="q_allow (kPa)"
+                      placeholder="Q_ALLOW (KPA)"
                       value={newSoilCapacity}
                       onChange={(e) => setNewSoilCapacity(Number(e.target.value) || 0)}
                       className="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs font-mono focus:border-cyan-500 focus:outline-none"
@@ -607,9 +601,9 @@ export default function IntegratedStructuralSuite() {
                   </div>
                   <button
                     onClick={handleAddCustomSoil}
-                    className="w-full bg-cyan-500 text-slate-950 font-bold font-mono text-xs py-1 rounded hover:bg-cyan-400"
+                    className="w-full bg-cyan-500 text-slate-950 font-bold font-mono text-xs py-1 rounded hover:bg-cyan-400 uppercase"
                   >
-                    Save Soil Preset
+                    SAVE SOIL PRESET
                   </button>
                 </div>
               )}
@@ -627,10 +621,10 @@ export default function IntegratedStructuralSuite() {
                           : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                       }`}
                     >
-                      <span>{preset.label} ({preset.q} kPa)</span>
+                      <span>{preset.label} ({preset.q} KPA)</span>
                       {preset.isCustom && (
                         <span onClick={(e) => handleDeleteCustomSoil(preset.id, e)} className="text-rose-400 ml-1 font-bold">
-                          ×
+                          REMOVE
                         </span>
                       )}
                     </div>
@@ -640,17 +634,16 @@ export default function IntegratedStructuralSuite() {
             </div>
           )}
 
-          {/* Materials */}
           <div className="space-y-3">
             <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase">
-              {activeElement === 'foundation' ? '4. Material Strengths' : '3. Material Strengths'}
+              {activeElement === 'foundation' ? '4. MATERIAL STRENGTHS' : '3. MATERIAL STRENGTHS'}
             </span>
             <div className="grid grid-cols-2 gap-3">
-              <InputField label="Concrete f_c' (MPa)" value={fc} onChange={setFc} />
-              <InputField label="Steel Yield f_y (MPa)" value={fy} onChange={setFy} />
-              <InputField label="Bar Diameter (mm)" value={barDiameter} onChange={setBarDiameter} step={2} />
+              <InputField label="CONCRETE F_C' (MPA)" value={fc} onChange={setFc} />
+              <InputField label="STEEL YIELD F_Y (MPA)" value={fy} onChange={setFy} />
+              <InputField label="BAR DIAMETER (MM)" value={barDiameter} onChange={setBarDiameter} step={2} />
               {activeElement === 'foundation' && (
-                <InputField label="q_allowable (kPa)" value={qAllowable} onChange={setQAllowable} />
+                <InputField label="Q_ALLOWABLE (KPA)" value={qAllowable} onChange={setQAllowable} />
               )}
             </div>
           </div>
@@ -660,7 +653,7 @@ export default function IntegratedStructuralSuite() {
         <div className="lg:col-span-7 space-y-6">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
             <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2">
-              Code Verifications & Structural DCR
+              CODE VERIFICATIONS & STRUCTURAL DCR
             </h3>
 
             <div className="space-y-3">
@@ -676,7 +669,7 @@ export default function IntegratedStructuralSuite() {
               />
               {designResults.isFoundation && (
                 <DcrProgressBar
-                  title={`3. Two-Way Punching Shear Check (${codeSpec.punchingOffsetD}d Perimeter)`}
+                  title={`3. TWO-WAY PUNCHING SHEAR CHECK (${codeSpec.punchingOffsetD}D PERIMETER)`}
                   dcr={designResults.dcrPunch}
                   details={designResults.punchDetails}
                 />
@@ -684,14 +677,13 @@ export default function IntegratedStructuralSuite() {
             </div>
           </div>
 
-          {/* Reinforcement Bar Bending Schedule (BBS) Output */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-800 pb-2">
               <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                Bar Bending Schedule ({activeElement === 'foundation' ? fdnLabel : activeElement.toUpperCase()})
+                BAR BENDING SCHEDULE ({activeElement === 'foundation' ? fdnLabel : activeElement.toUpperCase()})
               </h3>
               <span className="text-[10px] bg-cyan-500/10 text-cyan-400 font-mono px-2 py-0.5 rounded border border-cyan-500/20">
-                A_s,req: {designResults.asReq.toFixed(0)} mm²
+                A_S,REQ: {designResults.asReq.toFixed(0)} MM²
               </span>
             </div>
 
@@ -699,35 +691,35 @@ export default function IntegratedStructuralSuite() {
               <table className="w-full text-left text-xs text-slate-300 font-mono">
                 <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
                   <tr>
-                    <th className="py-2 px-3">Direction / Mark</th>
-                    <th className="py-2 px-3">Bar Dia</th>
-                    <th className="py-2 px-3">Quantity</th>
-                    <th className="py-2 px-3">Spacing</th>
-                    <th className="py-2 px-3">Cut Length</th>
-                    <th className="py-2 px-3">Weight</th>
+                    <th className="py-2 px-3">DIRECTION / MARK</th>
+                    <th className="py-2 px-3">BAR DIA</th>
+                    <th className="py-2 px-3">QUANTITY</th>
+                    <th className="py-2 px-3">SPACING</th>
+                    <th className="py-2 px-3">CUT LENGTH</th>
+                    <th className="py-2 px-3">WEIGHT</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   <tr>
                     <td className="py-2 px-3 font-bold text-cyan-400">
-                      {designResults.isFoundation ? 'B1 (X-Dir Main)' : 'Main Top/Bot'}
+                      {designResults.isFoundation ? 'B1 (X-DIR MAIN)' : 'MAIN TOP/BOT'}
                     </td>
                     <td className="py-2 px-3">T{barDiameter}</td>
                     <td className="py-2 px-3">{designResults.numberOfBars}</td>
-                    <td className="py-2 px-3">@{designResults.barSpacing} mm</td>
-                    <td className="py-2 px-3">{designResults.barLength} mm</td>
+                    <td className="py-2 px-3">@{designResults.barSpacing} MM</td>
+                    <td className="py-2 px-3">{designResults.barLength} MM</td>
                     <td className="py-2 px-3">
-                      {(designResults.isFoundation ? designResults.totalWeightKg / 2 : designResults.totalWeightKg).toFixed(1)} kg
+                      {(designResults.isFoundation ? designResults.totalWeightKg / 2 : designResults.totalWeightKg).toFixed(1)} KG
                     </td>
                   </tr>
                   {designResults.isFoundation && (
                     <tr>
-                      <td className="py-2 px-3 font-bold text-cyan-400">B2 (Y-Dir Main)</td>
+                      <td className="py-2 px-3 font-bold text-cyan-400">B2 (Y-DIR MAIN)</td>
                       <td className="py-2 px-3">T{barDiameter}</td>
                       <td className="py-2 px-3">{designResults.numberOfBars}</td>
-                      <td className="py-2 px-3">@{designResults.barSpacing} mm</td>
-                      <td className="py-2 px-3">{designResults.barLength} mm</td>
-                      <td className="py-2 px-3">{(designResults.totalWeightKg / 2).toFixed(1)} kg</td>
+                      <td className="py-2 px-3">@{designResults.barSpacing} MM</td>
+                      <td className="py-2 px-3">{designResults.barLength} MM</td>
+                      <td className="py-2 px-3">{(designResults.totalWeightKg / 2).toFixed(1)} KG</td>
                     </tr>
                   )}
                 </tbody>
@@ -735,9 +727,9 @@ export default function IntegratedStructuralSuite() {
             </div>
 
             <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 flex justify-between items-center text-xs">
-              <span className="text-slate-400">Reinforcement Summary:</span>
+              <span className="text-slate-400 uppercase">REINFORCEMENT SUMMARY:</span>
               <span className={`font-mono font-bold ${designResults.asProv >= designResults.asReq ? 'text-emerald-400' : 'text-rose-400'}`}>
-                A_s,prov: {designResults.asProv.toFixed(0)} mm² ({designResults.asProv >= designResults.asReq ? 'Pass' : 'Fail'})
+                A_S,PROV: {designResults.asProv.toFixed(0)} MM² ({designResults.asProv >= designResults.asReq ? 'PASS' : 'FAIL'})
               </span>
             </div>
           </div>
@@ -760,7 +752,7 @@ function InputField({
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-[10px] text-slate-400 font-mono block">{label}</label>
+      <label className="text-[10px] text-slate-400 font-mono block uppercase">{label}</label>
       <input
         type="number"
         step={step}
