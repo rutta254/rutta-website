@@ -773,7 +773,7 @@ function DcrProgressBar({
           style={{ width: `${percent}%` }}
         />
       </div>
-      <p className="text-[10px] text-slate-400 font-mono">{details}</p>
+      <div className="text-[10px] font-mono text-slate-400">{details}</div>
     </div>
   );
 }
