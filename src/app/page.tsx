@@ -29,7 +29,7 @@ export default function RooterGroupGateway() {
             Welcome to <span className="text-cyan-400">Rutta Group</span>
           </h2>
           <p className="text-base md:text-lg text-slate-400 max-w-xl mx-auto">
-            The central ecosystem connecting Meraki Ranch, Haya Structures, Haya Feeds,Cloudmore Collections, Art4u, and live global markets.
+            The central ecosystem connecting Meraki Ranch, Haya Structures, Haya Feeds,Cloudmore, Art4u and live global markets.
           </p>
         </div>
 
