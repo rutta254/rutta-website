@@ -9,13 +9,13 @@ export default function RooterGroupGateway() {
       {/* Top Header / Branding */}
       <header className="max-w-6xl mx-auto w-full flex justify-between items-center">
         <h1 className="text-xl md:text-2xl font-extrabold tracking-widest text-cyan-400">
-          ROOTER GROUP
+          RUTTA GROUP
         </h1>
         <Link 
           href="/admin/login" 
           className="text-xs md:text-sm font-semibold text-slate-300 hover:text-cyan-400 transition"
         >
-          Admin Login
+          Admin
         </Link>
       </header>
 
@@ -26,10 +26,10 @@ export default function RooterGroupGateway() {
             Unified Enterprise Portal
           </span>
           <h2 className="text-4xl md:text-6xl font-black tracking-tight text-white">
-            Welcome to <span className="text-cyan-400">Rooter Group</span>
+            Welcome to <span className="text-cyan-400">Rutta Group</span>
           </h2>
           <p className="text-base md:text-lg text-slate-400 max-w-xl mx-auto">
-            The central ecosystem connecting Haya Structures, Cloudmore Collections, Art4u, and live global markets.
+            The central ecosystem connecting Meraki Ranch, Haya Structures, Haya Feeds,Cloudmore Collections, Art4u, and live global markets.
           </p>
         </div>
 
@@ -39,7 +39,7 @@ export default function RooterGroupGateway() {
             href="/admin/login"
             className="w-full sm:w-auto px-8 py-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-base transition shadow-lg shadow-cyan-500/20 text-center"
           >
-            🔐 Admin Login
+            🔐 Login
           </Link>
           
           <Link
@@ -53,7 +53,7 @@ export default function RooterGroupGateway() {
 
       {/* Footer */}
       <footer className="max-w-6xl mx-auto w-full border-t border-slate-900 pt-6 text-center text-xs text-slate-500">
-        © {new Date().getFullYear()} Rooter Group. All rights reserved.
+        © {new Date().getFullYear()} RUTTA GROUP. All rights reserved.
       </footer>
     </div>
   );
