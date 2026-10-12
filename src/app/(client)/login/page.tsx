@@ -5,7 +5,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { signIn } from 'next-auth/react';
 import { FcGoogle } from 'react-icons/fc';
-import { FaGithub, FaXTwitter, FaFacebook, FaDiscord, FaReddit, FaLinkedIn } from 'react-icons/fa6';
+import { FaGithub, FaXTwitter, FaFacebook, FaDiscord, FaReddit, FaLinkedin } from 'react-icons/fa6';
 
 export default function ClientLoginPage() {
   const [isRegistering, setIsRegistering] = useState(false);
@@ -102,7 +102,7 @@ export default function ClientLoginPage() {
               className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
               title="Sign in with LinkedIn"
             >
-              <FaLinkedIn className="text-sm text-blue-400" /> <span className="hidden sm:inline">LinkedIn</span>
+              <FaLinkedin className="text-sm text-blue-400" /> <span className="hidden sm:inline">LinkedIn</span>
             </button>
           </div>
         </div>
