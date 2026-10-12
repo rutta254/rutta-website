@@ -3,10 +3,11 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { signIn } from 'next-auth/react';
 
 export default function ClientLoginPage() {
   const [isRegistering, setIsRegistering] = useState(false);
-  const [identifier, setIdentifier] = useState(''); // Email or Phone
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
 
@@ -14,16 +15,9 @@ export default function ClientLoginPage() {
     e.preventDefault();
     if (isRegistering) {
       alert(`Registering client: ${name} with ${identifier}`);
-      // Add your client registration logic here (e.g., Firebase, Supabase, or NextAuth)
     } else {
       alert(`Logging in client with: ${identifier}`);
-      // Add your client login logic here
     }
-  };
-
-  const handleSocialLogin = (provider: string) => {
-    alert(`Redirecting to ${provider} authentication...`);
-    // Integrate Google / Social provider callback here
   };
 
   return (
@@ -38,13 +32,20 @@ export default function ClientLoginPage() {
           </p>
         </div>
 
-        {/* Social Logins Integration Placeholder */}
+        {/* Social & Enterprise Logins */}
         <div className="space-y-3">
           <button
-            onClick={() => handleSocialLogin('Google')}
+            onClick={() => signIn('google', { callbackUrl: '/hub' })}
             className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-200 flex items-center justify-center gap-3 transition"
           >
             <span>🌐</span> Continue with Google
+          </button>
+          
+          <button
+            onClick={() => signIn('github', { callbackUrl: '/hub' })}
+            className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-200 flex items-center justify-center gap-3 transition"
+          >
+            <span>🐙</span> Continue with GitHub
           </button>
         </div>
 
@@ -108,7 +109,7 @@ export default function ClientLoginPage() {
           </button>
         </form>
 
-        {/* Toggle between Login and Register */}
+        {/* Toggle & Return */}
         <div className="text-center text-xs text-slate-400 space-y-2 pt-2">
           <p>
             {isRegistering ? 'Already have an account?' : "Don't have an account?"}{' '}
