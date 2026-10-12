@@ -4,6 +4,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { signIn } from 'next-auth/react';
+import { FcGoogle } from 'react-icons/fc';
+import { FaGithub, FaXTwitter, FaFacebook, FaDiscord, FaReddit, FaLinkedIn } from 'react-icons/fa6';
 
 export default function ClientLoginPage() {
   const [isRegistering, setIsRegistering] = useState(false);
@@ -32,21 +34,77 @@ export default function ClientLoginPage() {
           </p>
         </div>
 
-        {/* Social & Enterprise Logins */}
-        <div className="space-y-3">
+        {/* Primary Social Provider (Google) */}
+        <div>
           <button
             onClick={() => signIn('google', { callbackUrl: '/hub' })}
-            className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-200 flex items-center justify-center gap-3 transition"
+            className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-200 flex items-center justify-center gap-3 transition shadow-sm"
           >
-            <span>🌐</span> Continue with Google
+            <FcGoogle className="text-base" /> Continue with Google
           </button>
+        </div>
+
+        {/* Secondary Social Providers Grid */}
+        <div className="space-y-2">
+          <p className="text-center text-[10px] uppercase font-bold tracking-widest text-slate-500">
+            Or log in with preferred media
+          </p>
           
-          <button
-            onClick={() => signIn('github', { callbackUrl: '/hub' })}
-            className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-200 flex items-center justify-center gap-3 transition"
-          >
-            <span>🐙</span> Continue with GitHub
-          </button>
+          <div className="grid grid-cols-3 gap-2">
+            {/* GitHub */}
+            <button
+              onClick={() => signIn('github', { callbackUrl: '/hub' })}
+              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
+              title="Sign in with GitHub"
+            >
+              <FaGithub className="text-sm" /> <span className="hidden sm:inline">GitHub</span>
+            </button>
+
+            {/* X (Twitter) */}
+            <button
+              onClick={() => signIn('twitter', { callbackUrl: '/hub' })}
+              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
+              title="Sign in with X"
+            >
+              <FaXTwitter className="text-sm" /> <span className="hidden sm:inline">X</span>
+            </button>
+
+            {/* Meta / Facebook */}
+            <button
+              onClick={() => signIn('facebook', { callbackUrl: '/hub' })}
+              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
+              title="Sign in with Meta / Facebook"
+            >
+              <FaFacebook className="text-sm text-blue-500" /> <span className="hidden sm:inline">Meta</span>
+            </button>
+
+            {/* Discord */}
+            <button
+              onClick={() => signIn('discord', { callbackUrl: '/hub' })}
+              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
+              title="Sign in with Discord"
+            >
+              <FaDiscord className="text-sm text-indigo-400" /> <span className="hidden sm:inline">Discord</span>
+            </button>
+
+            {/* Reddit */}
+            <button
+              onClick={() => signIn('reddit', { callbackUrl: '/hub' })}
+              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
+              title="Sign in with Reddit"
+            >
+              <FaReddit className="text-sm text-orange-500" /> <span className="hidden sm:inline">Reddit</span>
+            </button>
+
+            {/* LinkedIn */}
+            <button
+              onClick={() => signIn('linkedin', { callbackUrl: '/hub' })}
+              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
+              title="Sign in with LinkedIn"
+            >
+              <FaLinkedIn className="text-sm text-blue-400" /> <span className="hidden sm:inline">LinkedIn</span>
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center my-4">
@@ -55,7 +113,7 @@ export default function ClientLoginPage() {
           <div className="flex-grow border-t border-slate-800"></div>
         </div>
 
-        {/* Form */}
+        {/* Credentials Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {isRegistering && (
             <div>
@@ -109,7 +167,7 @@ export default function ClientLoginPage() {
           </button>
         </form>
 
-        {/* Toggle & Return */}
+        {/* Navigation / Toggle */}
         <div className="text-center text-xs text-slate-400 space-y-2 pt-2">
           <p>
             {isRegistering ? 'Already have an account?' : "Don't have an account?"}{' '}
