@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 
-export default function RooterGroupGateway() {
+export default function RuttaGroupGateway() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-6 md:p-12">
       {/* Top Header / Branding */}
@@ -11,35 +11,32 @@ export default function RooterGroupGateway() {
         <h1 className="text-xl md:text-2xl font-extrabold tracking-widest text-cyan-400">
           RUTTA GROUP
         </h1>
-        <Link 
-          href="/admin/login" 
-          className="text-xs md:text-sm font-semibold text-slate-300 hover:text-cyan-400 transition"
-        >
-          Admin
-        </Link>
+        <div className="text-xs font-semibold uppercase tracking-widest px-3 py-1 bg-cyan-500/10 text-cyan-400 rounded-full border border-cyan-500/20">
+          Unified Enterprise Portal
+        </div>
       </header>
 
       {/* Gateway Hero Section */}
       <main className="max-w-3xl mx-auto text-center space-y-8 my-auto py-12">
         <div className="space-y-4">
           <span className="px-3.5 py-1 text-xs font-bold uppercase tracking-widest bg-cyan-950 text-cyan-400 border border-cyan-800 rounded-full">
-            Unified Enterprise Portal
+            Enterprise Ecosystem
           </span>
           <h2 className="text-4xl md:text-6xl font-black tracking-tight text-white">
             Welcome to <span className="text-cyan-400">Rutta Group</span>
           </h2>
           <p className="text-base md:text-lg text-slate-400 max-w-xl mx-auto">
-            The central ecosystem connecting Meraki Ranch, Haya Structures, Haya Feeds,Cloudmore, Art4u and live global markets.
+            The central ecosystem connecting Meraki Ranch, Haya Structures, Haya Feeds, Cloudmore, Art4u, and live global markets.
           </p>
         </div>
 
-        {/* Choice Action Buttons: Admin Login or View as Guest */}
+        {/* Action Buttons: Client Login, Register, or View as Guest */}
         <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
           <Link
-            href="/admin/login"
+            href="/login"
             className="w-full sm:w-auto px-8 py-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-base transition shadow-lg shadow-cyan-500/20 text-center"
           >
-            🔐 Login
+            👤 Client Login / Register
           </Link>
           
           <Link
