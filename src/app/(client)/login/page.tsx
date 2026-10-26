@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { signIn } from 'next-auth/react';
 import { FcGoogle } from 'react-icons/fc';
 import { FaGithub, FaXTwitter, FaFacebook, FaDiscord, FaReddit, FaLinkedin } from 'react-icons/fa6';
 
@@ -14,6 +13,12 @@ export default function ClientLoginPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+
+  // Helper function to dynamically load and trigger NextAuth sign in
+  const handleSocialLogin = async (provider: string) => {
+    const { signIn } = await import('next-auth/react');
+    signIn(provider, { callbackUrl: '/hub' });
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +44,7 @@ export default function ClientLoginPage() {
         {/* Primary Social Provider (Google) */}
         <div>
           <button
-            onClick={() => signIn('google', { callbackUrl: '/hub' })}
+            onClick={() => handleSocialLogin('google')}
             className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-200 flex items-center justify-center gap-3 transition shadow-sm"
           >
             <FcGoogle className="text-base" /> Continue with Google
@@ -55,7 +60,7 @@ export default function ClientLoginPage() {
           <div className="grid grid-cols-3 gap-2">
             {/* GitHub */}
             <button
-              onClick={() => signIn('github', { callbackUrl: '/hub' })}
+              onClick={() => handleSocialLogin('github')}
               className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
               title="Sign in with GitHub"
             >
@@ -64,7 +69,7 @@ export default function ClientLoginPage() {
 
             {/* X (Twitter) */}
             <button
-              onClick={() => signIn('twitter', { callbackUrl: '/hub' })}
+              onClick={() => handleSocialLogin('twitter')}
               className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
               title="Sign in with X"
             >
@@ -73,7 +78,7 @@ export default function ClientLoginPage() {
 
             {/* Meta / Facebook */}
             <button
-              onClick={() => signIn('facebook', { callbackUrl: '/hub' })}
+              onClick={() => handleSocialLogin('facebook')}
               className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
               title="Sign in with Meta / Facebook"
             >
@@ -82,7 +87,7 @@ export default function ClientLoginPage() {
 
             {/* Discord */}
             <button
-              onClick={() => signIn('discord', { callbackUrl: '/hub' })}
+              onClick={() => handleSocialLogin('discord')}
               className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
               title="Sign in with Discord"
             >
@@ -91,7 +96,7 @@ export default function ClientLoginPage() {
 
             {/* Reddit */}
             <button
-              onClick={() => signIn('reddit', { callbackUrl: '/hub' })}
+              onClick={() => handleSocialLogin('reddit')}
               className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
               title="Sign in with Reddit"
             >
@@ -100,7 +105,7 @@ export default function ClientLoginPage() {
 
             {/* LinkedIn */}
             <button
-              onClick={() => signIn('linkedin', { callbackUrl: '/hub' })}
+              onClick={() => handleSocialLogin('linkedin')}
               className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
               title="Sign in with LinkedIn"
             >
