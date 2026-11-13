@@ -44,6 +44,33 @@ const handler = NextAuth({
     signIn: "/login",
   },
   secret: process.env.NEXTAUTH_SECRET,
+  
+  // --- ADDING CALLBACKS HERE ---
+  callbacks: {
+    async signIn({ user, account, profile }) {
+      // Here you can hook up a database call to check or save the user profile 
+      // e.g., saving user email/name to PostgreSQL or MongoDB when they log in for the first time.
+      console.log("User signing in:", user.email, "via provider:", account?.provider);
+      return true; // Return true to allow sign in
+    },
+
+    async jwt({ token, user }) {
+      // Initial sign in passes the user object
+      if (user) {
+        token.id = user.id;
+      }
+      return token;
+    },
+
+    async session({ session, token }) {
+      // Send properties to the client-side session
+      if (session.user && token.id) {
+        // @ts-ignore
+        session.user.id = token.id as string;
+      }
+      return session;
+    },
+  },
 });
 
 export { handler as GET, handler as POST };
