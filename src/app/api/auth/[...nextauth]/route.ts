@@ -1,5 +1,7 @@
 // src/app/api/auth/[...nextauth]/route.ts
 import NextAuth from "next-auth";
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import { prisma } from "@/lib/prisma";
 import GoogleProvider from "next-auth/providers/google";
 import GitHubProvider from "next-auth/providers/github";
 import TwitterProvider from "next-auth/providers/twitter";
@@ -9,6 +11,7 @@ import RedditProvider from "next-auth/providers/reddit";
 import LinkedInProvider from "next-auth/providers/linkedin";
 
 const handler = NextAuth({
+  adapter: PrismaAdapter(prisma),
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
@@ -45,17 +48,13 @@ const handler = NextAuth({
   },
   secret: process.env.NEXTAUTH_SECRET,
   
-  // --- ADDING CALLBACKS HERE ---
   callbacks: {
     async signIn({ user, account, profile }) {
-      // Here you can hook up a database call to check or save the user profile 
-      // e.g., saving user email/name to PostgreSQL or MongoDB when they log in for the first time.
       console.log("User signing in:", user.email, "via provider:", account?.provider);
       return true; // Return true to allow sign in
     },
 
     async jwt({ token, user }) {
-      // Initial sign in passes the user object
       if (user) {
         token.id = user.id;
       }
@@ -63,7 +62,6 @@ const handler = NextAuth({
     },
 
     async session({ session, token }) {
-      // Send properties to the client-side session
       if (session.user && token.id) {
         // @ts-ignore
         session.user.id = token.id as string;
