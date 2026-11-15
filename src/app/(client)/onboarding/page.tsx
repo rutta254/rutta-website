@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -24,7 +26,7 @@ export default function OnboardingPage() {
       body: JSON.stringify(form),
     });
     if (res.ok) {
-      await update(); // refresh session
+      await update();
       router.push('/hub');
     }
     setLoading(false);
@@ -36,7 +38,7 @@ export default function OnboardingPage() {
         <div className="text-center space-y-2">
           <h1 className="text-2xl font-black text-cyan-400">Welcome to Rutta Group</h1>
           <p className="text-sm text-slate-400">
-            Hi {session?.user?.name?.split(' ')[0]}, complete your profile to continue.
+            Hi {session?.user?.name?.split(' ')[0] ?? 'there'}, complete your profile to continue.
           </p>
         </div>
 
