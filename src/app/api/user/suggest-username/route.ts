@@ -1,31 +1,41 @@
 import { NextResponse } from 'next/server';
 
+function generateSuggestions(name: string): string[] {
+  const clean = name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+  const parts = clean.split(/\s+/);
+  const first = parts[0] ?? 'user';
+  const last = parts[1] ?? '';
+  const year = new Date().getFullYear().toString().slice(-2);
+  const num = Math.floor(Math.random() * 900) + 100;
+
+  const suggestions: string[] = [];
+
+  if (last) {
+    suggestions.push(`${first}.${last}`);
+    suggestions.push(`${first}_${last}`);
+    suggestions.push(`${first}.${last}${year}`);
+    suggestions.push(`${first[0]}.${last}`);
+    suggestions.push(`${last}.${first}`);
+  }
+
+  suggestions.push(`${first}${num}`);
+  suggestions.push(`${first}_${num}`);
+  suggestions.push(`${first}.ke`);
+  suggestions.push(`${first}254`);
+  suggestions.push(`${first}_rg`);
+
+  // Deduplicate, enforce format, return 6
+  return [...new Set(suggestions)]
+    .filter(s => /^[a-z0-9_.]{3,20}$/.test(s))
+    .slice(0, 6);
+}
+
 export async function POST(req: Request) {
   try {
     const { name } = await req.json();
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 200,
-        messages: [{
-          role: 'user',
-          content: `Generate 6 creative username suggestions for someone named "${name}". 
-Rules: lowercase only, letters/numbers/underscores/dots, 3-20 characters, no spaces.
-Reply with ONLY a JSON array of strings, nothing else. Example: ["name_one","name.two","name123"]`,
-        }],
-      }),
-    });
-
-    const data = await response.json();
-    const text = data.content?.[0]?.text ?? '[]';
-    const suggestions = JSON.parse(text);
-
+    const suggestions = generateSuggestions(name ?? 'user');
     return NextResponse.json({ suggestions });
-  } catch (error) {
-    console.error('Username suggestion error:', error);
+  } catch {
     return NextResponse.json({ suggestions: [] });
   }
 }

@@ -64,7 +64,6 @@ export default function SettingsClient({ user }: { user: User }) {
     setSaving(true);
     setMessage('');
 
-    // Validate username format
     const usernameRegex = /^[a-z0-9_.]{3,20}$/;
     if (profile.username && !usernameRegex.test(profile.username)) {
       setMessage('Username must be 3-20 characters, lowercase letters, numbers, underscores and dots only.');
@@ -79,7 +78,10 @@ export default function SettingsClient({ user }: { user: User }) {
     });
 
     if (res.ok) {
-      setMessage('Profile saved successfully.');
+      setMessage('Profile saved successfully. Redirecting...');
+      setTimeout(() => {
+        window.location.href = '/hub';
+      }, 1000);
     } else {
       const data = await res.json();
       setMessage(data.error ?? 'Failed to save. Please try again.');
@@ -186,14 +188,14 @@ export default function SettingsClient({ user }: { user: User }) {
                   disabled={suggestingUsername}
                   className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-cyan-400 transition disabled:opacity-50 whitespace-nowrap"
                 >
-                  {suggestingUsername ? 'Thinking...' : '✦ AI Suggest'}
+                  {suggestingUsername ? 'Thinking...' : '✦ Suggest'}
                 </button>
               </div>
               <p className="text-[10px] text-slate-500">
                 Lowercase letters, numbers, underscores and dots. 3–20 characters.
               </p>
 
-              {/* AI Suggestions */}
+              {/* Suggestions */}
               {usernameSuggestions.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {usernameSuggestions.map(s => (
