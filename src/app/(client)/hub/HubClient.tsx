@@ -97,31 +97,47 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
 
         {/* Right side: profile or guest badge */}
         {userProfile ? (
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <div className="text-xs font-semibold text-slate-300">
-                {displayUsername}
-              </div>
-              {clientId && (
-                <div className="text-[10px] text-cyan-400 font-mono">{clientId}</div>
+          <div className="flex flex-col items-center gap-1">
+            {/* Profile Picture */}
+            <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-cyan-500/60 shadow-lg shadow-cyan-500/20">
+              {userProfile.image ? (
+                <Image
+                  src={userProfile.image}
+                  alt={userProfile.name ?? 'User'}
+                  fill
+                  className="object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-cyan-600 flex items-center justify-center text-white font-bold text-xl">
+                  {userProfile.name?.[0]?.toUpperCase() ?? 'U'}
+                </div>
               )}
-              <SessionTimer />
             </div>
-            <div className="flex flex-col items-center gap-1">
-              <div className="relative w-9 h-9 rounded-full overflow-hidden border-2 border-cyan-500/50">
-                {userProfile.image ? (
-                  <Image
-                    src={userProfile.image}
-                    alt={userProfile.name ?? 'User'}
-                    fill
-                    className="object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-cyan-600 flex items-center justify-center text-white font-bold text-sm">
-                    {userProfile.name?.[0]?.toUpperCase() ?? 'U'}
-                  </div>
-                )}
+
+            {/* Username */}
+            <div className="text-xs font-semibold text-slate-200 tracking-wide">
+              {displayUsername}
+            </div>
+
+            {/* Client ID */}
+            {clientId && (
+              <div className="text-[10px] text-cyan-400 font-mono tracking-widest">
+                {clientId}
               </div>
+            )}
+
+            {/* Session Timer */}
+            <SessionTimer />
+
+            {/* Settings + Sign Out */}
+            <div className="flex items-center gap-2 mt-1">
+              <Link
+                href="/settings"
+                className="text-[9px] text-slate-500 hover:text-cyan-400 transition"
+              >
+                settings
+              </Link>
+              <span className="text-slate-700">·</span>
               <button
                 onClick={() => signOut({ callbackUrl: '/' })}
                 className="text-[9px] text-slate-500 hover:text-red-400 transition"
