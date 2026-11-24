@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { signOut } from 'next-auth/react';
@@ -28,6 +28,9 @@ export default function SettingsClient({ user }: { user: User }) {
   const [message, setMessage] = useState('');
   const [suggestingUsername, setSuggestingUsername] = useState(false);
   const [usernameSuggestions, setUsernameSuggestions] = useState<string[]>([]);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [currentImage, setCurrentImage] = useState(user.image);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [profile, setProfile] = useState({
     username: user.username ?? '',
@@ -59,6 +62,43 @@ export default function SettingsClient({ user }: { user: User }) {
     { key: 'display', label: 'Display' },
     { key: 'insights', label: 'Insights' },
   ];
+
+  const handlePhotoClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingPhoto(true);
+    setMessage('');
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/user/upload-avatar', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setCurrentImage(data.url);
+        setMessage('Profile picture updated successfully.');
+      } else {
+        setMessage(data.error ?? 'Failed to upload photo.');
+      }
+    } catch {
+      setMessage('Failed to upload photo. Please try again.');
+    }
+
+    setUploadingPhoto(false);
+    // Reset file input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const saveProfile = async () => {
     setSaving(true);
@@ -118,9 +158,9 @@ export default function SettingsClient({ user }: { user: User }) {
             <h1 className="text-lg font-bold text-white">Settings</h1>
           </div>
           <div className="flex items-center gap-3">
-            {user.image && (
+            {currentImage && (
               <div className="relative w-8 h-8 rounded-full overflow-hidden border border-slate-700">
-                <Image src={user.image} alt={user.name ?? 'User'} fill className="object-cover" />
+                <Image src={currentImage} alt={user.name ?? 'User'} fill className="object-cover" />
               </div>
             )}
             <span className="text-xs text-slate-400">{user.email}</span>
@@ -149,21 +189,46 @@ export default function SettingsClient({ user }: { user: User }) {
         {/* Profile Tab */}
         {activeTab === 'profile' && (
           <div className="space-y-6">
-            {/* Current Profile */}
-            <div className="flex items-center gap-4 p-4 bg-slate-900 border border-slate-800 rounded-xl">
-              <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-cyan-500/40">
-                {user.image ? (
-                  <Image src={user.image} alt={user.name ?? 'User'} fill className="object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-cyan-700 flex items-center justify-center text-white font-bold text-xl">
-                    {user.name?.[0]?.toUpperCase() ?? 'U'}
+            {/* Profile Picture */}
+            <div className="flex items-center gap-6 p-4 bg-slate-900 border border-slate-800 rounded-xl">
+              <div className="relative group">
+                <div
+                  onClick={handlePhotoClick}
+                  className="relative w-20 h-20 rounded-full overflow-hidden border-2 border-cyan-500/40 cursor-pointer group-hover:border-cyan-500 transition"
+                >
+                  {currentImage ? (
+                    <Image src={currentImage} alt={user.name ?? 'User'} fill className="object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-cyan-700 flex items-center justify-center text-white font-bold text-2xl">
+                      {user.name?.[0]?.toUpperCase() ?? 'U'}
+                    </div>
+                  )}
+                  {/* Overlay */}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                    <span className="text-white text-[10px] font-semibold text-center px-1">
+                      {uploadingPhoto ? 'Uploading...' : 'Change Photo'}
+                    </span>
                   </div>
-                )}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoChange}
+                  className="hidden"
+                />
               </div>
               <div>
                 <div className="font-semibold text-white">{user.name}</div>
                 <div className="text-xs text-slate-400">{user.email}</div>
                 <div className="text-xs text-cyan-400 font-mono mt-0.5">{clientId}</div>
+                <button
+                  onClick={handlePhotoClick}
+                  disabled={uploadingPhoto}
+                  className="mt-2 text-xs text-cyan-400 hover:text-cyan-300 transition disabled:opacity-50"
+                >
+                  {uploadingPhoto ? 'Uploading...' : 'Click photo to change'}
+                </button>
               </div>
             </div>
 
@@ -194,8 +259,6 @@ export default function SettingsClient({ user }: { user: User }) {
               <p className="text-[10px] text-slate-500">
                 Lowercase letters, numbers, underscores and dots. 3–20 characters.
               </p>
-
-              {/* Suggestions */}
               {usernameSuggestions.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {usernameSuggestions.map(s => (
@@ -254,7 +317,7 @@ export default function SettingsClient({ user }: { user: User }) {
             </div>
 
             {message && (
-              <p className={`text-xs ${message.includes('success') ? 'text-emerald-400' : 'text-red-400'}`}>
+              <p className={`text-xs ${message.includes('success') || message.includes('updated') ? 'text-emerald-400' : 'text-red-400'}`}>
                 {message}
               </p>
             )}
