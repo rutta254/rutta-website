@@ -19,7 +19,21 @@ function SessionTimer() {
   const [seconds, setSeconds] = useState(0);
 
   useEffect(() => {
-    const interval = setInterval(() => setSeconds(s => s + 1), 1000);
+    const key = 'rg_session_start';
+    let start = localStorage.getItem(key);
+
+    if (!start) {
+      start = Date.now().toString();
+      localStorage.setItem(key, start);
+    }
+
+    const updateTimer = () => {
+      const elapsed = Math.floor((Date.now() - parseInt(start!)) / 1000);
+      setSeconds(elapsed);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -95,10 +109,8 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
           </span>
         </div>
 
-        {/* Right side: profile or guest badge */}
         {userProfile ? (
           <div className="flex flex-col items-center gap-1">
-            {/* Profile Picture */}
             <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-cyan-500/60 shadow-lg shadow-cyan-500/20">
               {userProfile.image ? (
                 <Image
@@ -113,23 +125,15 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
                 </div>
               )}
             </div>
-
-            {/* Username */}
             <div className="text-xs font-semibold text-slate-200 tracking-wide">
               {displayUsername}
             </div>
-
-            {/* Client ID */}
             {clientId && (
               <div className="text-[10px] text-cyan-400 font-mono tracking-widest">
                 {clientId}
               </div>
             )}
-
-            {/* Session Timer */}
             <SessionTimer />
-
-            {/* Settings + Sign Out */}
             <div className="flex items-center gap-2 mt-1">
               <Link
                 href="/settings"
@@ -139,7 +143,10 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
               </Link>
               <span className="text-slate-700">·</span>
               <button
-                onClick={() => signOut({ callbackUrl: '/' })}
+                onClick={() => {
+                  localStorage.removeItem('rg_session_start');
+                  signOut({ callbackUrl: '/' });
+                }}
                 className="text-[9px] text-slate-500 hover:text-red-400 transition"
               >
                 sign out
