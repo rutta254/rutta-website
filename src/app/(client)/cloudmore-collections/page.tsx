@@ -8,7 +8,6 @@ import {
   FaArrowLeft,
   FaShirt,
   FaTags,
-  FaImages,
   FaArrowUpRightFromSquare,
   FaCheck,
 } from 'react-icons/fa6';
@@ -20,46 +19,26 @@ const PAGES_AND_OFFERINGS = [
   {
     id: 'about',
     badge: '01 • About',
-    title: 'About CloudMore Collections',
+    title: 'About CloudMore',
     icon: FaShirt,
     accent: 'text-purple-400',
     badgeBg: 'bg-purple-500/10 border-purple-500/20 text-purple-300',
     description:
-      'CloudMore Collections is the apparel, clothing, and consignment arm under Rutta.com. We curate everyday statement pieces, seasonal clothing drops, and authenticated consignment finds for people who care about both style and value.',
-    highlights: [
-      'Curated apparel & everyday clothing essentials',
-      'Quality-checked consignment pieces & resales',
-      'Direct community drops via Instagram & TikTok',
-    ],
+      'CloudMore is the apparel and consignment arm under Rutta Group. We curate everyday statement pieces, seasonal clothing drops, and authenticated consignment finds for people who care about both style and value.',
+    highlights: [] as string[],
   },
   {
     id: 'consignments',
-    badge: '02 • Consignments',
-    title: 'What We Deal With: Consignments & Apparel',
+    badge: '02 • What We Deal With:',
+    title: 'Consignments & Apparel',
     icon: FaTags,
     accent: 'text-fuchsia-400',
     badgeBg: 'bg-fuchsia-500/10 border-fuchsia-500/20 text-fuchsia-300',
     description:
-      'Whether you are shopping for a fresh fit or looking to consign clean, stylish garments from your wardrobe, we keep the process straightforward and transparent.',
+      'At CloudMore we deal with both thrifted and new apparels and consignment items.',
     highlights: [
-      'Apparel & clothing pieces (tops, outerwear, sets & staples)',
-      'Consignment intake & item review for select pieces',
-      'Transparent pricing and fast DM reservations',
-    ],
-  },
-  {
-    id: 'lookbook',
-    badge: '03 • Social Pages',
-    title: 'Instagram & TikTok Showcases',
-    icon: FaImages,
-    accent: 'text-cyan-400',
-    badgeBg: 'bg-cyan-500/10 border-cyan-500/20 text-cyan-300',
-    description:
-      'Our newest inventory, restocks, and consignment arrivals go live on our social pages first. Use TikTok for motion, styling, and fit checks, and Instagram for lookbooks, availability posts, and DMs.',
-    highlights: [
-      'TikTok: Fit checks, styling clips, unboxings & behind-the-scenes',
-      'Instagram: Catalog posts, story drops, sizing & DM inquiries',
-      'Quick links back to the Rutta.com Hub anytime',
+      'Apparel: caps, spectacles, skimasks, t-shirts, vests, hoodies, shoes, shorts, jeans, jackets, sweaters, tracksuits, socks, gloves, scarves, bags and more',
+      'Consignment: collectibles, limited-edition items, antiques, memorabilia, artwork, designer pieces, jewelry and more',
     ],
   },
 ];
@@ -71,10 +50,8 @@ export default function CloudMoreCollectionsPage() {
   const [itemNote, setItemNote] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const igUrl = `https://www.instagram.com/${INSTAGRAM_HANDLE}`;
-  const tiktokUrl = `https://www.tiktok.com/@${TIKTOK_HANDLE}`;
-
-  const composedMessage = `Hi @${INSTAGRAM_HANDLE}! I'm reaching out about: ${inquiryType}${
+  const igUrl = `https://www.instagram.com/\${INSTAGRAM_HANDLE}`;
+  const tiktokUrl = `https://www.tiktok.com/@${TIKTOK_HANDLE}`;  const composedMessage = `Hi @${INSTAGRAM_HANDLE}! I'm reaching out about: ${inquiryType}${
     itemNote.trim() ? ` — ${itemNote.trim()}` : ''
   }.`;
 
@@ -105,7 +82,7 @@ export default function CloudMoreCollectionsPage() {
               CM
             </span>
             <span className="text-base sm:text-lg font-extrabold tracking-wide text-white">
-              CloudMore <span className="text-purple-400">Collections</span>
+              Cloud <span className="text-purple-400">More</span>
             </span>
           </div>
 
@@ -113,7 +90,7 @@ export default function CloudMoreCollectionsPage() {
           <div className="flex items-center gap-4">
             <nav className="hidden md:flex items-center gap-5 text-xs font-semibold text-slate-400">
               <a href="#about" className="hover:text-white transition">About</a>
-              <a href="#consignments" className="hover:text-white transition">Consignments</a>
+              <a href="#consignments" className="hover:text-white transition">What We Deal With:</a>
               <a href="#socials" className="hover:text-white transition">Socials</a>
               <a href="#connect" className="hover:text-white transition">Reach Out</a>
             </nav>
@@ -123,7 +100,7 @@ export default function CloudMoreCollectionsPage() {
                 href={igUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="CloudMore Collections on Instagram"
+                aria-label="CloudMore on Instagram"
                 className="text-slate-300 hover:text-pink-400 transition text-lg"
               >
                 <FaInstagram />
@@ -132,7 +109,7 @@ export default function CloudMoreCollectionsPage() {
                 href={tiktokUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="CloudMore Collections on TikTok"
+                aria-label="CloudMore on TikTok"
                 className="text-slate-300 hover:text-cyan-400 transition text-lg"
               >
                 <FaTiktok />
@@ -145,53 +122,23 @@ export default function CloudMoreCollectionsPage() {
       {/* Main Content */}
       <main className="max-w-6xl mx-auto w-full px-6 py-12 sm:py-16 space-y-16">
         {/* Hero */}
-        <section className="relative rounded-3xl border border-slate-800/90 bg-gradient-to-br from-slate-900 via-slate-900/90 to-purple-950/30 p-8 sm:p-12 shadow-2xl">
-          <div className="max-w-3xl space-y-5">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-widest bg-purple-500/10 border border-purple-500/25 text-purple-300">
-              Apparel • Clothing • Consignments
-            </div>
+        <section className="space-y-4">
+          <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-white leading-[1.08]">
+            Modern Apparel &amp;{' '}
+            <span className="bg-gradient-to-r from-purple-400 via-fuchsia-400 to-cyan-300 bg-clip-text text-transparent">
+              Curated Consignments.
+            </span>
+          </h1>
 
-            <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-white leading-[1.08]">
-              Modern Apparel &amp;{' '}
-              <span className="bg-gradient-to-r from-purple-400 via-fuchsia-400 to-cyan-300 bg-clip-text text-transparent">
-                Curated Consignments.
-              </span>
-            </h1>
-
-            <p className="text-slate-300 text-base sm:text-lg leading-relaxed max-w-2xl">
-              Explore CloudMore Collections—where fresh clothing drops, everyday essentials, and
-              consignment pieces come together. Learn about who we are, what we deal with, and jump
-              straight to our Instagram and TikTok pages.
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-3.5 pt-2">
-              <a
-                href={igUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-purple-500/20"
-              >
-                <FaInstagram className="text-base" />
-                Instagram (@{INSTAGRAM_HANDLE})
-                <FaArrowUpRightFromSquare className="text-xs" />
-              </a>
-
-              <a
-                href={tiktokUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-slate-950/90 hover:bg-slate-800 text-white border border-slate-700 font-semibold text-sm transition"
-              >
-                <FaTiktok className="text-base text-cyan-400" />
-                TikTok (@{TIKTOK_HANDLE})
-                <FaArrowUpRightFromSquare className="text-xs text-slate-400" />
-              </a>
-            </div>
-          </div>
+          <p className="text-slate-300 text-base sm:text-lg leading-relaxed max-w-2xl">
+            Explore CloudMore — where fresh clothing drops, everyday essentials, and
+            consignment pieces come together. Learn about who we are, what we deal with, and jump
+            straight to our Instagram and TikTok pages.
+          </p>
         </section>
 
-        {/* Pages & Sections Breakdown (About, Consignments, Socials) */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Pages & Sections Breakdown */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {PAGES_AND_OFFERINGS.map((item) => {
             const Icon = item.icon;
             return (
@@ -202,10 +149,14 @@ export default function CloudMoreCollectionsPage() {
               >
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-2">
-                    <span className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border ${item.badgeBg}`}>
+                    <span
+                      className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border \${item.badgeBg}`}
+                    >
                       {item.badge}
                     </span>
-                    <div className={`w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center ${item.accent}`}>
+                    <div
+                      className={`w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center \${item.accent}`}
+                    >
                       <Icon className="text-base" />
                     </div>
                   </div>
@@ -214,14 +165,16 @@ export default function CloudMoreCollectionsPage() {
                   <p className="text-sm text-slate-400 leading-relaxed">{item.description}</p>
                 </div>
 
-                <ul className="space-y-2.5 pt-4 border-t border-slate-800/80 text-xs sm:text-sm text-slate-300">
-                  {item.highlights.map((point) => (
-                    <li key={point} className="flex items-start gap-2.5">
-                      <span className="mt-1 w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
+                {item.highlights.length > 0 && (
+                  <ul className="space-y-2.5 pt-4 border-t border-slate-800/80 text-xs sm:text-sm text-slate-300">
+                    {item.highlights.map((point) => (
+                      <li key={point} className="flex items-start gap-2.5">
+                        <span className="mt-1 w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
+                        <span>{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             );
           })}
@@ -307,7 +260,10 @@ export default function CloudMoreCollectionsPage() {
         </section>
 
         {/* Quick Inquiry / DM Helper */}
-        <section id="connect" className="scroll-mt-24 rounded-2xl bg-slate-900/70 border border-slate-800 p-6 sm:p-8 shadow-xl space-y-5">
+        <section
+          id="connect"
+          className="scroll-mt-24 rounded-2xl bg-slate-900/70 border border-slate-800 p-6 sm:p-8 shadow-xl space-y-5"
+        >
           <div className="space-y-1">
             <h2 className="text-xl sm:text-2xl font-bold text-white">
               Shop or Consign via Social DM
@@ -318,25 +274,25 @@ export default function CloudMoreCollectionsPage() {
           </div>
 
           <div className="flex flex-wrap gap-2.5">
-            {(['Apparel & Clothing', 'Consignment Inquiry', 'Styling / Custom Request'] as const).map(
-              (type) => {
-                const active = inquiryType === type;
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setInquiryType(type)}
-                    className={`px-4 py-2 rounded-xl text-xs font-semibold border transition ${
-                      active
-                        ? 'bg-purple-500/20 border-purple-400 text-purple-200'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {type}
-                  </button>
-                );
-              }
-            )}
+            {(
+              ['Apparel & Clothing', 'Consignment Inquiry', 'Styling / Custom Request'] as const
+            ).map((type) => {
+              const active = inquiryType === type;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setInquiryType(type)}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold border transition \${
+                    active
+                      ? 'bg-purple-500/20 border-purple-400 text-purple-200'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {type}
+                </button>
+              );
+            })}
           </div>
 
           <div className="space-y-3">
@@ -384,7 +340,7 @@ export default function CloudMoreCollectionsPage() {
 
       {/* Footer */}
       <footer className="border-t border-slate-900 py-6 px-6 text-center text-xs text-slate-500">
-        &copy; {new Date().getFullYear()} CloudMore Collections (@{INSTAGRAM_HANDLE}) &bull; Part of RUTTA.COM.
+        &copy; {new Date().getFullYear()} CloudMore (@{INSTAGRAM_HANDLE}) &bull; Part of RUTTA.COM.
       </footer>
     </div>
   );
