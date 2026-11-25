@@ -1,6 +1,10 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { redirect } from 'next/navigation';
+import OnboardingForm from './OnboardingForm';
+
+export const dynamic = 'force-dynamic';
 
 export default async function OnboardingPage() {
   const session = await getServerSession(authOptions);
@@ -13,12 +17,16 @@ export default async function OnboardingPage() {
     redirect('/hub');
   }
 
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { name: true, profileComplete: true },
+  });
+
+  if (user?.profileComplete) {
+    redirect('/hub');
+  }
+
   return (
-    <main className="mx-auto w-full max-w-2xl px-6 py-12">
-      <h1 className="text-3xl font-semibold">Welcome, {session.user.name ?? 'there'}</h1>
-      <p className="mt-3 text-muted-foreground">
-        Your account setup is not complete yet. Please finish setting up your profile to continue.
-      </p>
-    </main>
+    <OnboardingForm userName={session.user.name ?? 'there'} />
   );
 }

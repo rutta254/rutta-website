@@ -29,6 +29,7 @@ export async function POST(req: Request) {
         phone: phone || null,
         company: company || null,
         country: country || null,
+        profileComplete: true,
       },
     });
 
