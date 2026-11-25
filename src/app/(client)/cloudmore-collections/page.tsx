@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import CloudMoreHeader from './CloudMoreHeader';
-import OfferingsGrid from './OfferingsGrid';
 import ShowcaseGallery from './ShowcaseGallery';
 import SocialConnectSection, { InquiryCategory } from './SocialConnectSection';
 import { GalleryItem, INSTAGRAM_HANDLE } from './cloudmoreData';
@@ -36,8 +35,6 @@ export default function CloudMoreCollectionsPage() {
             Explore CloudMore — where fresh clothing and consignment pieces come together. Learn who we are, what we deal with, and visit our Instagram &amp; TikTok.
           </p>
         </section>
-
-        <OfferingsGrid />
 
         <ShowcaseGallery onSelectForInquiry={handleSelectForInquiry} />
 
