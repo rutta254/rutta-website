@@ -13,8 +13,8 @@ import {
   FaCheck,
 } from 'react-icons/fa6';
 
-const INSTAGRAM_HANDLE = 'your_instagram_handle'; // Replace with your exact IG username (without @)
-const TIKTOK_HANDLE = 'your_tiktok_handle';       // Replace with your exact TikTok username (without @)
+const INSTAGRAM_HANDLE = 'cloudmore.collections';
+const TIKTOK_HANDLE = 'cloudmore.collections';
 
 const PAGES_AND_OFFERINGS = [
   {
@@ -65,14 +65,16 @@ const PAGES_AND_OFFERINGS = [
 ];
 
 export default function CloudMoreCollectionsPage() {
-  const [inquiryType, setInquiryType] = useState<'Apparel & Clothing' | 'Consignment Inquiry' | 'Styling / Custom Request'>('Apparel & Clothing');
+  const [inquiryType, setInquiryType] = useState<
+    'Apparel & Clothing' | 'Consignment Inquiry' | 'Styling / Custom Request'
+  >('Apparel & Clothing');
   const [itemNote, setItemNote] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const igUrl = `https://instagram.com/${INSTAGRAM_HANDLE}`;
+  const igUrl = `https://www.instagram.com/${INSTAGRAM_HANDLE}`;
   const tiktokUrl = `https://www.tiktok.com/@${TIKTOK_HANDLE}`;
 
-  const composedMessage = `Hi CloudMore Collections! I'm reaching out about: ${inquiryType}${
+  const composedMessage = `Hi @${INSTAGRAM_HANDLE}! I'm reaching out about: ${inquiryType}${
     itemNote.trim() ? ` — ${itemNote.trim()}` : ''
   }.`;
 
@@ -170,7 +172,7 @@ export default function CloudMoreCollectionsPage() {
                 className="inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-purple-500/20"
               >
                 <FaInstagram className="text-base" />
-                Visit Instagram (@{INSTAGRAM_HANDLE})
+                Instagram (@{INSTAGRAM_HANDLE})
                 <FaArrowUpRightFromSquare className="text-xs" />
               </a>
 
@@ -181,7 +183,7 @@ export default function CloudMoreCollectionsPage() {
                 className="inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-slate-950/90 hover:bg-slate-800 text-white border border-slate-700 font-semibold text-sm transition"
               >
                 <FaTiktok className="text-base text-cyan-400" />
-                Visit TikTok (@{TIKTOK_HANDLE})
+                TikTok (@{TIKTOK_HANDLE})
                 <FaArrowUpRightFromSquare className="text-xs text-slate-400" />
               </a>
             </div>
@@ -215,7 +217,7 @@ export default function CloudMoreCollectionsPage() {
                 <ul className="space-y-2.5 pt-4 border-t border-slate-800/80 text-xs sm:text-sm text-slate-300">
                   {item.highlights.map((point) => (
                     <li key={point} className="flex items-start gap-2.5">
-                      <span className={`mt-1 w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0`} />
+                      <span className="mt-1 w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
                       <span>{point}</span>
                     </li>
                   ))}
@@ -366,7 +368,7 @@ export default function CloudMoreCollectionsPage() {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-pink-500/15 hover:bg-pink-500/25 border border-pink-500/30 text-pink-300 text-xs sm:text-sm font-semibold transition"
             >
-              <FaInstagram /> Open Instagram DM
+              <FaInstagram /> Open @{INSTAGRAM_HANDLE} on IG
             </a>
             <a
               href={tiktokUrl}
@@ -374,7 +376,7 @@ export default function CloudMoreCollectionsPage() {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-xs sm:text-sm font-semibold transition"
             >
-              <FaTiktok /> Open TikTok Profile
+              <FaTiktok /> Open @{TIKTOK_HANDLE} on TikTok
             </a>
           </div>
         </section>
@@ -382,7 +384,7 @@ export default function CloudMoreCollectionsPage() {
 
       {/* Footer */}
       <footer className="border-t border-slate-900 py-6 px-6 text-center text-xs text-slate-500">
-        &copy; {new Date().getFullYear()} CloudMore Collections &bull; Part of RUTTA.COM.
+        &copy; {new Date().getFullYear()} CloudMore Collections (@{INSTAGRAM_HANDLE}) &bull; Part of RUTTA.COM.
       </footer>
     </div>
   );
