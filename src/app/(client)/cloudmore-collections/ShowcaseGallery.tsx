@@ -92,27 +92,29 @@ export default function ShowcaseGallery({ onSelectForInquiry }: Props) {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 justify-items-center">
         {SLIDES.map((slide) => {
           const isInstagram = slide.platform === 'Instagram';
           const PlatformIcon = isInstagram ? FaInstagram : FaTiktok;
           const cornerColor = isInstagram ? 'text-pink-400' : 'text-cyan-400';
           const borderHover = isInstagram
-            ? 'hover:border-pink-500/40'
-            : 'hover:border-cyan-500/40';
+            ? 'hover:border-pink-500/50'
+            : 'hover:border-cyan-500/50';
 
           return (
             <button
               key={slide.id}
               type="button"
               onClick={() => setActiveSlide(slide)}
-              className={`group w-full aspect-[16/9] rounded-2xl bg-slate-900/80 border border-slate-800 ${borderHover} p-4 flex flex-col justify-between text-left shadow-xl transition-all cursor-pointer`}
+              className={`group w-full max-w-[260px] sm:max-w-[280px] aspect-[9/16] rounded-[2rem] bg-slate-900/85 border border-slate-800 ${borderHover} p-4 flex flex-col justify-between text-left shadow-2xl transition-all cursor-pointer`}
             >
               <div className="flex items-center justify-between w-full">
-                <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${cornerColor}`}>
+                <span
+                  className={`inline-flex items-center gap-1.5 text-xs font-semibold ${cornerColor}`}
+                >
                   <PlatformIcon /> {slide.platform}
                 </span>
-                <span className="text-[11px] font-medium text-slate-400 group-hover:text-slate-200 transition">
+                <span className="text-[11px] font-medium text-slate-400 group-hover:text-slate-200 transition truncate max-w-[125px]">
                   @{slide.handle}
                 </span>
               </div>
