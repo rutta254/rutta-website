@@ -49,6 +49,78 @@ function SessionTimer() {
   );
 }
 
+function HayaGroupCard() {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="flex flex-col">
+      <div
+        onClick={() => setExpanded(!expanded)}
+        className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl transition-all duration-300 hover:border-blue-500/50 hover:bg-slate-900 flex flex-col justify-between cursor-pointer"
+      >
+        <div>
+          <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold mb-4">
+            HG
+          </div>
+          <h2 className="text-xl font-bold text-white hover:text-blue-400 transition-colors">
+            Haya Group
+          </h2>
+          <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
+            Agriculture, Engineering and Ranch. Click to explore.
+          </p>
+        </div>
+        <div className="mt-6 flex items-center text-blue-400 text-xs font-semibold">
+          {expanded ? 'Collapse ↑' : 'Explore Group ↓'}
+        </div>
+      </div>
+
+      {/* Sub-items */}
+      {expanded && (
+        <div className="mt-2 space-y-2">
+          <Link
+            href="/haya-structures"
+            className="flex items-center justify-between px-4 py-3 bg-slate-900 border border-blue-500/20 rounded-xl hover:border-blue-500/60 hover:bg-slate-800 transition group"
+          >
+            <div>
+              <div className="text-sm font-bold text-white group-hover:text-blue-400 transition">
+                Haya Structures
+              </div>
+              <div className="text-[10px] text-slate-400">Civil & Structural Engineering</div>
+            </div>
+            <span className="text-blue-400 text-xs">→</span>
+          </Link>
+
+          <Link
+            href="/haya-feeds"
+            className="flex items-center justify-between px-4 py-3 bg-slate-900 border border-green-500/20 rounded-xl hover:border-green-500/60 hover:bg-slate-800 transition group"
+          >
+            <div>
+              <div className="text-sm font-bold text-white group-hover:text-green-400 transition">
+                Haya Feeds
+              </div>
+              <div className="text-[10px] text-slate-400">Agriculture & Animal Feeds</div>
+            </div>
+            <span className="text-green-400 text-xs">→</span>
+          </Link>
+
+          <Link
+            href="/meraki-ranch"
+            className="flex items-center justify-between px-4 py-3 bg-slate-900 border border-amber-500/20 rounded-xl hover:border-amber-500/60 hover:bg-slate-800 transition group"
+          >
+            <div>
+              <div className="text-sm font-bold text-white group-hover:text-amber-400 transition">
+                Meraki Ranch
+              </div>
+              <div className="text-[10px] text-slate-400">Ranch & Lifestyle</div>
+            </div>
+            <span className="text-amber-400 text-xs">→</span>
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function HubClient({ userProfile }: { userProfile: UserProfile }) {
   const [marketData, setMarketData] = useState({
     eurusd: { price: "Loading...", change: "+0.15%", status: "Live Feed" },
@@ -111,7 +183,6 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
 
         {userProfile ? (
           <div className="flex flex-col items-center gap-1">
-            {/* Profile Picture */}
             <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-cyan-500/60 shadow-lg shadow-cyan-500/20">
               {userProfile.image ? (
                 <Image
@@ -126,11 +197,9 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
                 </div>
               )}
             </div>
-            {/* Username */}
             <div className="text-sm font-bold text-slate-200 tracking-wide">
               {displayUsername}
             </div>
-            {/* Client ID — same size as username, blue */}
             {clientId && (
               <div className="text-sm font-bold text-blue-400 tracking-wide">
                 {clientId}
@@ -160,17 +229,11 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
 
       {/* Business Cards */}
       <div className="w-full max-w-6xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 my-6">
-        <Link href="/haya-structures" className="group flex flex-col">
-          <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl transition-all duration-300 group-hover:border-blue-500/50 group-hover:bg-slate-900 flex flex-col justify-between">
-            <div>
-              <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold mb-4">HS</div>
-              <h2 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">Haya Structures LLC</h2>
-              <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">Civil & Structural Engineering: Analysis, Design, Consultancy and Projects.</p>
-            </div>
-            <div className="mt-6 flex items-center text-blue-400 text-xs font-semibold">Launch Suite &rarr;</div>
-          </div>
-        </Link>
 
+        {/* Haya Group — expandable */}
+        <HayaGroupCard />
+
+        {/* CloudMore Collections */}
         <Link href="/cloudmore-collections" className="group flex flex-col">
           <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl transition-all duration-300 group-hover:border-purple-500/50 group-hover:bg-slate-900 flex flex-col justify-between">
             <div>
@@ -182,6 +245,7 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
           </div>
         </Link>
 
+        {/* Mr.Universe */}
         <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
           <div>
             <div className="w-10 h-10 rounded-xl bg-amber-600/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold mb-4">Mr.U</div>
@@ -191,6 +255,7 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
           <div className="mt-6 text-xs text-amber-400 font-semibold uppercase tracking-wider">Active Environment</div>
         </div>
 
+        {/* Art4U */}
         <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
           <div>
             <div className="w-10 h-10 rounded-xl bg-emerald-600/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold mb-4">@4u</div>
@@ -235,13 +300,10 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
         ))}
       </div>
 
-      {/* Session Timer + Account Actions — visible at bottom */}
+      {/* Session Timer + Account Actions */}
       {userProfile && (
         <div className="w-full max-w-6xl border-t border-slate-800 pt-6 pb-2 flex flex-col sm:flex-row items-center justify-between gap-4">
-          {/* Session Timer */}
           <SessionTimer />
-
-          {/* Settings and Sign Out */}
           <div className="flex items-center gap-3">
             <Link
               href="/settings"
