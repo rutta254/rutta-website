@@ -124,14 +124,14 @@ export default function CloudMoreCollectionsPage() {
         {/* Hero */}
         <section className="space-y-4">
           <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-white leading-[1.08]">
-            Modern Apparel &amp;{' '}
+            Apparels &amp;{' '}
             <span className="bg-gradient-to-r from-purple-400 via-fuchsia-400 to-cyan-300 bg-clip-text text-transparent">
-              Curated Consignments.
+            Consignments.
             </span>
           </h1>
 
           <p className="text-slate-300 text-base sm:text-lg leading-relaxed max-w-2xl">
-            Explore CloudMore — where fresh clothing drops, everyday essentials, and
+            Explore CloudMore — where fresh clothing , everyday essentials and
             consignment pieces come together. Learn about who we are, what we deal with, and jump
             straight to our Instagram and TikTok pages.
           </p>
@@ -191,9 +191,6 @@ export default function CloudMoreCollectionsPage() {
                 Our Social Media Pages
               </h2>
             </div>
-            <p className="text-xs sm:text-sm text-slate-400">
-              Updates, drops, and consignments are shared directly on both platforms.
-            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -221,10 +218,6 @@ export default function CloudMoreCollectionsPage() {
                 <FaArrowUpRightFromSquare className="text-slate-500 group-hover:text-pink-400 transition mt-1" />
               </div>
 
-              <p className="text-sm text-slate-400 leading-relaxed">
-                Browse featured clothing &amp; consignment posts, check piece availability, and send
-                direct messages for orders or consignment submissions.
-              </p>
             </a>
 
             {/* TikTok Card */}
@@ -250,11 +243,6 @@ export default function CloudMoreCollectionsPage() {
                 </div>
                 <FaArrowUpRightFromSquare className="text-slate-500 group-hover:text-cyan-400 transition mt-1" />
               </div>
-
-              <p className="text-sm text-slate-400 leading-relaxed">
-                Watch outfit previews, fabric &amp; fit spotlights, consignment highlights, and
-                short-form drops as soon as new pieces land.
-              </p>
             </a>
           </div>
         </section>
