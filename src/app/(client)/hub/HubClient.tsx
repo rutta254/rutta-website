@@ -175,18 +175,18 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
           <div>
             <div className="w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400 font-bold mb-4">CM</div>
             <h2 className="text-xl font-bold text-white">CloudMore</h2>
-            <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">Cloud Infrastructure Pipelines, Automated CI/CD Workflows, and Deployments.</p>
+            <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">Apparels, Accessories and Lifestyle.</p>
           </div>
-          <div className="mt-6 text-xs text-purple-400 font-semibold uppercase tracking-wider">Active Environment</div>
+          <div className="mt-6 text-xs text-purple-400 font-semibold uppercase tracking-wider">Gallery Portfolio</div>
         </div>
 
         <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
           <div>
             <div className="w-10 h-10 rounded-xl bg-amber-600/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold mb-4">Mr.U</div>
             <h2 className="text-xl font-bold text-white">Mr.Universe</h2>
-            <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">Apparels, Accessories and Lifestyle.</p>
+            <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">Cloud Infrastructure Pipelines, Automated CI/CD Workflows, and Deployments.</p>
           </div>
-          <div className="mt-6 text-xs text-amber-400 font-semibold uppercase tracking-wider">Gallery Portfolio</div>
+          <div className="mt-6 text-xs text-amber-400 font-semibold uppercase tracking-wider">Active Environment</div>
         </div>
 
         <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
