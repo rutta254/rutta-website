@@ -1,22 +1,13 @@
 'use client';
 
-import { useState } from 'react';
 import CloudMoreHeader from './CloudMoreHeader';
 import OfferingsGrid from './OfferingsGrid';
 import ShowcaseGallery from './ShowcaseGallery';
-import SocialConnectSection, { InquiryCategory } from './SocialConnectSection';
 import { GalleryItem, INSTAGRAM_HANDLE } from './cloudmoreData';
 
 export default function CloudMoreCollectionsPage() {
-  const [inquiryType, setInquiryType] = useState<InquiryCategory>('Apparel & Clothing');
-  const [itemNote, setItemNote] = useState('');
-
-  const handleSelectForInquiry = (item: GalleryItem) => {
-    setInquiryType(
-      item.category === 'Consignments' ? 'Consignment Inquiry' : 'Apparel & Clothing'
-    );
-    setItemNote(item.title);
-    document.getElementById('socials')?.scrollIntoView({ behavior: 'smooth' });
+  const handleSelectForInquiry = (_item: GalleryItem) => {
+    document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   return (
@@ -39,15 +30,6 @@ export default function CloudMoreCollectionsPage() {
 
         {/* About & What We Deal With */}
         <OfferingsGrid />
-
-        {/* Slim Single-Line Social Handles Bar */}
-        <SocialConnectSection
-          variant="bar"
-          inquiryType={inquiryType}
-          setInquiryType={setInquiryType}
-          itemNote={itemNote}
-          setItemNote={setItemNote}
-        />
 
         {/* Gallery */}
         <ShowcaseGallery onSelectForInquiry={handleSelectForInquiry} />
