@@ -32,7 +32,7 @@ export default function CloudMoreCollectionsPage() {
               Consignments
             </span>
           </h1>
-          <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
+          <p className="text-slate-300 text-xs sm:text-sm md:whitespace-nowrap leading-relaxed">
             Explore CloudMore — where fresh clothing and consignment pieces come together. Learn who we are, what we deal with, and visit our Instagram &amp; TikTok.
           </p>
         </section>
