@@ -1,4 +1,3 @@
-// src/app/(client)/login/page.tsx
 'use client';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +13,6 @@ export default function ClientLoginPage() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
 
-  // Helper function to dynamically load and trigger NextAuth sign in
   const handleSocialLogin = async (provider: string) => {
     const { signIn } = await import('next-auth/react');
     signIn(provider, { callbackUrl: '/hub' });
@@ -32,91 +30,60 @@ export default function ClientLoginPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-6">
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl space-y-6">
-        
+
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-2xl font-black tracking-wider text-cyan-400">RUTTA GROUP</h1>
           <p className="text-xs text-slate-400">
-            {isRegistering ? 'Create a new client account to save your progress.' : 'Sign in to access your client hub & projects.'}
+            {isRegistering
+              ? 'Create a new client account to save your progress.'
+              : 'Sign in to access your client hub & projects.'}
           </p>
         </div>
 
-        {/* Primary Social Provider (Google) */}
-        <div>
-          <button
-            onClick={() => handleSocialLogin('google')}
-            className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-200 flex items-center justify-center gap-3 transition shadow-sm"
-          >
-            <FcGoogle className="text-base" /> Continue with Google
-          </button>
-        </div>
+        {/* Google — Primary */}
+        <button
+          onClick={() => handleSocialLogin('google')}
+          className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-200 flex items-center justify-center gap-3 transition shadow-sm"
+        >
+          <FcGoogle className="text-base" /> Continue with Google
+        </button>
 
-        {/* Secondary Social Providers Grid */}
+        {/* GitHub — Active */}
+        <button
+          onClick={() => handleSocialLogin('github')}
+          className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 border border-slate-700 hover:border-slate-500 rounded-xl text-xs font-semibold text-slate-200 flex items-center justify-center gap-3 transition shadow-sm"
+        >
+          <FaGithub className="text-base text-white" /> Continue with GitHub
+        </button>
+
+        {/* Coming Soon Providers */}
         <div className="space-y-2">
-          <p className="text-center text-[10px] uppercase font-bold tracking-widest text-slate-500">
-            Or log in with preferred media
+          <p className="text-center text-[10px] uppercase font-bold tracking-widest text-slate-600">
+            Coming Soon
           </p>
-          
-          <div className="grid grid-cols-3 gap-2">
-            {/* GitHub */}
-            <button
-              onClick={() => handleSocialLogin('github')}
-              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
-              title="Sign in with GitHub"
-            >
-              <FaGithub className="text-sm" /> <span className="hidden sm:inline">GitHub</span>
-            </button>
-
-            {/* X (Twitter) */}
-            <button
-              onClick={() => handleSocialLogin('twitter')}
-              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
-              title="Sign in with X"
-            >
-              <FaXTwitter className="text-sm" /> <span className="hidden sm:inline">X</span>
-            </button>
-
-            {/* Meta / Facebook */}
-            <button
-              onClick={() => handleSocialLogin('facebook')}
-              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
-              title="Sign in with Meta / Facebook"
-            >
-              <FaFacebook className="text-sm text-blue-500" /> <span className="hidden sm:inline">Meta</span>
-            </button>
-
-            {/* Discord */}
-            <button
-              onClick={() => handleSocialLogin('discord')}
-              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
-              title="Sign in with Discord"
-            >
-              <FaDiscord className="text-sm text-indigo-400" /> <span className="hidden sm:inline">Discord</span>
-            </button>
-
-            {/* Reddit */}
-            <button
-              onClick={() => handleSocialLogin('reddit')}
-              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
-              title="Sign in with Reddit"
-            >
-              <FaReddit className="text-sm text-orange-500" /> <span className="hidden sm:inline">Reddit</span>
-            </button>
-
-            {/* LinkedIn */}
-            <button
-              onClick={() => handleSocialLogin('linkedin')}
-              className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-2 transition"
-              title="Sign in with LinkedIn"
-            >
-              <FaLinkedin className="text-sm text-blue-400" /> <span className="hidden sm:inline">LinkedIn</span>
-            </button>
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { icon: <FaXTwitter className="text-sm" />, label: 'X' },
+              { icon: <FaFacebook className="text-sm text-blue-500/40" />, label: 'Meta' },
+              { icon: <FaLinkedin className="text-sm text-blue-400/40" />, label: 'LinkedIn' },
+              { icon: <FaDiscord className="text-sm text-indigo-400/40" />, label: 'Discord' },
+            ].map(({ icon, label }) => (
+              <div
+                key={label}
+                title={`${label} — Coming Soon`}
+                className="py-2.5 px-3 bg-slate-950/50 border border-slate-800/50 rounded-xl text-xs font-medium text-slate-600 flex items-center justify-center gap-2 cursor-not-allowed opacity-50"
+              >
+                {icon}
+                <span className="hidden sm:inline">{label}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="flex items-center my-4">
+        <div className="flex items-center my-2">
           <div className="flex-grow border-t border-slate-800"></div>
-          <span className="px-3 text-xs text-slate-500 uppercase tracking-widest">Or with email / phone</span>
+          <span className="px-3 text-xs text-slate-500 uppercase tracking-widest">Or with email</span>
           <div className="flex-grow border-t border-slate-800"></div>
         </div>
 
@@ -174,7 +141,7 @@ export default function ClientLoginPage() {
           </button>
         </form>
 
-        {/* Navigation / Toggle */}
+        {/* Toggle Register / Sign In */}
         <div className="text-center text-xs text-slate-400 space-y-2 pt-2">
           <p>
             {isRegistering ? 'Already have an account?' : "Don't have an account?"}{' '}

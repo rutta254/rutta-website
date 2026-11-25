@@ -23,9 +23,9 @@ export default function CloudMoreCollectionsPage() {
     <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col justify-between overflow-x-hidden">
       <CloudMoreHeader />
 
-      <main className="max-w-6xl mx-auto w-full px-6 py-12 sm:py-16 space-y-16">
+      <main className="max-w-6xl mx-auto w-full px-6 py-8 sm:py-10 space-y-8">
         {/* Hero */}
-        <section className="space-y-4">
+        <section className="space-y-3">
           <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-white leading-[1.08]">
             Apparel &amp;{' '}
             <span className="bg-gradient-to-r from-purple-400 via-fuchsia-400 to-cyan-300 bg-clip-text text-transparent">
@@ -37,11 +37,24 @@ export default function CloudMoreCollectionsPage() {
           </p>
         </section>
 
+        {/* About & What We Deal With */}
         <OfferingsGrid />
 
+        {/* Slim Single-Line Social Handles Bar */}
+        <SocialConnectSection
+          variant="bar"
+          inquiryType={inquiryType}
+          setInquiryType={setInquiryType}
+          itemNote={itemNote}
+          setItemNote={setItemNote}
+        />
+
+        {/* Gallery */}
         <ShowcaseGallery onSelectForInquiry={handleSelectForInquiry} />
 
+        {/* DM / Inquiry Helper */}
         <SocialConnectSection
+          variant="connect"
           inquiryType={inquiryType}
           setInquiryType={setInquiryType}
           itemNote={itemNote}
