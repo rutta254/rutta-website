@@ -171,14 +171,16 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
           </div>
         </Link>
 
-        <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
-          <div>
-            <div className="w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400 font-bold mb-4">CM</div>
-            <h2 className="text-xl font-bold text-white">CloudMore</h2>
-            <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">Apparels, Accessories and Lifestyle.</p>
+        <Link href="/cloudmore-collections" className="group flex flex-col">
+          <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl transition-all duration-300 group-hover:border-purple-500/50 group-hover:bg-slate-900 flex flex-col justify-between">
+            <div>
+              <div className="w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400 font-bold mb-4">CM</div>
+              <h2 className="text-xl font-bold text-white group-hover:text-purple-400 transition-colors">CloudMore Collections</h2>
+              <p className="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">Apparel, curated clothing drops, accessories, and fashion consignments.</p>
+            </div>
+            <div className="mt-6 flex items-center text-purple-400 text-xs font-semibold">Explore Collections &rarr;</div>
           </div>
-          <div className="mt-6 text-xs text-purple-400 font-semibold uppercase tracking-wider">Gallery Portfolio</div>
-        </div>
+        </Link>
 
         <div className="h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
           <div>
