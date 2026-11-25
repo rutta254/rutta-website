@@ -21,17 +21,14 @@ function SessionTimer() {
   useEffect(() => {
     const key = 'rg_session_start';
     let start = localStorage.getItem(key);
-
     if (!start) {
       start = Date.now().toString();
       localStorage.setItem(key, start);
     }
-
     const updateTimer = () => {
       const elapsed = Math.floor((Date.now() - parseInt(start!)) / 1000);
       setSeconds(elapsed);
     };
-
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
@@ -43,9 +40,12 @@ function SessionTimer() {
   const pad = (n: number) => String(n).padStart(2, '0');
 
   return (
-    <span className="text-[10px] font-mono text-slate-500 tracking-widest">
-      {h > 0 ? `${pad(h)}:` : ''}{pad(m)}:{pad(s)}
-    </span>
+    <div className="flex items-center gap-2">
+      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+      <span className="text-xs font-mono font-semibold text-emerald-400 tracking-widest">
+        Session {h > 0 ? `${pad(h)}:` : ''}{pad(m)}:{pad(s)}
+      </span>
+    </div>
   );
 }
 
@@ -111,6 +111,7 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
 
         {userProfile ? (
           <div className="flex flex-col items-center gap-1">
+            {/* Profile Picture */}
             <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-cyan-500/60 shadow-lg shadow-cyan-500/20">
               {userProfile.image ? (
                 <Image
@@ -125,33 +126,16 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
                 </div>
               )}
             </div>
-            <div className="text-xs font-semibold text-slate-200 tracking-wide">
+            {/* Username */}
+            <div className="text-sm font-bold text-slate-200 tracking-wide">
               {displayUsername}
             </div>
+            {/* Client ID — same size as username, blue */}
             {clientId && (
-              <div className="text-[10px] text-cyan-400 font-mono tracking-widest">
+              <div className="text-sm font-bold text-blue-400 tracking-wide">
                 {clientId}
               </div>
             )}
-            <SessionTimer />
-            <div className="flex items-center gap-2 mt-1">
-              <Link
-                href="/settings"
-                className="text-[9px] text-slate-500 hover:text-cyan-400 transition"
-              >
-                settings
-              </Link>
-              <span className="text-slate-700">·</span>
-              <button
-                onClick={() => {
-                  localStorage.removeItem('rg_session_start');
-                  signOut({ callbackUrl: '/' });
-                }}
-                className="text-[9px] text-slate-500 hover:text-red-400 transition"
-              >
-                sign out
-              </button>
-            </div>
           </div>
         ) : (
           <Link
@@ -249,7 +233,34 @@ export default function HubClient({ userProfile }: { userProfile: UserProfile })
         ))}
       </div>
 
-      <footer className="w-full max-w-6xl text-center py-6 text-xs text-slate-500 border-t border-slate-900">
+      {/* Session Timer + Account Actions — visible at bottom */}
+      {userProfile && (
+        <div className="w-full max-w-6xl border-t border-slate-800 pt-6 pb-2 flex flex-col sm:flex-row items-center justify-between gap-4">
+          {/* Session Timer */}
+          <SessionTimer />
+
+          {/* Settings and Sign Out */}
+          <div className="flex items-center gap-3">
+            <Link
+              href="/settings"
+              className="px-5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500/50 rounded-xl text-sm font-semibold text-slate-200 hover:text-cyan-400 transition flex items-center gap-2"
+            >
+              ⚙ Settings
+            </Link>
+            <button
+              onClick={() => {
+                localStorage.removeItem('rg_session_start');
+                signOut({ callbackUrl: '/' });
+              }}
+              className="px-5 py-2 bg-red-950/30 hover:bg-red-900/40 border border-red-900/50 hover:border-red-500/50 rounded-xl text-sm font-semibold text-red-400 hover:text-red-300 transition flex items-center gap-2"
+            >
+              ⏻ Sign Out
+            </button>
+          </div>
+        </div>
+      )}
+
+      <footer className="w-full max-w-6xl text-center py-6 text-xs text-slate-500 border-t border-slate-900 mt-4">
         &copy; {new Date().getFullYear()} RUTTA.COM Central Portal. All Rights Reserved. Built with Next.js & Tailwind CSS.
       </footer>
     </main>
