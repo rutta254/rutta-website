@@ -112,7 +112,6 @@ export default function ShowcaseGallery({ onSelectForInquiry }: Props) {
       );
     }
 
-    // Placeholder motion / animation preview until admin uploads 9:16 video or image
     return (
       <div className="absolute inset-0 overflow-hidden bg-slate-950">
         <div
@@ -204,7 +203,6 @@ export default function ShowcaseGallery({ onSelectForInquiry }: Props) {
         })}
       </div>
 
-      {/* Choice Prompt Modal */}
       {activeSlide && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
@@ -257,7 +255,5 @@ export default function ShowcaseGallery({ onSelectForInquiry }: Props) {
         </div>
       )}
     </section>
-  );
-}   </section>
   );
 }
