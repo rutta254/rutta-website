@@ -60,3 +60,12 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
+
+model CloudMoreSlide {
+  id        String   @id @default(cuid())
+  platform  String   @unique // "tiktok" | "instagram"
+  mediaType String   @default("animation") // "animation" | "image" | "video"
+  videoUrl  String?
+  imageUrl  String?
+  updatedAt DateTime @updatedAt
+}

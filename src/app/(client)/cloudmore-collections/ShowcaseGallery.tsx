@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   FaArrowUpRightFromSquare,
   FaImages,
@@ -20,30 +20,38 @@ type Props = {
   onSelectForInquiry: (item: GalleryItem) => void;
 };
 
-type SlideMedia = GalleryItem & {
-  videoUrl?: string;
+type SlideMediaConfig = {
   mediaType?: 'animation' | 'image' | 'video';
+  videoUrl?: string;
+  imageUrl?: string;
+};
+
+type SlidesApiResponse = {
+  tiktok?: SlideMediaConfig;
+  instagram?: SlideMediaConfig;
 };
 
 type SlideChoice = {
   id: 'tiktok-slide' | 'instagram-slide';
+  keyName: 'tiktok' | 'instagram';
   platform: 'TikTok' | 'Instagram';
   handle: string;
   url: string;
   galleryOptionLabel: string;
   externalOptionLabel: string;
-  media: SlideMedia;
+  inquiryItem: GalleryItem;
 };
 
 const SLIDES: SlideChoice[] = [
   {
     id: 'tiktok-slide',
+    keyName: 'tiktok',
     platform: 'TikTok',
     handle: TIKTOK_HANDLE,
     url: TIKTOK_URL,
     galleryOptionLabel: 'Visit Gallery',
     externalOptionLabel: 'Go to TikTok',
-    media: {
+    inquiryItem: {
       id: 'tiktok-slide',
       title: 'TikTok',
       category: 'Apparel',
@@ -52,17 +60,17 @@ const SLIDES: SlideChoice[] = [
       statusLabel: 'TikTok',
       caption: 'TikTok',
       postUrl: TIKTOK_URL,
-      mediaType: 'animation',
     },
   },
   {
     id: 'instagram-slide',
+    keyName: 'instagram',
     platform: 'Instagram',
     handle: INSTAGRAM_HANDLE,
     url: INSTAGRAM_URL,
     galleryOptionLabel: 'Visit Gallery',
     externalOptionLabel: 'Go to Instagram',
-    media: {
+    inquiryItem: {
       id: 'instagram-slide',
       title: 'Instagram',
       category: 'Consignments',
@@ -71,28 +79,46 @@ const SLIDES: SlideChoice[] = [
       statusLabel: 'Instagram',
       caption: 'Instagram',
       postUrl: INSTAGRAM_URL,
-      mediaType: 'animation',
     },
   },
 ];
 
 export default function ShowcaseGallery({ onSelectForInquiry }: Props) {
   const [activeSlide, setActiveSlide] = useState<SlideChoice | null>(null);
+  const [slidesConfig, setSlidesConfig] = useState<SlidesApiResponse>({});
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/cloudmore/slides', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!active || !data?.slides) return;
+        setSlidesConfig(data.slides);
+      })
+      .catch(() => {
+        // Fallback to animation demo when API is unreachable
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleVisitGallery = (slide: SlideChoice) => {
-    onSelectForInquiry(slide.media);
+    onSelectForInquiry(slide.inquiryItem);
     setActiveSlide(null);
     document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const renderSlideMedia = (slide: SlideChoice) => {
     const isInstagram = slide.platform === 'Instagram';
+    const custom = slidesConfig[slide.keyName];
 
-    if (slide.media.videoUrl) {
+    if (custom?.videoUrl) {
       return (
         <video
-          src={slide.media.videoUrl}
-          poster={slide.media.imageUrl}
+          src={custom.videoUrl}
+          poster={custom.imageUrl || undefined}
           autoPlay
           loop
           muted
@@ -102,10 +128,10 @@ export default function ShowcaseGallery({ onSelectForInquiry }: Props) {
       );
     }
 
-    if (slide.media.imageUrl) {
+    if (custom?.imageUrl) {
       return (
         <img
-          src={slide.media.imageUrl}
+          src={custom.imageUrl}
           alt={slide.platform}
           className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
