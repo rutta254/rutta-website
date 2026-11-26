@@ -20,14 +20,19 @@ type Props = {
   onSelectForInquiry: (item: GalleryItem) => void;
 };
 
+type SlideMedia = GalleryItem & {
+  videoUrl?: string;
+  mediaType?: 'animation' | 'image' | 'video';
+};
+
 type SlideChoice = {
-  id: string;
+  id: 'tiktok-slide' | 'instagram-slide';
   platform: 'TikTok' | 'Instagram';
   handle: string;
   url: string;
   galleryOptionLabel: string;
   externalOptionLabel: string;
-  inquiryItem: GalleryItem;
+  media: SlideMedia;
 };
 
 const SLIDES: SlideChoice[] = [
@@ -38,7 +43,7 @@ const SLIDES: SlideChoice[] = [
     url: TIKTOK_URL,
     galleryOptionLabel: 'Visit Gallery',
     externalOptionLabel: 'Go to TikTok',
-    inquiryItem: {
+    media: {
       id: 'tiktok-slide',
       title: 'TikTok',
       category: 'Apparel',
@@ -47,6 +52,7 @@ const SLIDES: SlideChoice[] = [
       statusLabel: 'TikTok',
       caption: 'TikTok',
       postUrl: TIKTOK_URL,
+      mediaType: 'animation',
     },
   },
   {
@@ -56,7 +62,7 @@ const SLIDES: SlideChoice[] = [
     url: INSTAGRAM_URL,
     galleryOptionLabel: 'Visit Gallery',
     externalOptionLabel: 'Go to Instagram',
-    inquiryItem: {
+    media: {
       id: 'instagram-slide',
       title: 'Instagram',
       category: 'Consignments',
@@ -65,6 +71,7 @@ const SLIDES: SlideChoice[] = [
       statusLabel: 'Instagram',
       caption: 'Instagram',
       postUrl: INSTAGRAM_URL,
+      mediaType: 'animation',
     },
   },
 ];
@@ -73,9 +80,70 @@ export default function ShowcaseGallery({ onSelectForInquiry }: Props) {
   const [activeSlide, setActiveSlide] = useState<SlideChoice | null>(null);
 
   const handleVisitGallery = (slide: SlideChoice) => {
-    onSelectForInquiry(slide.inquiryItem);
+    onSelectForInquiry(slide.media);
     setActiveSlide(null);
     document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const renderSlideMedia = (slide: SlideChoice) => {
+    const isInstagram = slide.platform === 'Instagram';
+
+    if (slide.media.videoUrl) {
+      return (
+        <video
+          src={slide.media.videoUrl}
+          poster={slide.media.imageUrl}
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      );
+    }
+
+    if (slide.media.imageUrl) {
+      return (
+        <img
+          src={slide.media.imageUrl}
+          alt={slide.platform}
+          className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
+        />
+      );
+    }
+
+    // Placeholder motion / animation preview until admin uploads 9:16 video or image
+    return (
+      <div className="absolute inset-0 overflow-hidden bg-slate-950">
+        <div
+          className={`absolute -top-12 -left-12 h-44 w-44 rounded-full blur-2xl animate-pulse ${
+            isInstagram ? 'bg-pink-500/25' : 'bg-cyan-400/25'
+          }`}
+        />
+        <div
+          className={`absolute -bottom-12 -right-12 h-48 w-48 rounded-full blur-2xl animate-bounce ${
+            isInstagram ? 'bg-purple-500/20' : 'bg-fuchsia-500/20'
+          }`}
+          style={{ animationDuration: '4.5s' }}
+        />
+        <div className="relative z-10 flex h-full w-full flex-col items-center justify-center px-4 text-center">
+          <div
+            className={`h-16 w-12 rounded-xl border ${
+              isInstagram
+                ? 'border-pink-400/40 bg-pink-500/10'
+                : 'border-cyan-400/40 bg-cyan-500/10'
+            } animate-pulse flex items-center justify-center`}
+          >
+            <span className="text-[10px] font-semibold tracking-wider uppercase text-slate-200">
+              9:16
+            </span>
+          </div>
+          <span className="mt-2.5 text-[11px] text-slate-400">
+            Motion preview ready for {slide.platform} upload
+          </span>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -106,24 +174,28 @@ export default function ShowcaseGallery({ onSelectForInquiry }: Props) {
               key={slide.id}
               type="button"
               onClick={() => setActiveSlide(slide)}
-              className={`group w-full max-w-[260px] sm:max-w-[280px] aspect-[9/16] rounded-[2rem] bg-slate-900/85 border border-slate-800 ${borderHover} p-4 flex flex-col justify-between text-left shadow-2xl transition-all cursor-pointer`}
+              className={`group relative w-full max-w-[260px] sm:max-w-[280px] aspect-[9/16] rounded-[2rem] bg-slate-900/85 border border-slate-800 ${borderHover} p-4 flex flex-col justify-between text-left shadow-2xl overflow-hidden transition-all cursor-pointer`}
             >
-              <div className="flex items-center justify-between w-full">
+              {renderSlideMedia(slide)}
+
+              <div className="relative z-20 flex items-center justify-between w-full">
                 <span
-                  className={`inline-flex items-center gap-1.5 text-xs font-semibold ${cornerColor}`}
+                  className={`inline-flex items-center gap-1.5 rounded-full bg-slate-950/75 px-2.5 py-1 text-xs font-semibold backdrop-blur-sm ${cornerColor}`}
                 >
                   <PlatformIcon /> {slide.platform}
                 </span>
-                <span className="text-[11px] font-medium text-slate-400 group-hover:text-slate-200 transition truncate max-w-[125px]">
+                <span className="rounded-full bg-slate-950/75 px-2 py-0.5 text-[11px] font-medium text-slate-300 backdrop-blur-sm truncate max-w-[125px]">
                   @{slide.handle}
                 </span>
               </div>
 
-              <div className="flex items-end justify-between w-full">
-                <span className={`text-sm font-bold ${cornerColor}`}>
+              <div className="relative z-20 flex items-end justify-between w-full">
+                <span
+                  className={`rounded-full bg-slate-950/75 px-2.5 py-1 text-xs font-bold backdrop-blur-sm ${cornerColor}`}
+                >
                   {slide.platform}
                 </span>
-                <span className="text-xs text-slate-400 group-hover:text-white transition">
+                <span className="rounded-full bg-slate-950/75 px-2.5 py-1 text-[11px] text-slate-200 backdrop-blur-sm group-hover:text-white transition">
                   Select option &rarr;
                 </span>
               </div>
@@ -185,5 +257,7 @@ export default function ShowcaseGallery({ onSelectForInquiry }: Props) {
         </div>
       )}
     </section>
+  );
+}   </section>
   );
 }
