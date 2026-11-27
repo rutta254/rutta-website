@@ -6,15 +6,28 @@ export default withAuth(
     const { pathname } = req.nextUrl;
     const token = req.nextauth.token;
 
-    // If logged in and trying to access login page, redirect to hub
+    const email = token?.email?.toLowerCase();
+    const isAdmin =
+      token?.role === 'ADMIN' ||
+      token?.clientNumber === 'RG000' ||
+      email === 'the_subsaharan@proton.me';
+
+    // If already logged in and visiting /login, route admins to /admin and clients to /hub
     if (pathname === '/login' && token) {
+      return NextResponse.redirect(
+        new URL(isAdmin ? '/admin' : '/hub', req.url)
+      );
+    }
+
+    // Protect /admin routes so only ADMIN / RG000 can enter
+    if (pathname.startsWith('/admin') && !isAdmin) {
       return NextResponse.redirect(new URL('/hub', req.url));
     }
 
-    // If logged in but profile not complete, redirect to onboarding
-    // (except if already going to onboarding or API routes)
+    // Skip client /onboarding for ADMIN / RG000 users
     if (
       token &&
+      !isAdmin &&
       !token.profileComplete &&
       pathname !== '/onboarding' &&
       !pathname.startsWith('/api')
